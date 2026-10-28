@@ -294,14 +294,17 @@ func registerTicketActions(
             // A ticket picked from In flight is read again with it: its branch is the view's too.
             let shown = await panes.editorSnapshot(paneId: pane).column?.ticketShown
             let picked = Task { if let shown { await store.refreshShown(key: shown) } }
+            // The view's read, then In flight (spec, *When it reads*), whichever branch the view follows.
             do {
-                _ = try await read(root)
+                _ = try await store.read(root: root)
             } catch {
+                _ = try? await store.inFlight()
                 await picked.value
                 // A read stopped by ↻'s Cancel (Rule 4) failed nothing: the store keeps no failure for
                 // it. Any other failure is kept, whole, and answered.
                 if await store.failure(root: root) != nil { throw error }
             }
+            _ = try? await store.inFlight()
             await picked.value
             return await editor.reply(pane)
         }))
@@ -358,15 +361,17 @@ func registerTicketActions(
         name: "ticket_in_flight",
         description: "Read the organization's tickets in flight (a local branch in any of its roots, or an open PR "
             + "of yours) and Waiting on you (threads on your open PRs whose last word is not yours, PRs asking for "
-            + "your review, your PRs with a failing check), each with one state in words.",
+            + "your review, your PRs with a failing check), each with one state in words. count is the items waiting "
+            + "on you, one per review thread, per PR with a failing check, per review request; needs lists them.",
         kind: .read, audience: .agentReachable,
         schema: schema([:]),
         handler: { _ in
             if pinned() {
-                return .object(try await call("ticket_in_flight", [:], action: "ticket_in_flight",
-                                              timeout: EditorTicketStore.readLimit.timeInterval))
+                let out = try await call("ticket_in_flight", [:], action: "ticket_in_flight",
+                                         timeout: EditorTicketStore.readLimit.timeInterval)
+                return ticketInFlightReply(try ticketDecode(InFlightState.self, out, tool: "ticket_in_flight"))
             }
-            do { return ticketJSON(try await store.inFlight()) } catch let e as TicketReadError {
+            do { return ticketInFlightReply(try await store.inFlight()) } catch let e as TicketReadError {
                 throw StandardActionError.serverError(action: "ticket_in_flight", message: e.description)
             }
         }))
@@ -583,7 +588,7 @@ func registerTicketActions(
             }
             await store.setAnswer(thread: thread, text: answer)
             await mirror()
-            await store.invalidate(root: root)
+            await store.wrote(root: root)
             return .object(out)
         },
         price: (production: .gate, otherwise: .gate),
@@ -616,7 +621,7 @@ func registerTicketActions(
                                                         "resolved": .bool(resolved)],
                                      action: action, timeout: MCPClient.mutationReplyTimeout)
             await store.setResolved(thread: thread, resolved: resolved)
-            await store.invalidate(root: root)
+            await store.wrote(root: root)
             return .object(out)
         },
         price: (production: .allow, otherwise: .allow), agentPrice: .gate,

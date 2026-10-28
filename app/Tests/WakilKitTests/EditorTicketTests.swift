@@ -12,6 +12,7 @@ actor FakeTicket: ToolCaller {
     var hangBranch = false
     var slowReply = false
     var slowDrafts = false
+    var slowInFlight = false
     /// The organisation's drafts.json as `ticket_draft_write` keeps it, by thread, unless a reply is set.
     var drafts: [String: JSONValue] = [:]
     private var released = false
@@ -23,6 +24,7 @@ actor FakeTicket: ToolCaller {
     func setHangBranch(_ on: Bool) { hangBranch = on }
     func setSlowReply(_ on: Bool) { slowReply = on; released = false }
     func setSlowDrafts(_ on: Bool) { slowDrafts = on; released = false }
+    func setSlowInFlight(_ on: Bool) { slowInFlight = on; released = false }
     /// Puts a draft in the file, as another window or a quit-and-relaunch left it.
     func seedDraft(_ thread: String, text: String, by: String, conversation: String = "", replaced: String = "",
                    at: String = "2026-10-28T10:00:00Z") {
@@ -43,7 +45,7 @@ actor FakeTicket: ToolCaller {
         calls.append((name, arguments))
         if name == "ticket_branch", hangBranch { try await Task.sleep(for: .seconds(60)) }
         if (name == "ticket_branch" && slowBranch) || (name == "review_reply" && slowReply)
-            || (name == "ticket_drafts" && slowDrafts) {
+            || (name == "ticket_drafts" && slowDrafts) || (name == "ticket_in_flight" && slowInFlight) {
             await withCheckedContinuation { c in Task { self.park(c) } }
         }
         if let e = errors[name] {

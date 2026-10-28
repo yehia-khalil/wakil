@@ -486,12 +486,20 @@ struct WakilWindow: View {
         })
         // 3a-ii-b (final review I4): every draft that replaced a commit box's text — ✨, the agent or
         // voice — is one ⌘Z away, registered here once for the window.
-        // 3a-iii-a: the background fetch runs only while the app is frontmost.
+        // 3a-iii-a: the background fetch runs only while the app is frontmost; so does the 2-minute
+        // ticket read.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             session?.model.setAppActive(true)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             session?.model.setAppActive(false)
+        }
+        // Ticket noticing: the 2-minute read stops while the screen is locked.
+        .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.screenIsLocked"))) { _ in
+            session?.model.setScreenLocked(true)
+        }
+        .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.screenIsUnlocked"))) { _ in
+            session?.model.setScreenLocked(false)
         }
         .onChange(of: session?.model.changesLastDraft) { _, landed in
             guard let landed, let model = session?.model else { return }

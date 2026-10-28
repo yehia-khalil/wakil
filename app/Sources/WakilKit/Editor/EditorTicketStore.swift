@@ -14,9 +14,10 @@ public struct TicketReadError: Error, Sendable, Equatable, CustomStringConvertib
 /// The window's ticket reads (spec, *When it reads*): one per (root, branch), kept in memory while
 /// an editor pane is open, as the window's git status is, with the review drafts beside them.
 ///
-/// **No timer.** A read runs when the window asks — an editor pane opens or a root's branch
-/// changes (`WindowModel+Ticket`), ↻, a push, Send or Resolve, Wakil coming back after 60 s — and
-/// one read per (root, branch) is in flight at a time: a second ask joins the first (Rule 5). One
+/// A read runs when the window asks — an editor pane opens or a root's branch changes
+/// (`WindowModel+Ticket`), ↻, a push, Send or Resolve, Wakil coming back after 60 s, the 2-minute
+/// read while Wakil is in front (`WindowModel+TicketNoticing`) — and one read per (root, branch),
+/// and one of In flight, is in flight at a time: a second ask joins the first (Rule 5). One
 /// that runs past 20 s is cancelled and says so (Rule 4); Go's own read gives up at 15 s, so its
 /// partial answer reaches the operator first.
 ///
@@ -43,6 +44,9 @@ public actor EditorTicketStore {
     /// What GitHub answered beside a reply it posted, by thread, whole: the reply is posted all the same.
     private var answers: [String: String] = [:]
     private var inFlightRead: InFlightState?
+    private var inFlightReadAt: Date?
+    private var inFlightFailureText: String?
+    private var inFlightFlight: (id: UUID, task: Task<InFlightState, Error>)?
     /// Records of tickets shown from In flight (`ticket_show`), by key, and why one could not be read.
     private var records: [String: TicketRecordState] = [:]
     private var recordFailures: [String: String] = [:]
@@ -193,24 +197,78 @@ public actor EditorTicketStore {
         return try ticketDecode(TicketBranchState.self, content, tool: "ticket_branch")
     }
 
-    /// `ticket_in_flight`: the organisation's tickets in flight and Waiting on you. Kept as the last
-    /// such read for the view; not joined, since it is read only for the default branch.
+    /// `ticket_in_flight`: the organisation's tickets in flight and Waiting on you, kept as the last
+    /// such read. One read at a time: a second ask joins the one in flight (Rule 5). A failed read
+    /// keeps the last one and says why (`inFlightFailure`), whole.
     public func inFlight() async throws -> InFlightState {
         guard let ticket else {
             throw TicketReadError(description: StandardActionError.missingClient(action: "ticket_in_flight", role: "ticket").description)
         }
-        let gen = generation
-        let limit = readLimit
-        // The window's own read, as `start`'s is.
-        let content = try await ActionRegistry.$dispatchCaller.withValue(nil) {
-            try await ticketCall(ticket, "ticket_in_flight", [:], timeout: limit.seconds)
+        let flight = inFlightFlight ?? startInFlight(ticket)
+        return try await flight.task.value
+    }
+
+    private func startInFlight(_ ticket: any ToolCaller) -> (id: UUID, task: Task<InFlightState, Error>) {
+        let (id, gen, limit) = (UUID(), generation, readLimit)
+        let task = Task<InFlightState, Error> {
+            do {
+                // The window's own read, as `start`'s is.
+                let content = try await ActionRegistry.$dispatchCaller.withValue(nil) {
+                    try await ticketCall(ticket, "ticket_in_flight", [:], timeout: limit.seconds)
+                }
+                let state = try ticketDecode(InFlightState.self, content, tool: "ticket_in_flight")
+                await self.landInFlight(.success(state), id: id, generation: gen)
+                return state
+            } catch {
+                await self.landInFlight(.failure(error), id: id, generation: gen)
+                throw error
+            }
         }
-        let state = try ticketDecode(InFlightState.self, content, tool: "ticket_in_flight")
-        if gen == generation {
+        inFlightFlight = (id, task)
+        return (id, task)
+    }
+
+    private func landInFlight(_ outcome: Result<InFlightState, Error>, id: UUID, generation gen: Int) async {
+        guard gen == generation, inFlightFlight?.id == id else { return }
+        inFlightFlight = nil
+        switch outcome {
+        case .success(let state):
             inFlightRead = state
-            await changed()
+            inFlightReadAt = now()
+            inFlightFailureText = nil
+        case .failure(let error) where error is CancellationError: break
+        case .failure(let error): inFlightFailureText = String(describing: error)
         }
-        return state
+        await changed()
+    }
+
+    /// When In flight last came back; nil before a read.
+    public func inFlightAt() -> Date? { inFlightReadAt }
+
+    /// Whether In flight is old enough that Wakil becoming the active app reads it again: none yet, or
+    /// over 60 s, by the store's clock.
+    public func inFlightStale() -> Bool { ticketStale(lastRead: inFlightReadAt, now: now()) }
+
+    /// Why the last In flight read failed, whole; nil after one that came back.
+    public func inFlightFailure() -> String? { inFlightFailureText }
+
+    /// A write from Wakil landed on `root` — Send, Resolve, a push, a sync or a publish: its branch is
+    /// read again, then In flight, neither waited for (spec, *When it reads*).
+    public func wrote(root: String) async {
+        await invalidate(root: root)
+        let flight = flights[ReadKey(root: root, branch: current[root] ?? "")]
+        Task {
+            _ = try? await flight?.task.value
+            _ = try? await self.inFlight()
+        }
+    }
+
+    /// Ends the window's organisation's hand-offs whose conversation is not in `live`
+    /// (`ticket_handoff_write` `end`, `keepLive`): a quit or a switch left them with no conversation.
+    public func endStaleHandoffs(live: [String]) async throws {
+        guard ticket != nil else { return }
+        _ = try await windowCall("ticket_handoff_write", ["op": .string("end"), "conversations": .array(live.map { .string($0) }),
+                                                          "keepLive": .bool(true)], timeout: MCPClient.mutationReplyTimeout)
     }
 
     /// The last In flight read, for the view.
@@ -466,6 +524,10 @@ public actor EditorTicketStore {
         sendingThreads = []
         answers = [:]
         inFlightRead = nil
+        inFlightReadAt = nil
+        inFlightFailureText = nil
+        inFlightFlight?.task.cancel()
+        inFlightFlight = nil
         records = [:]
         recordFailures = [:]
         shownReads = [:]

@@ -1,8 +1,8 @@
 import Foundation
 
-/// The Ticket view's reads the window starts (spec, *When it reads*). No timer: a root's branch
-/// changing (or first seen) while an editor pane is open, and Wakil becoming the active app with
-/// the Ticket view showing and its read over 60 s old. ↻, a push and Send or Resolve read through
+/// The Ticket view's reads the window starts (spec, *When it reads*): a root's branch changing (or
+/// first seen) while an editor pane is open, and Wakil becoming the active app with the Ticket view
+/// showing and its read over 60 s old; the 2-minute read is `WindowModel+TicketNoticing`'s. ↻, a push and Send or Resolve read through
 /// their own actions. Reads are Wakil's cache, not operator state: they go to the store, which the
 /// panes' readable state follows; the default branch reads In flight too.
 extension WindowModel {
@@ -27,6 +27,14 @@ extension WindowModel {
     /// when its last read is over 60 s old.
     func ticketActivated() async {
         guard let ticket else { return }
+        let now = Date()
+        for root in await ticketViewRoots() where ticketStale(lastRead: await ticket.lastRead(root: root), now: now) {
+            ticketRead(root)
+        }
+    }
+
+    /// The roots the editor panes showing their Ticket view on the branch's own ticket follow, once each.
+    func ticketViewRoots() async -> [String] {
         let roots = gitRootPaths
         var wanted: [String] = []
         for pane in editorPaneIds {
@@ -35,10 +43,7 @@ extension WindowModel {
                   let root = ticketFollowedRoot(front: editorFrontRoot(s), roots: roots), !wanted.contains(root) else { continue }
             wanted.append(root)
         }
-        let now = Date()
-        for root in wanted where ticketStale(lastRead: await ticket.lastRead(root: root), now: now) {
-            ticketRead(root)
-        }
+        return wanted
     }
 
     /// Reads the head texts each editor pane's front file needs to place its review boxes
@@ -69,7 +74,7 @@ extension WindowModel {
 
     /// One read of `root`, joined to one in flight; the default branch reads In flight too. A
     /// failure is kept in the store, whole, where the view reads it (Rule 8).
-    private func ticketRead(_ root: String) {
+    func ticketRead(_ root: String) {
         guard let ticket else { return }
         Task {
             guard let state = try? await ticket.read(root: root) else { return }

@@ -36,6 +36,10 @@ private let orgDerived: Set<String> = [
     "changesClashes", "changesFilledFrom",
     // Ticket view: the branch each of the outgoing org's roots was on; `invalidateForOrgChange` empties it.
     "ticketBranches",
+    // Ticket noticing: the outgoing org's last In flight read, and the 2-minute read that would read it
+    // again. `invalidateForOrgChange` empties the one and cancels the other; the switch reads the
+    // incoming org and starts the read again (WindowModelTicketNoticingTests.orgSwitchEmptiesNeedsAndReadsTheNewOrg).
+    "ticketNeeds", "ticketPollTask",
     "project", "projectKey", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
@@ -190,6 +194,9 @@ private let orgIndependent: Set<String> = [
     // app's activity are no organisation's.
     "backgroundFetchInterval", "backgroundFetchSleep", "backgroundFetchTask", "appActive",
     "backgroundFetchTimeout", "backgroundFetchCurrent",
+    // Ticket noticing: whether the screen is locked is the Mac's, and the 2-minute read's interval and
+    // sleep are no organisation's.
+    "screenLocked", "ticketPollInterval", "ticketPollSleep",
     // 3a-iii-b: the box is keyed by organisation itself; no switch empties it.
     "agentInstructionsBox",
     // Keyed by organisation like the box above.

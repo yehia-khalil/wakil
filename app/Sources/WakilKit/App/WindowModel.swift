@@ -870,6 +870,16 @@ public final class WindowModel {
     /// The background fetch running now and its root, which an operator's write on that root cancels.
     var backgroundFetchCurrent: (root: String, cancel: () -> Void, done: Task<Void, Never>)?
     var appActive = true
+    /// Ticket noticing: the active organisation's last `ticket_in_flight` read — what the rail, the
+    /// Ticket label, the Landing and ⌘P count and list. Kept on a failed read; emptied by an org switch.
+    public private(set) var ticketNeeds: InFlightState?
+    /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.
+    var screenLocked = false
+    /// The 2-minute read while Wakil is in front and the screen unlocked (`updateTicketPoll`), its
+    /// interval, and its sleep (tests replace it).
+    var ticketPollTask: Task<Void, Never>?
+    let ticketPollInterval: Duration = .seconds(120)
+    var ticketPollSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -2274,6 +2284,18 @@ public final class WindowModel {
         // wherever the environment can have changed — launch, a project
         // switch, an environment switch — which is exactly this one place.
         await refreshDatabases()
+        // Ticket noticing: the window is ready in an organisation — its first context read with one.
+        // A switch does this at its own end (`setOrganization`), once its clients point at the new org.
+        if !switching, !organization.isEmpty, let ticket, await ticket.inFlightAt() == nil { ticketOrganizationReady() }
+        updateTicketPoll()
+    }
+
+    /// Ticket noticing: copies the store's last In flight read into `ticketNeeds` (here, where its
+    /// setter is).
+    func mirrorTicketNeeds() async {
+        guard let ticket else { return }
+        let needs = await ticket.lastInFlight()
+        if needs != ticketNeeds { ticketNeeds = needs }
     }
 
     /// Resets what belongs to the organisation itself, and nothing that belongs to a place in
@@ -2422,6 +2444,10 @@ public final class WindowModel {
         editorReviews = .empty
         editorTicket = .empty
         ticketBranches = [:]
+        // Ticket noticing: the outgoing org's needs go, and its 2-minute read stops; the switch reads
+        // the incoming org and starts the read again (`ticketOrganizationReady`).
+        ticketNeeds = nil
+        stopTicketPoll()
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
@@ -4718,6 +4744,8 @@ public final class WindowModel {
         if reviews != editorReviews { editorReviews = reviews }
         let ticketView = await panes.editorTicketView()
         if ticketView != editorTicket { editorTicket = ticketView }
+        // A read a write or ↻ started lands here too: the needs follow the store's last In flight.
+        await mirrorTicketNeeds()
         await readReviewHeads()
     }
 
@@ -8960,6 +8988,10 @@ public final class WindowModel {
         // the orgs would be written into a thread that never changed: each place's thread is its
         // own, and the context line already says where the operator is.
         await rebuildQuickTasks()
+        // Ticket noticing: the incoming org's stale hand-offs end, its In flight is read, and its
+        // 2-minute read starts.
+        ticketOrganizationReady()
+        updateTicketPoll()
     }
 
     /// One chip per conversation not on screen that has something to show — in another place,

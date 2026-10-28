@@ -977,3 +977,89 @@ private func agentOverMine(_ f: TicketFixture) async throws {
     await f.store.reset()
     #expect(await f.store.draftsFailure() == nil)
 }
+
+/// Waits, a bounded while, for the fake to have been called `n` times with `tool`.
+private func awaitCalls(_ f: TicketFixture, _ tool: String, _ n: Int) async {
+    for _ in 0..<500 where await f.ticket.count(tool) < n { try? await Task.sleep(for: .milliseconds(10)) }
+}
+
+/// The calls' names in order, for "the root, then In flight".
+private func names(_ f: TicketFixture) async -> [String] { await f.ticket.calls.map(\.name) }
+
+/// Send reads its root's branch again, then In flight (spec, *When it reads*).
+@Test func sendThenInFlightIsRead() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("ticket_read", ["root": .string("/p/api")])
+    #expect(await f.ticket.count("ticket_in_flight") == 0)
+    try await f.dispatch("review_reply_send", replyParams, origin: .ui)
+    await awaitCalls(f, "ticket_in_flight", 1)
+    #expect(await f.ticket.count("ticket_in_flight") == 1)
+    let calls = await names(f)
+    #expect(calls.lastIndex(of: "ticket_branch")! < calls.lastIndex(of: "ticket_in_flight")!)
+    #expect(calls.firstIndex(of: "review_reply")! < calls.lastIndex(of: "ticket_branch")!)
+}
+
+@Test func resolveThenInFlightIsRead() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("ticket_read", ["root": .string("/p/api")])
+    try await f.dispatch("review_resolve", ["root": .string("/p/api"), "thread": .string("T2"), "resolved": .bool(true)],
+                         origin: .ui, confirmation: nil)
+    await awaitCalls(f, "ticket_in_flight", 1)
+    let calls = await names(f)
+    #expect(calls.filter { $0 == "ticket_branch" }.count == 2)
+    #expect(calls.lastIndex(of: "ticket_branch")! < calls.lastIndex(of: "ticket_in_flight")!)
+}
+
+/// ↻ reads the view's branch, then In flight, even off the default branch.
+@Test func refreshThenInFlightIsRead() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("ticket_refresh", ["pane": .string(f.editor.pane)], origin: .ui)
+    #expect(await f.ticket.count("ticket_in_flight") == 1)
+    let calls = await names(f)
+    #expect(calls.lastIndex(of: "ticket_branch")! < calls.lastIndex(of: "ticket_in_flight")!)
+}
+
+/// A push from Wakil reads its root again, then In flight.
+@Test func pushThenInFlightIsRead() async throws {
+    let f = try await ticketFixture()
+    await registerEditorChangesWrites(into: f.editor.registry, gitStatus: f.editor.status, panes: f.editor.panes,
+                                      layout: f.editor.layout, writes: GitWriteFlights(), ticket: f.store)
+    try await f.dispatch("ticket_read", ["root": .string("/p/api")])
+    try await f.dispatch("editor_changes_push", ["root": .string("/p/api")], origin: .ui)
+    await awaitCalls(f, "ticket_in_flight", 1)
+    let calls = await names(f)
+    #expect(calls.filter { $0 == "ticket_branch" }.count == 2)
+    #expect(calls.lastIndex(of: "ticket_branch")! < calls.lastIndex(of: "ticket_in_flight")!)
+}
+
+/// `ticket_in_flight` answers the count and its items (`needs`), one per item, beside the rows.
+@Test func inFlightReplyCarriesCountAndNeeds() async throws {
+    let f = try await ticketFixture()
+    func row(_ key: String, _ pr: Int, threads: [String] = [], failing: [String] = [], review: Bool = false) -> JSONValue {
+        .object(["key": .string(key), "repo": .string("github.com/initech/api"), "pr": .integer(Int64(pr)),
+                 "threads": .array(threads.map { .string($0) }), "failing": .array(failing.map { .string($0) }),
+                 "review": .bool(review), "count": .integer(Int64(threads.count + (failing.isEmpty ? 0 : 1) + (review ? 1 : 0)))])
+    }
+    await f.ticket.set("ticket_in_flight", .object([
+        "waitingOnYou": .array([row("INI-142", 212, threads: ["T1", "T2"], failing: ["unit (Linux)"]), row("", 214, review: true)]),
+        "inFlight": .array([]), "partial": .array([]), "count": .integer(4),
+    ]))
+    // The window's read, and an agent session's through its own place's client.
+    for (origin, caller) in [(ActionOrigin.ui, DispatchCaller.test("staging")),
+                             (.agent, DispatchCaller.test("staging", session: "s1", conversation: "c1"))] {
+        let out = try await f.dispatch("ticket_in_flight", origin: origin, caller: caller)
+        guard case .object(let o) = out else { Issue.record("reply \(out)"); return }
+        #expect(o["count"] == .integer(4))
+        #expect(o["needs"] == .array([
+            .object(["kind": .string("review thread"), "key": .string("INI-142"), "repo": .string("github.com/initech/api"),
+                     "pr": .integer(212), "thread": .string("T1")]),
+            .object(["kind": .string("review thread"), "key": .string("INI-142"), "repo": .string("github.com/initech/api"),
+                     "pr": .integer(212), "thread": .string("T2")]),
+            .object(["kind": .string("failing check"), "key": .string("INI-142"), "repo": .string("github.com/initech/api"),
+                     "pr": .integer(212), "checks": .array([.string("unit (Linux)")])]),
+            .object(["kind": .string("review request"), "key": .string(""), "repo": .string("github.com/initech/api"),
+                     "pr": .integer(214)]),
+        ]))
+        #expect(o["waitingOnYou"] != nil)
+    }
+}

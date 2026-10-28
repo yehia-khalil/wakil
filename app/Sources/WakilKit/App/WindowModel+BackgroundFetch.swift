@@ -17,8 +17,13 @@ extension WindowModel {
     public func setAppActive(_ active: Bool) {
         appActive = active
         updateBackgroundFetch()
-        // The Ticket view reads again when Wakil comes back and its read is over 60 s old.
-        if active { Task { @MainActor [weak self] in await self?.ticketActivated() } }
+        updateTicketPoll()
+        // The Ticket view reads again when Wakil comes back and its read is over 60 s old, and so
+        // does In flight, whatever is on screen.
+        if active {
+            Task { @MainActor [weak self] in await self?.ticketActivated() }
+            Task { @MainActor [weak self] in await self?.ticketNeedsRead(force: false) }
+        }
     }
 
     public func startBackgroundFetch() {
