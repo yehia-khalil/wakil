@@ -2298,6 +2298,8 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // `ctx_set_project_editor_settings`, are `.control` and
         // operator-only, so they are absent here like `ctx_update_org`.
         "mcp__wakil__ctx_editor_settings",
+        // ctx_github_pull_requests, added by 3d-i: `.read`, agent-reachable, active org only.
+        "mcp__wakil__ctx_github_pull_requests",
         "mcp__wakil__ctx_list_environments",
         "mcp__wakil__ctx_list_projects",
         // ctx_list_providers, added by Phase 2b-vi Task 12, is `.read`

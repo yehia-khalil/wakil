@@ -37,9 +37,18 @@ private let orgDerived: Set<String> = [
     "project", "projectKey", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
-    "browserSites", "browserAllowedOnScreen",
+    "browserSites", "browserAllowedOnScreen", "browserCloseArm", "browserCopiedTip",
     // 3c-iii: the ★ menu's bookmarks are the drawn org's, re-read from the store after the switch.
     "browserBookmarksOnScreen",
+    // 3d-i: the groups asked a name for, and the requests in flight, are the outgoing org's places';
+    // `invalidateForOrgChange` empties both, and the quick-tasks generation drops a late reply.
+    "browserNamingAsked", "browserNamingTasks",
+    // 3d-i ruling 19: the pull-request loop reads the outgoing organisation (cancelled, restarted by the
+    // next refreshLayout), Settings' absent reason is that organisation's, and the header focus names
+    // a pane of the screen being left.
+    "browserPullRequestsLoop", "browserPullRequestsAbsent", "browserHeaderFocus", "browserPullRequestsHeld",
+    // 3d-i Task 12: the strip's `pr` header draws the outgoing organisation's list until it is cleared.
+    "browserPullRequestsOnScreen",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's
@@ -297,7 +306,12 @@ private let orgIndependent: Set<String> = [
     // count of writes it ran (a test seam). Neither describes an organisation.
     "editorTabsDelay", "editorTabsWriteCount", "editorAutosaveDelay", "editorAutosaveCount",
     // 3c-i: the browser's saved-tabs debounce length and its write count, the same shapes.
-    "browserTabsDelay", "browserTabsWriteCount",
+    "browserTabsDelay", "browserTabsWriteCount", "browserNow", "browserCloseArmTask", "browserCopiedTipTask", "browserCopiedSerial",
+    // 3d-i: the pull-request loop's interval (configuration, shortened by tests).
+    "browserPullRequestsInterval",
+    // 3d-i Task 12: how many of this window's refreshes are under way — each its own call, which
+    // counts itself out when it returns; reset across a switch, a late return would go below zero.
+    "browserPullRequestsRefreshes",
     // 3c-iii: the history writes queue (each targets its own place's organisation), and the
     // address suggestions' fetch and its one ephemeral session — the operator's setting, no organisation's.
     "browserHistoryTail", "browserSuggestionsAfterReads", "browserSuggestFetch", "browserSuggestSession",

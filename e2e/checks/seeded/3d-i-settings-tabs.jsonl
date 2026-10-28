@@ -1,0 +1,36 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"ctx_github_pull_requests","params":{}}}
+{"dispatch":{"action":"browser_pull_requests_refresh","params":{}}}
+{"expect":{"pane":"browser-1","field":"groups[0]","present":false}}
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.browser"}}
+{"expect":{"tree":"contains","text":"Name groups with AI"}}
+{"expect":{"tree":"contains","text":"never addresses or page text"}}
+{"expect":{"tree":"contains","text":"No pull-request group: e2e-fixture has no GitHub account."}}
+{"expect":{"frame":"settings.browser.pullRequests.absent","inside":"settings.pane"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.tabs","equals":"horizontal"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.nameGroups","equals":"true"}}
+{"parity":{"action":"ctx_set_browser_settings","params":{"nameGroups":false},"assert":"tree","click":"settings.browser.nameGroups.off"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.nameGroups","equals":"false"}}
+{"expect":{"journal":{"contains":"nameGroups"}}}
+{"do":{"click":"settings.browser.nameGroups.on"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.nameGroups","equals":"true"}}
+{"do":{"click":"settings.browser.tabs.vertical"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.tabs","equals":"vertical"}}
+{"parity":{"action":"ctx_set_browser_settings","params":{"tabs":"horizontal"},"assert":"tree","click":"settings.browser.tabs.horizontal"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.tabs","equals":"horizontal"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"tabs":"sideways"},"refuses":"tabs is horizontal or vertical, not \"sideways\""}}
+{"expect":{"tree":"contains","text":"Search engine"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.browser.tabs.vertical","inside":"settings.browser.tabs"}}
+{"expect":{"frame":"settings.browser.nameGroups.off","inside":"settings.browser.nameGroups"}}
+{"expect":{"frame":"settings.browser.pullRequests.absent","inside":"settings.pane"}}

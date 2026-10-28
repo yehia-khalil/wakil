@@ -12,15 +12,34 @@ import WebKit
 final class BrowserWebView: WKWebView {
     /// Esc while the page loads: the tab's `browser_stop` (Rule 4). Answers whether it was used.
     var stopOnEscape: (@MainActor () -> Bool)?
+    /// Where the page last stood in its window, in window coordinates, kept as it leaves: Restore
+    /// docks a view with no window there (3d-iii ruling 5).
+    private(set) var lastPageFrame: NSRect?
+    /// Docked for Restore (`BrowserPictureInPictureHost.dock`): invisible, so it takes no click either
+    /// — `hitTest` ignores alpha.
+    var docked = false
+    /// Whether ⌃⌘S is Wakil's in this page: only with the tabs vertical, where it hides and shows the
+    /// column (3d-i). With the tabs horizontal it is the page's, so it is not offered to the menu first.
+    var tabColumnKey: (@MainActor () -> Bool)?
 
-    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, and ⌘⇧W (global constraints), **by physical key**
-    /// (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character match fails on a
-    /// non-Latin one (`QueryLineKeys`' note).
-    static func isWakilKey(_ event: NSEvent) -> Bool {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        docked ? nil : super.hitTest(point)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, window != nil { lastPageFrame = convert(bounds, to: nil) }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W and ⌘⇧C (global constraints), and ⌃⌘S when `tabColumn`,
+    /// **by physical key** (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character
+    /// match fails on a non-Latin one (`QueryLineKeys`' note).
+    static func isWakilKey(_ event: NSEvent, tabColumn: Bool) -> Bool {
         guard event.type == .keyDown else { return false }
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if mods == .command { return commandKeys.contains(event.keyCode) }
-        if mods == [.command, .shift] { return event.keyCode == 13 }   // W
+        if mods == [.command, .shift] { return event.keyCode == 13 || event.keyCode == 8 }   // W; C: Copy Page Address
+        if mods == [.control, .command] { return tabColumn && event.keyCode == 1 }  // S: Toggle Tab Column (3d-i)
         return false
     }
 
@@ -28,7 +47,7 @@ final class BrowserWebView: WKWebView {
     private static let commandKeys: Set<UInt16> = [40, 35, 45, 17, 13, 37, 43, 2, 18, 19, 20, 21, 23, 22, 26, 28, 25]
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if Self.isWakilKey(event), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        if Self.isWakilKey(event, tabColumn: tabColumnKey?() ?? false), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
 
@@ -162,6 +181,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The zoom the next report tells the store: set only when the page took a host's zoom, so a
     /// report read before a `browser_zoom` applied never undoes it.
     private var pendingZoom: Double?
+    /// Whether this tab's video floats (3d-iii), as WebKit last said; carried in every report.
+    var pictureInPicture = false
     private var observations: [NSKeyValueObservation] = []
     private var reporting: Task<Void, Never>?
     private var reportAgain = false
@@ -189,6 +210,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             webView.observe(\.canGoForward) { view, _ in report(view) },
             webView.observe(\.isLoading) { view, _ in report(view) },
         ]
+        webView.tabColumnKey = { [weak self] in self?.host?.model?.browserSettings.tabs == "vertical" }
         webView.stopOnEscape = { [weak self] in
             guard let self, !self.tab.isEmpty, self.isShown else { return false }
             self.dispatch("browser_stop")
@@ -239,7 +261,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                         ?? self.requested ?? "",
                     title: view.title ?? "",
                     isLoading: view.isLoading, progress: view.estimatedProgress,
-                    canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure, zoom: zoom)
+                    canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure, zoom: zoom,
+                    pictureInPicture: self.pictureInPicture)
                 await model.browserPageDidReport(scope: self.scope, pane: self.pane, tab: self.tab, report)
             }
             self?.reporting = nil
@@ -258,6 +281,10 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         failure = nil
+        // 3d-iv: the old document's login field is gone with it; a sent form's bar stays.
+        if !tab.isEmpty {
+            host?.passwordPageCommitted(key, site: webView.url.flatMap { BrowserPasswords.siteKey($0.absoluteString) })
+        }
         host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         // A page on another host takes that host's remembered zoom, and the store hears it.
         if let site = webView.url.flatMap(BrowserOrgFiles.zoomHost(of:)), site != zoomHost {
@@ -266,6 +293,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             if webView.pageZoom != factor { webView.pageZoom = factor }
             pendingZoom = factor
         }
+        // 3d-iii: a new page in the main frame; the old documents' frame tokens are gone.
+        if !tab.isEmpty { host?.pictureInPicture.forgetFrames(key) }
         scheduleReport()
     }
 
@@ -393,6 +422,12 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The page's process ended: the crash page, until the tab reloads.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard !tab.isEmpty else { return }
+        // A floating video goes with its process, and WebKit says nothing (3d-iii): the tab no
+        // longer floats, so it can be evicted and `read_pane` stops naming it.
+        if pictureInPicture {
+            pictureInPicture = false
+            host?.pictureInPicture.closed(key)
+        }
         host?.pageCrashed(key: key)
         scheduleReport()
     }
@@ -420,7 +455,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// ⌘-click and middle-click: a new tab behind this one.
     private func opensInBackground(_ action: WKNavigationAction) -> Bool {
-        action.modifierFlags.contains(.command) || action.buttonNumber == 2
+        BrowserLinkOpening.opensInBackground(command: action.modifierFlags.contains(.command),
+                                             buttonNumber: action.buttonNumber)
     }
 
     private func openInBackground(_ url: URL) {
@@ -428,7 +464,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let pane = self.pane, opener = self.tab
         Task {
             _ = await model.dispatchFromSurfaceInOrder([
-                ("browser_new_tab", .object(["pane": .string(pane), "url": .string(url.absoluteString)])),
+                ("browser_new_tab", .object(["pane": .string(pane), "url": .string(url.absoluteString),
+                                             "opener": .string(opener)])),
                 ("browser_select_tab", .object(["pane": .string(pane), "tab": .string(opener)])),
             ])
         }
@@ -505,6 +542,29 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor ([URL]?) -> Void) {
         guard let host else { return completionHandler(nil) }
         host.runOpenPanel(parameters, for: webView, scope: scope, pane: pane, tab: tab, completion: completionHandler)
+    }
+
+    // MARK: Picture in picture (3d-iii)
+
+    /// Private: `WKUIDelegatePrivate`'s `_webView:hasVideoInPictureInPictureDidChange:` (guarded by
+    /// `BrowserPictureInPictureSupport`). A video of this tab entered (`on`) or left picture in picture,
+    /// whoever floated it — Wakil or the page's own button.
+    @objc(_webView:hasVideoInPictureInPictureDidChange:)
+    func webView(_ webView: WKWebView, hasVideoInPictureInPictureDidChange on: Bool) {
+        // Recorded even before a pop-up's tab is named, so its first report carries it.
+        pictureInPicture = on
+        guard !tab.isEmpty else { return }
+        scheduleReport()
+        host?.pictureInPicture.didChange(key, on)
+    }
+
+    /// Private: `WKUIDelegatePrivate`'s `_webViewFullscreenMayReturnToInline:`. The operator pressed
+    /// Restore on the floating window. Synchronous: the view must be in a window before this returns
+    /// (ruling 5), so the host docks it here.
+    @objc(_webViewFullscreenMayReturnToInline:)
+    func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
+        guard !tab.isEmpty else { return }
+        host?.pictureInPicture.restore(key, view: webView)
     }
 
     func webViewDidClose(_ webView: WKWebView) {

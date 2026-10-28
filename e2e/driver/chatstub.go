@@ -48,6 +48,13 @@ const conversationNameAsk = "Name this conversation"
 // rename the conversation before the model's name lands.
 const slowNameMessage = "MESSAGE: slow name"
 
+// GroupNameReply is what the stub answers a request to name a browser tab group
+// with (3d-i): one name, as `BrowserGroupNames.parse` reads it, whatever the titles.
+const GroupNameReply = `{"name":"Fixture Pages"}`
+
+// groupNameAsk is the phrase BrowserGroupNames' instructions open with in WakilKit.
+const groupNameAsk = "Name this group of browser tabs"
+
 // SlowPrefix makes the stub answer late: "slow go to qa" answers as "go to
 // qa" does, after SlowReply — past the fast path's 400 ms local deadline.
 const SlowPrefix = "slow "
@@ -76,10 +83,11 @@ func StartChatStub() (string, func(), error) {
 		if n := len(body.Messages); n > 0 {
 			line = FastPathLine(body.Messages[n-1].Content)
 		}
-		drafting, naming, slowNaming := false, false, false
+		drafting, naming, slowNaming, groupNaming := false, false, false, false
 		for _, m := range body.Messages {
 			drafting = drafting || strings.Contains(m.Content, commitDraftAsk)
 			naming = naming || strings.Contains(m.Content, conversationNameAsk)
+			groupNaming = groupNaming || strings.Contains(m.Content, groupNameAsk)
 			slowNaming = slowNaming || strings.HasPrefix(m.Content, slowNameMessage)
 		}
 		if naming && slowNaming {
@@ -106,6 +114,9 @@ func StartChatStub() (string, func(), error) {
 		}
 		if naming {
 			reply = ConversationNameReply
+		}
+		if groupNaming {
+			reply = GroupNameReply
 		}
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

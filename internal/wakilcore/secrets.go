@@ -15,6 +15,10 @@ import (
 // found in the keychain." on stderr.
 const keychainNotFoundExitCode = 44
 
+// ErrSecretNotFound is what SecretGetFor's error answers errors.Is for when the Keychain holds
+// no item for the ref (exit 44), and only then.
+var ErrSecretNotFound = errors.New("no credential stored")
+
 // keychainAccount is the `security` account attribute every item this
 // codebase writes carries. It is a CONSTANT, not a discriminator: it is
 // "wakil" for every org and every ref, which is why the service name is
@@ -127,6 +131,9 @@ func SecretGet(ref string) (string, error) {
 // needs the same token stored twice, once per org — which is exactly the
 // copy this enables, and exactly the step whose omission leaves the three
 // credential-less bindings on this machine today.
+//
+// The not-found error answers errors.Is(err, ErrSecretNotFound); every other failure (a locked
+// keychain, a denied prompt) does not, so a caller can tell "nothing is kept" from "can't read".
 func SecretGetFor(org, ref string) (string, error) {
 	service, err := keychainService(org, ref)
 	if err != nil {
@@ -140,9 +147,9 @@ func SecretGetFor(org, ref string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == keychainNotFoundExitCode {
-			return "", UserError("no credential stored for ref " + ref + " in org " + org +
+			return "", &userError{kind: ErrSecretNotFound, msg: "no credential stored for ref " + ref + " in org " + org +
 				" — store it with: WAKIL_ORG=" + org + " wakil secrets set " + ref +
-				". Credentials are namespaced per org (Keychain service \"wakil:<org>:<ref>\"); anything stored before that change lives under the old org-less name and must be re-stored once — see the MIGRATION section of docs/wakil/operator-todo.md")
+				". Credentials are namespaced per org (Keychain service \"wakil:<org>:<ref>\"); anything stored before that change lives under the old org-less name and must be re-stored once — see the MIGRATION section of docs/wakil/operator-todo.md"}
 		}
 		return "", UserError("could not read keychain for ref " + ref + " in org " + org + ": " + diagnostic(err, &errb))
 	}

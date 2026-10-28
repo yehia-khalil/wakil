@@ -897,7 +897,20 @@ private func oneNamedPane(_ title: String) -> LayoutSnapshot {
     let pane = await store.open(kind: "browser", title: "Browser")
     #expect(await store.browserTabs(id: pane.id) == nil)
     let tabs = [BrowserSavedTab(id: "t", url: "https://t.example/", title: "T")]
-    await store.setBrowserTabs(id: pane.id, to: tabs, active: "t")
+    await store.setBrowserTabs(id: pane.id, to: tabs, active: "t", groups: [], columnHidden: false)
     let got = await store.browserTabs(id: pane.id)
     #expect(got?.tabs == tabs && got?.active == "t")
+}
+
+// MARK: - 3d-i: groups, pins and the column
+
+@Test func aLayoutFrom3cDecodesWithNoGroups() throws {
+    let json = #"{"id":"p","kind":"browser","title":"Browser","frame":{"x":1,"y":2,"width":3,"height":4},"#
+        + #""browserTabs":[{"id":"t1","url":"https://a.example/","title":"A"},{"id":"t2","url":"https://b.example/","title":"B"}],"#
+        + #""browserActiveTab":"t2"}"#
+    let pane = try JSONDecoder().decode(Pane.self, from: Data(json.utf8))
+    #expect(pane.browserGroups == nil && pane.browserColumnHidden == nil)
+    let tabs = try #require(pane.browserTabs)
+    #expect(tabs.count == 2)
+    #expect(tabs.allSatisfy { $0.group == nil && $0.opener == nil && $0.pin == nil && !$0.keptLoose })
 }

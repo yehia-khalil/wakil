@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sign in (one page)</title></head>
+<body>
+<h1 id="heading">Sign in</h1>
+<!-- The page cancels the submit and draws "Signed in" itself; no navigation. No autocomplete:
+     the username is the text field before the password. -->
+<form id="login">
+  <p><label for="user">Email</label> <input id="user" type="email"></p>
+  <p><label for="pass">Password</label> <input id="pass" type="password"></p>
+  <p><button type="submit">Sign in</button></p>
+</form>
+<script>
+  document.getElementById('login').addEventListener('submit', function (e) {
+    e.preventDefault();
+    document.getElementById('login').remove();
+    document.getElementById('heading').textContent = 'Signed in';
+    document.title = 'Signed in';
+  });
+</script>
+</body></html>

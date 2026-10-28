@@ -143,3 +143,31 @@ func TestChatStubNamesASlowMessageLate(t *testing.T) {
 		t.Errorf("answered in %v, before %v", took, SlowReply)
 	}
 }
+
+// TestChatStubNamesATabGroup — 3d-i: a request to name a browser tab group (its
+// instructions open with BrowserGroupNames' phrase) gets GroupNameReply, whatever
+// the titles in its input say.
+func TestChatStubNamesATabGroup(t *testing.T) {
+	origin, stop, err := StartChatStub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	body := `{"messages":[{"role":"system","content":"Name this group of browser tabs from their titles. Answer with at most three words and no punctuation, as JSON: {\"name\": \"...\"}."},{"role":"user","content":"Page A\nPage B"}]}`
+	resp, err := http.Post(origin+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Choices []struct {
+			Message struct{ Content string } `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) != 1 {
+		t.Fatalf("decoding: %v %#v", err, out)
+	}
+	if got := out.Choices[0].Message.Content; got != GroupNameReply {
+		t.Errorf("a group name answered %s", got)
+	}
+}

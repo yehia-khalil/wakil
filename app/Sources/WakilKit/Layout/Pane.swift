@@ -270,6 +270,15 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
     /// A **browser** pane's selected tab id (3c-i). Same keeping and tolerance as `browserTabs`.
     public var browserActiveTab: String?
 
+    /// A **browser** pane's groups (3d-i), in the order they were made — the pull-request group's
+    /// `collapsed` among them, never its tabs. `nil` for a pane that saved none. **In `CodingKeys`**,
+    /// decoded with `try?` as `browserTabs` is.
+    public var browserGroups: [BrowserGroup]?
+
+    /// A **browser** pane's tab column is hidden (3d-i, ruling 20) — per pane, so in the layout;
+    /// `nil` means shown. Same keeping and tolerance as `browserTabs`.
+    public var browserColumnHidden: Bool?
+
     /// Everything about a pane except `busy`. Omitting a key entirely is
     /// what makes the synthesized *encoder* skip it, and what makes a
     /// hand-rolled decoder unnecessary for `busy` — nothing ever asks the
@@ -283,7 +292,7 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
     /// which is the one thing this field must not do.
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, frame, density, columnWidths, fetch, terminalPath, editorTabs, editorColumn
-        case browserTabs, browserActiveTab
+        case browserTabs, browserActiveTab, browserGroups, browserColumnHidden
     }
 
     public init(
@@ -295,7 +304,9 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
         editorTabs: [EditorSavedTab]? = nil,
         editorColumn: EditorColumnState? = nil,
         browserTabs: [BrowserSavedTab]? = nil,
-        browserActiveTab: String? = nil
+        browserActiveTab: String? = nil,
+        browserGroups: [BrowserGroup]? = nil,
+        browserColumnHidden: Bool? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -310,6 +321,8 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
         self.editorColumn = editorColumn
         self.browserTabs = browserTabs
         self.browserActiveTab = browserActiveTab
+        self.browserGroups = browserGroups
+        self.browserColumnHidden = browserColumnHidden
     }
 
     /// Tolerant of a missing `density`, the same way `LayoutSnapshot`'s own
@@ -344,6 +357,8 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
         editorColumn = (try? container.decodeIfPresent(EditorColumnState.self, forKey: .editorColumn)) ?? nil
         browserTabs = (try? container.decodeIfPresent([BrowserSavedTab].self, forKey: .browserTabs)) ?? nil
         browserActiveTab = (try? container.decodeIfPresent(String.self, forKey: .browserActiveTab)) ?? nil
+        browserGroups = (try? container.decodeIfPresent([BrowserGroup].self, forKey: .browserGroups)) ?? nil
+        browserColumnHidden = (try? container.decodeIfPresent(Bool.self, forKey: .browserColumnHidden)) ?? nil
     }
 }
 
@@ -376,10 +391,130 @@ public struct BrowserSavedTab: Codable, Sendable, Equatable {
     public var id: String
     public var url: String
     public var title: String
-    public init(id: String, url: String, title: String) {
+    /// The group it is in (3d-i): a `BrowserGroup.id`, nil when loose.
+    public var group: String?
+    /// The tab it was opened from, kept while it sits in that tab's group (ruling 8).
+    public var opener: String?
+    /// The entry in `pins/<project>.json` it is pinned as (ruling 3), nil when not pinned.
+    public var pin: String?
+    /// The operator took it out of a group: the site rule never groups it again (ruling 10).
+    public var keptLoose: Bool
+
+    public init(
+        id: String, url: String, title: String, group: String? = nil, opener: String? = nil,
+        pin: String? = nil, keptLoose: Bool = false
+    ) {
         self.id = id
         self.url = url
         self.title = title
+        self.group = group
+        self.opener = opener
+        self.pin = pin
+        self.keptLoose = keptLoose
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, url, title, group, opener, pin, keptLoose }
+
+    /// Tolerant of a 3c layout, which has none of the 3d-i fields: an absent `keptLoose` is false.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        url = try c.decode(String.self, forKey: .url)
+        title = try c.decode(String.self, forKey: .title)
+        group = try c.decodeIfPresent(String.self, forKey: .group)
+        opener = try c.decodeIfPresent(String.self, forKey: .opener)
+        pin = try c.decodeIfPresent(String.self, forKey: .pin)
+        keptLoose = try c.decodeIfPresent(Bool.self, forKey: .keptLoose) ?? false
+    }
+}
+
+/// What made a browser group (3d-i): the grouping rules (`automatic`), the operator (`own` — an
+/// automatic group becomes one when the operator changes it, ruling 11), or the pull-request read
+/// (`pullRequests`, id `pr`). **An unknown kind decodes as `.own`**: a layout from a later build keeps
+/// its group, and the rules leave it alone.
+public enum BrowserGroupKind: String, Codable, Sendable {
+    case automatic, own, pullRequests
+
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = BrowserGroupKind(rawValue: raw) ?? .own
+    }
+}
+
+/// A browser group's swatch (3d-i, ruling 5): six, in this order, none green, violet, amber or red.
+/// **An unknown colour decodes as `.blue`.**
+public enum BrowserGroupColour: String, Codable, Sendable, CaseIterable {
+    case blue, steel, teal, sand, stone, smoke
+
+    /// `0xRRGGBB`. Muted, but each a hue (3d-i walk): the first six sat at 6–25% saturation, five of
+    /// them within 20° of one another, and read as grey on the dark chrome — every group dot looked
+    /// alike. These are 20–50% saturated and stay clear of §5's reserved hues — violet (252°),
+    /// amber (38°), red (0°), green (163°) — by hue and by being half as saturated as any of them:
+    /// sand is khaki beside the amber, stone clay beside the red (`BrowserStoreTests`).
+    public var hex: UInt32 {
+        switch self {
+        case .blue: return 0x75a0d1   // 212° 50% 64%
+        case .steel: return 0x9aa2cb  // 230° 32% 70%
+        case .teal: return 0x6ab1b9   // 186° 36% 57%
+        case .sand: return 0xbfb67d   //  52° 34% 62%
+        case .stone: return 0xbf9c88  //  22° 30% 64%
+        case .smoke: return 0xbf9bb6  // 316° 22% 68%
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = BrowserGroupColour(rawValue: raw) ?? .blue
+    }
+}
+
+/// One group of tabs in a browser pane (3d-i). Lives here, not in `Browser/`, because the layout
+/// saves it (ruling 2); the snapshot and the layout share the one type. A tab names its group by
+/// `id` (`g<n>`, or `pr` for the pull-request group).
+public struct BrowserGroup: Codable, Sendable, Equatable {
+    public var id: String
+    public var name: String
+    public var colour: BrowserGroupColour
+    public var collapsed: Bool
+    /// The tab a collapsed group shows (ruling 21).
+    public var lastOpen: String?
+    public var kind: BrowserGroupKind
+    /// The site key an automatic group gathers (ruling 9); nil for a group formed by opener.
+    public var siteKey: String?
+    /// The name is settled — by the model or the operator — and is never asked for again (ruling 12).
+    public var named: Bool
+    /// The entry in `pins/<project>.json` it is pinned as (ruling 3).
+    public var pin: String?
+
+    public init(
+        id: String, name: String, colour: BrowserGroupColour, collapsed: Bool = false, lastOpen: String? = nil,
+        kind: BrowserGroupKind, siteKey: String? = nil, named: Bool = false, pin: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.colour = colour
+        self.collapsed = collapsed
+        self.lastOpen = lastOpen
+        self.kind = kind
+        self.siteKey = siteKey
+        self.named = named
+        self.pin = pin
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, colour, collapsed, lastOpen, kind, siteKey, named, pin }
+
+    /// Only `id` and `name` are required; every other field takes its default when absent.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        colour = try c.decodeIfPresent(BrowserGroupColour.self, forKey: .colour) ?? .blue
+        collapsed = try c.decodeIfPresent(Bool.self, forKey: .collapsed) ?? false
+        lastOpen = try c.decodeIfPresent(String.self, forKey: .lastOpen)
+        kind = try c.decodeIfPresent(BrowserGroupKind.self, forKey: .kind) ?? .own
+        siteKey = try c.decodeIfPresent(String.self, forKey: .siteKey)
+        named = try c.decodeIfPresent(Bool.self, forKey: .named) ?? false
+        pin = try c.decodeIfPresent(String.self, forKey: .pin)
     }
 }
 
