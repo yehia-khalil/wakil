@@ -26,6 +26,7 @@
 {"parity":{"action":"browser_group","params":{"pane":"browser-1","action":"collapse","group":"g1"},"assert":"read_pane","click":"browser.group.g1"}}
 {"expect":{"pane":"browser-1","field":"groups[0].collapsed","equals":"true"}}
 {"expect":{"pane":"browser-1","field":"active","equals":"t4"}}
+{"expect":{"frame":"browser.tab.t4","inside":"browser.tabs"}}
 {"do":{"click":"browser.group.g1"}}
 {"expect":{"pane":"browser-1","field":"groups[0].collapsed","equals":"false"}}
 {"expect":{"pane":"browser-1","field":"active","equals":"t4"}}

@@ -241,7 +241,7 @@ struct BrowserTabCount: View {
 /// (Safari's behaviours kept), ⌘T's `browser_new_tab` on the ＋.
 ///
 /// **Groups (3d-i).** Each group's chip (`BrowserGroupChip`, its own width, no ×) leads its tabs,
-/// which carry a 2 pt line in its colour; a collapsed group is its chip alone. A click on a chip
+/// which carry a 2 pt line in its colour; a collapsed group is its chip alone, but for the active tab when it is the group's, which stays beside it (`BrowserSnapshot.showsTab`). A click on a chip
 /// collapses or expands it — after the double-click time, so a double-click renames instead — and
 /// puts the group's header under the keyboard's ⌘R (`browserHeaderFocus`); a click on a tab takes
 /// it away. A drag into a group's run joins it, out of it leaves it (`BrowserStripEntries.move`).

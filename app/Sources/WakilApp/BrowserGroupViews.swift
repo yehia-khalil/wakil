@@ -20,73 +20,21 @@ extension BrowserGroupColour {
     var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
 }
 
-/// One entry of a browser pane's tab list: a group's chip, or a tab.
-enum BrowserStripEntry: Equatable {
-    case chip(BrowserGroup)
-    case tab(BrowserTab)
-
-    /// Unique in the list: a tab is its id (`t<n>`), a chip `group:<id>`.
-    var id: String {
-        switch self {
-        case .chip(let g): "group:\(g.id)"
-        case .tab(let t): t.id
-        }
-    }
-
-    /// `browser.group.<id>` for a chip, `browser.tab.<id>` for a tab.
-    var identifier: String {
-        switch self {
-        case .chip(let g): "browser.group.\(g.id)"
-        case .tab(let t): "browser.tab.\(t.id)"
-        }
-    }
-}
-
-/// What a pane's tab list shows, in drawn order (`tabs` is kept so by `arrange()`, ruling 4): each
-/// group's chip before its first tab, a collapsed group's tabs left out, and the pull-request
-/// group's chip in its place even while it holds no tab.
+/// What a pane's tab list shows, in drawn order — the rule is `BrowserSnapshot.stripEntries`; this
+/// adds what the drawing needs (the raised entry, the colours, the drag).
 struct BrowserStripEntries {
     let snapshot: BrowserSnapshot
     let entries: [BrowserStripEntry]
 
     init(_ snapshot: BrowserSnapshot) {
         self.snapshot = snapshot
-        var out: [BrowserStripEntry] = []
-        var shown = Set<String>()
-        for tab in snapshot.tabs {
-            if let gid = tab.group, let g = snapshot.group(gid) {
-                if !shown.contains(gid) {
-                    shown.insert(gid)
-                    out.append(.chip(g))
-                }
-                if !g.collapsed { out.append(.tab(tab)) }
-            } else {
-                out.append(.tab(tab))
-            }
-        }
-        // An empty pull-request group: after the pinned section, before every other group and the
-        // loose tabs.
-        if let pr = snapshot.groups.first(where: { $0.kind == .pullRequests }), !shown.contains(pr.id) {
-            let at = out.firstIndex { entry in
-                switch entry {
-                case .chip(let g): g.pin == nil
-                case .tab(let t): t.group == nil && t.pin == nil
-                }
-            } ?? out.count
-            out.insert(.chip(pr), at: at)
-        }
-        entries = out
+        entries = snapshot.stripEntries
     }
 
     var ids: [String] { entries.map(\.id) }
 
-    /// The entry the strip raises: the active tab, or — while it is in a collapsed group — that
-    /// group's chip, which shows it.
-    var active: String? {
-        guard let tab = snapshot.activeTab else { return nil }
-        if let gid = tab.group, let g = snapshot.group(gid), g.collapsed { return "group:\(gid)" }
-        return tab.id
-    }
+    /// The entry the strip raises: the active tab (a collapsed group's, shown under its header).
+    var active: String? { snapshot.stripActive }
 
     /// The colour under a tab of an expanded group.
     func underline(_ index: Int) -> Color? {
@@ -94,7 +42,7 @@ struct BrowserStripEntries {
         return g.colour.colour
     }
 
-    /// The entry a tab is drawn as: its own, or its collapsed group's chip.
+    /// The entry a tab is drawn as: its own, or its collapsed group's chip when it is not shown.
     func index(ofTab id: String) -> Int? {
         if let i = entries.firstIndex(where: { $0.id == id }) { return i }
         guard let gid = snapshot.tabs.first(where: { $0.id == id })?.group else { return nil }
