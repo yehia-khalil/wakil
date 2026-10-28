@@ -237,6 +237,10 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 - `BrowserStripEntries.swift` — `BrowserStripEntry` and `BrowserSnapshot.stripEntries` (3d-i walk): what the
   tab list draws, in order; a collapsed group shows its active tab under its header (`showsTab`); a
   middle-click on a tab entry closes it (`middleClickCloses`), on a chip does nothing.
+- `BrowserPinnedSection.swift` — the pinned section (3d-i walk): `BrowserSnapshot.pinnedSection` (the tiles,
+  then the pinned groups, above the line), `drop` (a drop's `browser_move_tab`, `browser_pin` on the tiles or
+  `browser_unpin` below the line) and `stripMove`; `BrowserColumnLayout`, the column's geometry (tiles per row
+  by width, the rows, the line's band, the drop under a point); `BrowserStripDrop`, the strip's side of the line.
 - `BrowserLinkOpening.swift` — `BrowserLinkOpening` (3d-i walk): ⌘-click and middle-click (WebKit's button 4;
   AppKit's 2 kept) open a link in a background tab.
 - `BrowserCopyURL.swift` — `BrowserCopyURL` (3d-i walk): ⌘⇧C's rule, the `Copied` tip (1.5 s) and
@@ -244,7 +248,7 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `BrowserGroup`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `BrowserFaviconRulesTests`, `BrowserStripEntriesTests`, `BrowserLinkOpeningTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `BrowserFaviconRulesTests`, `BrowserStripEntriesTests`, `BrowserPinnedSectionTests`, `BrowserLinkOpeningTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 

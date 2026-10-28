@@ -802,14 +802,17 @@ func browserActions(
             + "shows, unloaded, in every browser pane of the project; a closed pinned tab comes back when the "
             + "pane next opens. A pinned tab leaves its group; a pinned group becomes yours. update true on a "
             + "pinned tab keeps its page now as the pin (Pin Current Page), on a pinned group its name, colour "
-            + "and tabs (Update Pin); other panes keep the pages they show.",
+            + "and tabs (Update Pin); other panes keep the pages they show. to puts a tab pinned now at that "
+            + "place among this pane's pinned tabs (0 first; past the end is the end), as a drop on them does.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["tab": string, "group": string, "update": .object(["type": .string("boolean")])]),
+        schema: schema(["tab": string, "group": string, "update": .object(["type": .string("boolean")]),
+                        "to": .object(["type": .string("integer")])]),
         handler: { params in
             let action = "browser_pin"
             let pane = try await browserPane(params, action: action).id
             let place = try await pinsPlace(action)
             let update = optionalBool(params, "update") == true
+            let to: Int? = { if case .object(let o) = params { o["to"]?.intValue } else { nil } }()
             let s = await panes.browserSnapshot(paneId: pane)
             let target = try pinTarget(s, params, action: action)
             var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
@@ -848,6 +851,12 @@ func browserActions(
                     s.tabs[i].group = nil
                     s.tabs[i].opener = nil
                     s.tabs[i].pullRequest = nil
+                    // Among the pinned tabs, which `arrange()` keeps first: their count bounds it.
+                    if let to {
+                        let moved = s.tabs.remove(at: i)
+                        let pinned = s.tabs.filter { $0.pin != nil }.count
+                        s.tabs.insert(moved, at: max(0, min(to, pinned)))
+                    }
                 }
                 s.arrange()
             }
@@ -860,22 +869,33 @@ func browserActions(
         name: "browser_unpin",
         description: "Unpin a tab (tab, default the active one; a tab of a pinned group unpins the group) or a "
             + "group (group): it leaves the project's pins and every other browser pane of the project, and "
-            + "stays here, unpinned.",
+            + "stays here, unpinned. to places a tab pinned itself as browser_move_tab's to does, and into "
+            + "is the group it joins there (none or \"\", loose), as a drop below the pinned tabs does.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["tab": string, "group": string]),
+        schema: schema(["tab": string, "group": string, "to": .object(["type": .string("integer")]),
+                        "into": string]),
         handler: { params in
             let action = "browser_unpin"
             let pane = try await browserPane(params, action: action).id
             let place = try await pinsPlace(action)
             let s = await panes.browserSnapshot(paneId: pane)
+            let to: Int? = { if case .object(let o) = params { o["to"]?.intValue } else { nil } }()
             let pin: String?
+            // A tab pinned itself, dropped somewhere: where it lands, and in which group.
+            var landing: (tab: String, group: String?)?
             switch try pinTarget(s, params, action: action) {
             case .group(let gid): pin = s.group(gid)?.pin
             case .tab(let tid):
                 let tab = s.tabs.first { $0.id == tid }
                 pin = tab?.pin ?? tab?.group.flatMap { s.group($0)?.pin }
+                if tab?.pin != nil, to != nil {
+                    let g = optionalString(params, "into").flatMap { $0.isEmpty ? nil : $0 }
+                    if let g, s.group(g) == nil { throw BrowserActionError.noGroup(action: action, group: g) }
+                    landing = (tid, g)
+                }
             }
             guard let pin else { return await reply(pane) }
+            let lands = landing
             var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
             if pins.contains(where: { $0.id == pin }) {
                 pins.removeAll { $0.id == pin }
@@ -885,6 +905,7 @@ func browserActions(
                 for i in s.tabs.indices where s.tabs[i].pin == pin { s.tabs[i].pin = nil }
                 for i in s.groups.indices where s.groups[i].pin == pin { s.groups[i].pin = nil }
                 s.arrange()
+                if let lands, let to { s.moveTab(lands.tab, into: lands.group, at: to) }
             }
             await persist(pane)
             await reconcileOthers(pane, add: nil, remove: pin)

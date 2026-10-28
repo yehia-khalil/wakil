@@ -1169,6 +1169,49 @@ private func pinFixture() async throws -> (f: BrowserFixture, other: String, fil
     #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url) == ["https://example.org/b"])
 }
 
+@Test func aTabPinnedByADropLandsWhereItWasDropped() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    // Dropped before the pinned tab: pinned, and first.
+    try await f.dispatch("browser_pin", ["tab": .string(ids[1]), "to": .integer(0)])
+    let here = await f.snapshot()
+    #expect(here.tabs.map(\.id) == [ids[1], ids[0]])
+    #expect(here.tabs.allSatisfy { $0.pin != nil })
+    #expect(try files.pins(project: "web").count == 2)
+    // The other pane gains it, unloaded, after its own pinned tabs.
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url)
+            == ["https://example.com/a", "https://example.net/c", "https://example.org/b"])
+}
+
+@Test func aPinnedTabDroppedBelowTheLineIsUnpinnedWhereItLands() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.edu/d")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    guard case .object(let made) = try await f.dispatch(
+        "browser_group", ["action": .string("create"), "name": .string("Net"),
+                          "tabs": .array([.string(ids[1]), .string(ids[2])])]),
+        case .string(let group)? = made["group"] else { Issue.record("no group"); return }
+    try await f.dispatch("browser_pin", ["tab": .string(ids[0])])
+    // Between the group's two tabs: `to` 1 counted without it, into the group.
+    try await f.dispatch("browser_unpin", ["tab": .string(ids[0]), "to": .integer(1), "into": .string(group)])
+    let here = await f.snapshot()
+    #expect(here.tabs.map(\.id) == [ids[1], ids[0], ids[2]])
+    #expect(here.tabs[1].group == group)
+    #expect(here.tabs[1].pin == nil)
+    #expect(try files.pins(project: "web") == [])
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url) == ["https://example.org/b"])
+    // A group that isn't there is refused before anything is unpinned.
+    try await f.dispatch("browser_pin", ["tab": .string(ids[2])])
+    let why = await refusal {
+        try await f.dispatch("browser_unpin", ["tab": .string(ids[2]), "to": .integer(0), "into": .string("g99")])
+    }
+    #expect(why?.contains("g99") == true)
+    #expect(try files.pins(project: "web").count == 1)
+}
+
 @Test func pinCurrentPageRewritesTheEntryOnly() async throws {
     let (f, other, files) = try await pinFixture()
     try await f.dispatch("browser_pin")
