@@ -656,6 +656,14 @@
     // second ⌥↓ is never Monaco's Move Line Down; a press in the text, or 10 s, ends the wait.
     let reviewStepping = false, reviewFocusThread = null, reviewFocusKey = null, reviewWaitTimer = null;
     function inReview(el) { return !!(el && el.closest && el.closest('.wakil-review')); }
+    // BEGIN reviewRestoreText
+    // Restore yours over a field with typing not yet kept: that typing is the operator's too (Rule
+    // 2), so both are kept, the restored text first. Null: nothing unkept, a plain restore.
+    function reviewRestoreText(replaced, draft, live) {
+      if (live === undefined || live === (draft || '') || !live.trim()) return null;
+      return replaced + '\n\n' + live;
+    }
+    // END reviewRestoreText
     function reviewPost(key, thread, op, extra) {
       const m = { type: 'review', key: key, thread: thread, op: op };
       Object.keys(extra || {}).forEach(function (k) { m[k] = extra[k]; });
@@ -857,9 +865,17 @@
           back.appendChild(reviewEl('span', '', 'Agent replaced your draft ·'));
           back.appendChild(reviewButton(node, 'Restore yours', 'Restore', function (el) {
             el.disabled = true;
-            delete reviewLive[b.thread]; delete reviewAsking[b.thread];
+            delete reviewAsking[b.thread];
             reviewFocusField = b.thread;
-            reviewPost(key, b.thread, 'restore');
+            const both = reviewRestoreText(b.replaced, b.draft, reviewLive[b.thread]);
+            if (both === null) {
+              delete reviewLive[b.thread];
+              reviewPost(key, b.thread, 'restore');
+            } else {
+              // Kept as the operator's draft, which clears replaced: nothing they typed is lost.
+              reviewLive[b.thread] = both;
+              reviewPost(key, b.thread, 'draft', { text: both });
+            }
           }));
           back.style.marginBottom = '4px';
           card.appendChild(back);
