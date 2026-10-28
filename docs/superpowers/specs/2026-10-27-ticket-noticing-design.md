@@ -532,6 +532,12 @@ back on GitHub; production red on a handed chip; narrow widths.
 - **The charter (north-star.md) is not edited by this piece**; its word limit is already exceeded on
   main. The decision is recorded in decisions.md.
 
+### Decided by the operator (2026-10-28, after the build)
+
+- **May push keeps its full scope.** With May push on, a handed agent's push and sync are allowed on
+  any branch of the place's roots, as any agent's are under Decision 44; it is not narrowed to the
+  ticket's own branch and root.
+
 ## Open questions
 
 1. Open question 15 (PM transition reversibility) is untouched; it applies to piece 5's Move.
