@@ -1281,3 +1281,26 @@ private func openedView(_ f: TicketFixture, until done: @Sendable (EditorTicketV
                                          "branch": .string("ini-150-export")], caller: initech, confirmation: nil)
     #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/q/billing", branch: "ini-150-export"))
 }
+
+/// Invariant 4, `orgRoot`'s cross-organisation branch at its other caller: `ticket_show` from an
+/// agent session pinned to another organisation names none of this one's other projects' roots —
+/// refused as a root param is, naming only its own project's roots, nothing shown. An agent of
+/// the window's own organisation shows it.
+@Test func anAgentOfAnotherOrganisationCannotShowThisOnesRoots() async throws {
+    let f = try await openFixture()
+    let umbrella = DispatchCaller(place: Place(organization: "umbrella", project: "api", environment: "staging"),
+                                  session: "s1", conversation: "c1")
+    let params: [String: JSONValue] = ["pane": .string(f.editor.pane), "key": .string("INI-150"),
+                                       "root": .string("/q/billing"), "branch": .string("ini-150-export")]
+    await #expect {
+        try await f.dispatch("ticket_show", params, caller: umbrella, confirmation: nil)
+    } throws: { error in
+        guard case GitActionError.notAProjectRoot(_, let root, let roots) = error else { return false }
+        return root == "/q/billing" && roots == ["/p/api", "/p/web"]
+    }
+    #expect(await f.editor.snapshot().column?.ticketShownAt == nil)
+    let initech = DispatchCaller(place: Place(organization: "initech", project: "api", environment: "staging"),
+                                 session: "s2", conversation: "c2")
+    try await f.dispatch("ticket_show", params, caller: initech, confirmation: nil)
+    #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/q/billing", branch: "ini-150-export"))
+}
