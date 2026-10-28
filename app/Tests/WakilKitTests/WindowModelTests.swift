@@ -2982,6 +2982,24 @@ extension JSONValue: ExpressibleByDictionaryLiteral {
     #expect(bare.first?.title == "s2")
 }
 
+/// A stored name titles a past conversation by its lineage root: operator, then ai, then the CLI's title.
+@Test func aStoredNameTitlesAPastConversationByItsRoot() async throws {
+    let row: JSONValue = ["id": .string("s9"), "provider": .string("main"), "lineageRoot": .string("r1"),
+                          "title": .string("CLI title"), "firstPrompt": .string("hello")]
+    func title(_ names: [String: StoredConversationName]) -> String? {
+        PaletteItems.sessionItems(from: [row], names: names).first?.title
+    }
+    #expect(title(["r1": StoredConversationName(ai: "Model")]) == "Model")
+    #expect(title(["r1": StoredConversationName(operator: "Mine", ai: "Model")]) == "Mine")
+    #expect(title(["other": StoredConversationName(ai: "Model")]) == "CLI title")
+}
+
+@Test func aRowWithNoStoredNameKeepsTodaysTitle() async throws {
+    let rows: [JSONValue] = [["id": .string("s1"), "provider": .string("main"), "firstPrompt": .string("why")]]
+    #expect(PaletteItems.sessionItems(from: rows, names: ["s1": StoredConversationName(ai: "X")]).first?.title == "why")
+    #expect(PaletteItems.sessionItems(from: rows).first?.title == "why")
+}
+
 /// 2d-i: a session's first prompt is what was sent, which may carry the
 /// identifier note under the typed text. Landing and ⌘P title the row by
 /// the typed text alone.

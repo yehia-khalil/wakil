@@ -34,7 +34,9 @@ enum PaletteItems {
     /// or its transcript may not be readable), and dropping it on the
     /// strength of a resume this listing cannot see would hide it
     /// entirely.
-    nonisolated internal static func sessionItems(from rows: [JSONValue]) -> [PaletteItem] {
+    nonisolated internal static func sessionItems(
+        from rows: [JSONValue], names: [String: StoredConversationName] = [:]
+    ) -> [PaletteItem] {
         var fieldsById: [String: [String: JSONValue]] = [:]
         for row in rows {
             guard case .object(let fields) = row, case .string(let id)? = fields["id"] else { continue }
@@ -54,7 +56,14 @@ enum PaletteItems {
             if case .string(let value)? = fields["provider"] { provider = value }
 
             let title: String
-            if case .string(let value)? = fields["title"], !value.isEmpty {
+            // A stored name, by the row's lineage root, beats the CLI's title: operator, then ai.
+            var stored: StoredConversationName?
+            if case .string(let root)? = fields["lineageRoot"] { stored = names[root] }
+            if let name = stored?.operator, !name.isEmpty {
+                title = name
+            } else if let name = stored?.ai, !name.isEmpty {
+                title = name
+            } else if case .string(let value)? = fields["title"], !value.isEmpty {
                 title = value
             } else if case .string(let value)? = fields["firstPrompt"], !value.isEmpty {
                 // 2d-i: what was sent may carry the identifier note, cut or whole; title by the typed text.

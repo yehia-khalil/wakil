@@ -7301,15 +7301,23 @@ public final class WindowModel {
         guard case .array(let rows)? = structured["sessions"] else {
             return ([], "session_list: the result carried no \"sessions\" array")
         }
-        let items = Self.sessionItems(from: rows)
+        // Read once per listing, with the window's organisation (the sessions listed are its own).
+        // Unreadable: today's titles, and the file's sentence in `status`.
+        var names: [String: StoredConversationName] = [:]
+        var unreadable: String?
+        if let file = conversationNameFile(org: organization) {
+            do { names = try file.read() } catch { unreadable = "\(error)" }
+        }
+        let items = PaletteItems.sessionItems(from: rows, names: names)
         let withoutId = rows.count { row in
             guard case .object(let fields) = row, case .string? = fields["id"] else { return true }
             return false
         }
         guard withoutId == 0 else {
-            return (items, "session_list: \(withoutId) of \(rows.count) sessions had no id")
+            let note = "session_list: \(withoutId) of \(rows.count) sessions had no id"
+            return (items, [note, unreadable].compactMap { $0 }.joined(separator: "; "))
         }
-        return (items, nil)
+        return (items, unreadable)
     }
 
     nonisolated internal static func sessionItems(from rows: [JSONValue]) -> [PaletteItem] {
