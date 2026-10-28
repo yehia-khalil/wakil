@@ -42,6 +42,8 @@ The folders and what each may use: `docs/architecture/wakilkit.md`.
 5. A control that dispatches it gets an e2e check, or a line in `e2e/checks/uncoverable.tsv` with
    its reason (see `docs/agents/e2e.md`).
 
+An action that starts a conversation is operator-only; a handed agent's price is `handedAgentPrice` (`Gate/WriteGate.swift`).
+
 ### A new MCP binary
 
 1. `cmd/<name>/main.go`: `newServer()` with `mcp.NewServer` and `mcp.AddTool`, `main()` running it over

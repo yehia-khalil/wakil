@@ -1657,6 +1657,53 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a site the operator needs will not work in WebKit — then a second engine is argued
     for, not the profile model.
 
+49. **A handed agent is an ordinary conversation started off screen; its push asks unless the operator
+    ticked May push; what needs the operator is counted from the read, with no seen store.**
+    *(2026-10-28, operator, during the ticket-noticing design —
+    `docs/superpowers/specs/2026-10-27-ticket-noticing-design.md`.)*
+    **Hand to agent** (the Ticket header, a thread's box, ⌘P's ⌘↩) opens a popover with a prefilled
+    brief, harness, provider and **May push**; **Start** is the operator's alone. It starts a
+    conversation through the one start path (`send`, `WindowModel.startHandOff`) in the ticket's place
+    with no screen showing it: the screen, its conversation and its canvas are untouched, and it appears
+    as a chip. `ticket_hand_off` and `ticket_hand_off_cancel` are `operatorOnlyActions`, so an agent that
+    calls them is refused with "ticket_hand_off is the operator's: an agent does not start
+    conversations."; a spoken turn may open the popover but never press Start (Invariant 7). An agent
+    may edit the brief's text (`ticket_hand_off_brief`; the start message marks what it wrote), but
+    only the operator sets May push, the harness and the provider, and an agent's open never changes
+    them, never takes the keyboard and never replaces a popover the operator has open.
+    **The price.** A caller is *handed* when the conversation has a stored hand-off (`handedLookup` on the
+    registry, beside the production lookup; `handedAgentPrice` in `Gate/WriteGate.swift`).
+    `editor_changes_publish`, `_merge` and `_rebase` are *gate* for a handed agent always; `_push` and
+    `_sync` (a pull, then a push) are *gate* unless the operator switched **May push** on, and then
+    *allow*, as any agent's under Decision 44. File writes, stage and commit stay as Decision 36 prices
+    them; PR merges and every other GitHub write stay refused. **May push is read fail-closed**: it is
+    stored with the hand-off (in the ticket's record, or its PR's file; written by Wakil only), on only when exactly one hand-off
+    names the conversation and says on, and any unreadable file reads off. It survives a resume or a
+    fork (`CarryTicketHandoff`), a resume that cannot tell whether the session was handed stays handed
+    with May push off, and it reads off while a spoken message in the conversation is unanswered. An
+    agent's gated push, sync, publish, merge or rebase now parks on the plane with its own sentence
+    (`push <root>'s current branch to its upstream`) instead of being refused with none.
+    **Kept on disk, per organisation, written by the window only** (each write refuses unless
+    `WAKIL_IN_WINDOW` is `1`): reply drafts in `tickets/drafts.json` by thread id (text, who wrote it,
+    conversation, root, branch, and the operator's text an agent's draft replaced, for **Restore
+    yours**); the hand-off in the ticket's record (`handoffs`; a PR with no ticket key in
+    `tickets/pr-handoffs.json`); and the last harness, provider and May push in `tickets/handoff.json`,
+    which prefill the next popover.
+    **The count is derived, not stored.** One per review thread on the operator's open PR (unresolved,
+    not outdated, last word not theirs), one per own PR with a failing check, one per PR asking for their
+    review, from the last `ticket_in_flight` read (every 2 minutes while Wakil is the active app and the
+    screen unlocked, when Wakil returns after 60 s, after a write from Wakil, on an org switch). There is
+    no seen store and no snooze: a count lowers when the thing is dealt with. It draws as an amber tick
+    and ` · N` on the editor rail row, `Tickets · N` when no editor is open, and on the Ticket label;
+    nothing appears at the top of the window.
+    *Why:* a handed agent is only worth handing to if it can finish without the operator watching, and
+    only worth trusting if the one thing that publishes beyond this Mac asks by default; counting from
+    what GitHub says, rather than from what was looked at, cannot drift from it.
+    *Reverse if:* a handed agent's push asks so often May push is ticked by habit (then the default
+    price, not the switch, is wrong), or an operator wants a thing they have seen to stop counting.
+    The charter (`north-star.md`) carries no row for this decision yet: it is over its word limit
+    and is trimmed first.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
@@ -1829,6 +1876,10 @@ Mac. It is priced *allow* for every channel at the operator's ruling, is never f
 journalled with its caller; a mistaken push is undone by a following commit. Reads still run no
 program a repository chooses; a remote operation lets only Wakil's own ssh and credential helper run,
 and refuses a repository's `remote.<name>.uploadpack` or `receivepack`.
+
+**A handed agent (2026-10-28, Decision 49).** For a conversation the operator handed a ticket to, push
+and sync are *gate* unless the operator switched May push on in the Hand to agent popover (then
+*allow*, as above), and publish, merge and rebase are *gate* always. No new earned write.
 
 ### 2026-10-23 — branches and stash, inside the project's roots
 

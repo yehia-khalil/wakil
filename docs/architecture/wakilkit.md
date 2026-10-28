@@ -115,6 +115,11 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   `ClaudeCodeProviderLogin.swift`, `ClaudeExecutable.swift`, `ClaudeLocator.swift`,
   `PseudoTerminal.swift` — accounts: reading and minting credentials through the `wakil` CLI, and the
   sign-in flow.
+- `WindowModel+TicketNoticing.swift` — the 2-minute read while Wakil is active and the screen unlocked
+  (`ticketPollTask`), `ticketNeedsRead` (joined to a read in flight, stale over 60 s), `ticketNeedsRows`,
+  `paletteTicketSource`. `WindowModel+HandOff.swift` — `startHandOff` (an off-screen conversation through
+  `send`), `handedPricing` (May push from the stored hand-off, fail-closed, off while a spoken message is
+  unanswered), `carryHandOff` on resume and fork, `endStaleHandOffs`.
 - `OrgListings.swift`, `PaletteItems.swift`, `SurfaceChain.swift`, `ThoughtRow.swift`,
   `ThreadDisclosure.swift` — smaller pieces the model uses.
 
@@ -230,7 +235,8 @@ The palettes' state machine and their lists, pure so the window only feeds keys 
 - `PaletteSources.swift` — `PaletteSource` and its sources (`OpenPanesSource`, `NewPaneSource`,
   `TablesSource`, `ApiEntriesSource`, `BrowserTabsSource` and `BookmarksSource` (open tabs and bookmarks, fed plain
   `PaletteBrowserTab` / `PaletteBookmark` rows by `WindowModel` so Command stays clear of Browser),
-  `ChangedFilesSource`), `PaletteClients`. `FilesSource` does the same
+  `ChangedFilesSource`, `TicketSource`: tickets and their PRs, a key first, words below files, a leading `#`
+  alone, ⌘↩ to hand to an agent), `PaletteClients`. `FilesSource` does the same
   as the tree when `showIgnored` is false.
 - `PaletteEntry.swift`, `PaletteItem.swift` (`fuzzyScore`), `PaletteSearch.swift`,
   `PaletteFocusReturn.swift`.
@@ -359,6 +365,14 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   `review_open`, `review_step`, `review_reply_draft`, `review_reply_send` (*gate* for every channel) and
   `review_resolve` (*gate* for the agent); and `EditorTicketMirror`, the `ticket` key of the editor's
   `read_pane` (draft text never in it).
+- `EditorTicketNeeds.swift` — what needs the operator, pure: `ticketNeedsRows` over the last In flight read,
+  the live handed conversations (`TicketHandOffLive`) and the drafts, each row's most urgent state in
+  words by tier (`TicketUrgent`), the count and its wording (`4 waiting on you: …`).
+- `EditorTicketHandOff.swift` — Hand to agent, pure: `TicketHandOffState` (the popover), the prefilled briefs
+  (`handOffThreadBrief`, `handOffHeaderBrief`, reviewer text quoted `> ` line by line), the place and the
+  defaults, `TicketHandOffEntryState` (a record's hand-off line) and `TicketHandOffRequest`. Its actions
+  (`ticket_hand_off_open`, `_brief`, `_close`, and the operator-only `ticket_hand_off` and
+  `ticket_hand_off_cancel`) and `ticket_open` are in `EditorTicketActions.swift`.
 - `EditorReviewPlacement.swift` — review threads drawn in the file: `reviewPlacement` (GitHub's line
   mapped through `editorHunks` from the PR's head commit's text to the buffer; "line changed since",
   "line may differ"), `ReviewBox` and `reviewBoxes`, `EditorReviewsState` (what the panes draw from:
@@ -575,7 +589,7 @@ Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTes
 
 - `ActionRegistry.swift` — `ActionRegistry` (actor): `register`, `all()`, and `dispatch(name:params:
   origin:environment:confirmation:)`, which asks `writeGate`, runs the handler and journals every
-  outcome; `setProductionLookup` and `setScopeLookup` (an agent caller's own flags and scope;
+  outcome; `setProductionLookup`, `setHandedLookup` (a handed caller's hand-off, read before the gate so `handedAgentPrice` replaces the agent's price) and `setScopeLookup` (an agent caller's own flags and scope;
   the scope is bound around the handler as `ScopeRouting.home`); **the price per call** (3c-ii): for a
   `.mutate` with a `callPrice` the registry works out the caller's home first and asks `callPrice`
   under the handler's own task-locals, so a background agent is priced against its own pane and site;
@@ -641,7 +655,7 @@ Pure numbers and colours the views and the Metal shader read.
 
 - `Plane.swift` (`Plane`), `CoreState.swift` (`CoreState`), `CoreMotion.swift`, `BreathClock.swift`,
   `VoidPalette.swift`, `VoidUniforms.swift`, `EnvironmentBadge.swift`, `RailTreatment.swift`,
-  `Contrast.swift`.
+  `Contrast.swift`. `RailTreatment` also holds the needs-you mark (amber tick, ` · N`) and its precedence: working, then needs you, then active.
 
 Uses: `Terminal`.
 Tests: `PlaneTests`, `CoreStateTests`, `CoreMotionTests`, `BreathClockTests`, `VoidPaletteTests`,
