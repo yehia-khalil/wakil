@@ -82,8 +82,8 @@ struct BrowserStripEntries {
 }
 
 /// The one press rule of a browser pane's tab list (3d-i), the strip's and the column's. A click on
-/// a tab selects it and takes ⌘R off the group header. A click on a chip collapses or expands it —
-/// after the double-click time, so a double-click renames instead — and puts the pull-request
+/// a tab selects it and takes ⌘R off the group header. A click on a chip collapses or expands it at
+/// once (a double-click no longer renames: waiting for it delayed every click; 3d-i walk) and puts the pull-request
 /// group's header under ⌘R (ruling 19). Every press is a `browser_*` action (Invariant 2); none takes
 /// the keyboard (Rule 6).
 @MainActor
@@ -94,8 +94,6 @@ struct BrowserEntryPresses {
     /// The group header ⌘R acts on in this pane; nil, none.
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
-    /// A click on a chip, held for the double-click time; the view keeps it in its `@State`.
-    @Binding var pendingToggle: Task<Void, Never>?
 
     /// The entry's tooltip and accessibility name.
     static func label(_ entry: BrowserStripEntry) -> String {
@@ -116,19 +114,7 @@ struct BrowserEntryPresses {
             // Only the pull-request group's header is under ⌘R (ruling 19). Set unconditionally: the
             // mouse-down cleared it (`canvasMouseDown`), whatever this view last drew.
             setHeaderFocus(g.kind == .pullRequests ? g.id : nil)
-            pendingToggle?.cancel()
-            pendingToggle = nil
-            if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
-                if g.kind != .pullRequests { renaming = g.id }
-                return
-            }
-            // The pull-request group has no name to edit: no double-click to wait for.
-            guard g.kind != .pullRequests else { return toggle(g) }
-            pendingToggle = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(NSEvent.doubleClickInterval))
-                guard !Task.isCancelled else { return }
-                toggle(g)
-            }
+            toggle(g)
         }
     }
 

@@ -39,12 +39,10 @@ struct BrowserTabColumn: View {
     @State private var newTabHovered = false
     /// A drag of entry `from`, and the gap (0…count) it would land in.
     @State private var drag: (from: Int, gap: Int)?
-    /// A click on a chip, held for the double-click time so a double-click renames instead.
-    @State private var pendingToggle: Task<Void, Never>?
 
     private var presses: BrowserEntryPresses {
         BrowserEntryPresses(dispatch: dispatch, renaming: $renaming, headerFocus: headerFocus,
-                            setHeaderFocus: setHeaderFocus, pendingToggle: $pendingToggle)
+                            setHeaderFocus: setHeaderFocus)
     }
 
     static let rowHeight: CGFloat = 28

@@ -83,7 +83,7 @@ struct BrowserPane: View {
     /// While the field editor is being given a completion's text and selection: the selection it
     /// passes through on the way is not the caret leaving the end.
     @State private var placingCompletion = false
-    /// The group whose name field is open (3d-i): *Rename…*, *New Group…* or a double-click.
+    /// The group whose name field is open (3d-i): *Rename…* or *New Group…*.
     @State private var renamingGroup: String?
 
     private var active: BrowserTab? { snapshot.activeTab }

@@ -242,7 +242,7 @@ struct BrowserTabCount: View {
 ///
 /// **Groups (3d-i).** Each group's chip (`BrowserGroupChip`, its own width, no ×) leads its tabs,
 /// which carry a 2 pt line in its colour; a collapsed group is its chip alone, but for the active tab when it is the group's, which stays beside it (`BrowserSnapshot.showsTab`). A click on a chip
-/// collapses or expands it — after the double-click time, so a double-click renames instead — and
+/// collapses or expands it at once (rename is the group menu's) — and
 /// puts the group's header under the keyboard's ⌘R (`browserHeaderFocus`); a click on a tab takes
 /// it away. A drag into a group's run joins it, out of it leaves it (`BrowserStripEntries.move`).
 /// The tab and group menus are on a right-click; a pinned tab armed by ⌘W shows its tip under it.
@@ -267,12 +267,10 @@ struct BrowserTabList: View {
     /// Nothing is drawn over the canvas: a middle-click on a tab closes it (3d-i walk).
     var middleClickEnabled = false
 
-    /// A click on a chip, held for the double-click time so a double-click renames instead.
-    @State private var pendingToggle: Task<Void, Never>?
 
     private var presses: BrowserEntryPresses {
         BrowserEntryPresses(dispatch: dispatch, renaming: $renaming, headerFocus: headerFocus,
-                            setHeaderFocus: setHeaderFocus, pendingToggle: $pendingToggle)
+                            setHeaderFocus: setHeaderFocus)
     }
 
     var body: some View {
