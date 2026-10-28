@@ -292,6 +292,9 @@ struct PaneTabStrip<Entry: View>: View {
     @ViewBuilder let entry: (Int, Bool) -> Entry
     /// The entry's tooltip, and its accessibility name for `.button`.
     let label: (Int) -> String
+    /// The entry's tooltip where it says more than `label` (names: a renamed browser tab's
+    /// `<name> — <page title>`); nil, `label` is the tooltip.
+    var help: ((Int) -> String)?
     /// A click on entry `index` (the pane reads the click count where a double-click means more).
     let tap: (Int) -> Void
     /// VoiceOver's press on entry `index`.
@@ -719,7 +722,7 @@ struct PaneTabStrip<Entry: View>: View {
         .onTapGesture { tap(index) }
         .onHover { inside in hovered = inside ? id : (hovered == id ? nil : hovered) }
         .modifier(PaneTabMenu(menu: contextMenu.map { menu in { menu(index) } }))
-        .help(label(index))
+        .help(help?(index) ?? label(index))
         .modifier(PaneTabAccess(kind: accessibility, label: label(index), on: on, identifier: stripIds.entry(index),
                                 activate: { activate(index) }))
     }

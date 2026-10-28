@@ -319,7 +319,7 @@ public final class WindowModel {
     /// The last thing that went wrong, as text. A SwiftUI control has
     /// nowhere to throw to, so a refusal or a transport failure has to
     /// become something on screen or it becomes nothing at all.
-    public private(set) var status = "" {
+    public internal(set) var status = "" {
         didSet { statusWrites &+= 1 }
     }
     /// Every write to `status`, counted, so the palette can tell a failure its run wrote from
@@ -580,6 +580,14 @@ public final class WindowModel {
     public internal(set) var fastPathEnabled = false
     /// The organisation's commit-drafts switch (3a-ii-b), read with the quick tasks.
     public internal(set) var commitDraftsEnabled = false
+    /// The organisation's conversation-naming switch (names phase), read with the quick tasks.
+    public internal(set) var conversationNamesEnabled = false
+    /// The naming quick task in flight, by conversation id (`nameIfDue`). Org-derived: an org switch
+    /// cancels each and clears its conversation's `namingAsked`, so it is asked again on return.
+    @ObservationIgnored var conversationNamingTasks: [String: Task<Void, Never>] = [:]
+    /// A landed name's journal line being written, so `settleConversationNaming` waits for it too. Not
+    /// org-derived: the name has landed, and nothing an org switch does undoes it or its line.
+    @ObservationIgnored var conversationNamingJournals: [UUID: Task<Void, Never>] = [:]
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
@@ -1412,6 +1420,8 @@ public final class WindowModel {
                     await self.switchToConversation(conversation, in: place)
                 case .close(let conversation):
                     await self.closeConversation(conversation)
+                case .rename(let conversation, let name):
+                    await self.renameConversation(conversation, to: name)
                 }
             }
         }
@@ -1723,7 +1733,9 @@ public final class WindowModel {
         paletteClients: PaletteClients = PaletteClients(),
         gitStatus: GitStatus? = nil,
         claudeLocator: ClaudeExecutableLocator? = nil,
-        apiHTTP: (any ToolCaller)? = nil
+        apiHTTP: (any ToolCaller)? = nil,
+        // Names: a test that registers `conversationRenameAction` parks on the broker this drains.
+        conversationRequests: ConversationBroker = ConversationBroker()
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1797,6 +1809,7 @@ public final class WindowModel {
             providerId: providerId,
             lookupFactory: resolvedLookupFactory,
             confirmations: confirmations,
+            conversationRequests: conversationRequests,
             orgSwitcher: orgSwitcher,
             terminals: terminals,
             claudeLocator: claudeLocator,
@@ -2397,6 +2410,9 @@ public final class WindowModel {
         changesTasks = [:]
         for task in changesDraftTasks.values { task.cancel() }
         changesDraftTasks = [:]
+        // Names: a naming in flight asked the outgoing org's quick model; its conversation is asked again
+        // when that organisation's quick tasks are built.
+        cancelConversationNaming()
         changesDrafting = []
         changesLastDraft = nil
         changesRemoteNotes = [:]
@@ -6770,6 +6786,11 @@ public final class WindowModel {
     /// Cleared by `paletteClosed()`.
     @ObservationIgnored private var paletteLeftOrganisation = false
 
+    /// Where the palette last opened (`paletteOpened`), or `.organisationLeft` once the window left
+    /// that organisation. A tab's name step answers to it: pane and tab ids repeat across places, and
+    /// its run can land after the close. **Not cleared by `paletteClosed()`**, for that run.
+    @ObservationIgnored private var paletteOpenedIn: PaletteIdentity?
+
     /// Every close, counted: a run compares it with the count it began under, and one that
     /// finishes after its palette closed moves no keyboard (rule 6).
     @ObservationIgnored private var paletteCloses = 0
@@ -6848,7 +6869,14 @@ public final class WindowModel {
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
             editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen,
-            activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted)
+            activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted,
+            currentConversation: currentAgent.map {
+                PaletteSubject(id: $0.id, name: $0.title, fallback: $0.fallbackTitle)
+            },
+            browserActiveTab: focused.flatMap { f -> PaletteSubject? in
+                guard f.kind == "browser", let tab = browser(f.id)?.activeTab, tab.pullRequest == nil else { return nil }
+                return PaletteSubject(id: tab.id, name: tab.label, fallback: tab.pageLabel)
+            })
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
@@ -6930,6 +6958,14 @@ public final class WindowModel {
     public struct PaletteKeyPress: Sendable, Equatable {
         public let mode: PaletteMode
         public let serial: Int
+        /// Set by `openRenamePalette`: the palette opens on this name step (names, Calls made 12).
+        public let rename: PaletteRename?
+
+        public init(mode: PaletteMode, serial: Int, rename: PaletteRename? = nil) {
+            self.mode = mode
+            self.serial = serial
+            self.rename = rename
+        }
     }
 
     /// The last ⌘P / ⌘K. **Pressed through the menu** (`AppScene`), which is the one place a
@@ -6956,9 +6992,34 @@ public final class WindowModel {
         paletteKeyPress = PaletteKeyPress(mode: mode, serial: paletteKeySerial)
     }
 
+    /// A chip's (or pinned tile's) **Rename…** (names, Calls made 12): ⌘P opens directly on the
+    /// name step for `conversation`, whose Esc closes it straight back (Rule 6). Its run names the
+    /// conversation by id, so nothing switches to it. An id that names no live conversation opens
+    /// nothing.
+    public func openRenamePalette(conversation id: String) {
+        guard let agent = conversations[id] else { return }
+        paletteKeySerial += 1
+        paletteKeyPress = PaletteKeyPress(
+            mode: .open, serial: paletteKeySerial,
+            rename: conversationRename(id: agent.id, current: agent.title, fallback: agent.fallbackTitle))
+    }
+
+    /// A pinned tile's or a folded strip entry's **Rename Tab…** (names, Calls made 12): ⌘P opens
+    /// directly on the name step for `tab` of `pane`, whose Esc closes it straight back (Rule 6). Its
+    /// run names the pane and tab, so nothing is selected. A tab that is not there, or a pull-request
+    /// row (3d-i ruling 18), opens nothing.
+    public func openRenameTabPalette(pane: String, tab id: String) {
+        guard let tab = browser(pane)?.tabs.first(where: { $0.id == id }), tab.pullRequest == nil else { return }
+        paletteKeySerial += 1
+        paletteKeyPress = PaletteKeyPress(
+            mode: .open, serial: paletteKeySerial,
+            rename: tabRename(pane: pane, tab: tab.id, current: tab.label, fallback: tab.pageLabel))
+    }
+
     /// The plane went up. `paletteClosed()` is its other half, on every close path.
     public func paletteOpened() {
         paletteShowing = true
+        paletteOpenedIn = paletteIdentity
     }
 
     /// The palette closed: anything still on its way to it is dropped.
@@ -6973,9 +7034,10 @@ public final class WindowModel {
     }
 
     /// A fresh palette for one open, holding this window's recents.
-    public func makePalette(mode: PaletteMode) -> PaletteModel {
+    public func makePalette(mode: PaletteMode, renaming rename: PaletteRename? = nil) -> PaletteModel {
         var palette = PaletteModel(mode: mode)
         palette.recents = paletteRecents
+        if let rename { palette.openOnName(rename) }
         return palette
     }
 
@@ -6998,6 +7060,7 @@ public final class WindowModel {
         paletteGeneration += 1
         paletteBuiltFor = nil
         paletteBuiltIn = .organisationLeft
+        if paletteOpenedIn != nil { paletteOpenedIn = .organisationLeft }
         paletteBuilding = nil
         paletteBuilds = [:]
         paletteLeftOrganisation = true
@@ -7080,6 +7143,12 @@ public final class WindowModel {
             }
             return await performPaletteAction(
                 .dispatch(action: command.action, params: command.params(context, value)), mark: mark)
+        case .runName(let action, let params, let name):
+            // The name step's subject, with the typed name (empty clears): names, Calls made 10.
+            var object: [String: JSONValue] = [:]
+            if case .object(let given) = params { object = given }
+            object["name"] = .string(name)
+            return await performPaletteAction(.dispatch(action: action, params: .object(object)), mark: mark)
         case .needChoices, .close:
             return nil
         }
@@ -7090,6 +7159,16 @@ public final class WindowModel {
     /// answers to the build named by `shown`, else to the last one delivered.
     private func paletteRefusal(_ effect: PaletteEffect, shown: Int?) -> String? {
         let orgChanged = "the organisation changed under the palette; reopen it"
+        // A name step's run names its subject by id and reads no list. It also runs from the close
+        // (Rule 2), after `paletteClosed()` has dropped every build a `shown` could name, so no build
+        // is asked for. A conversation id is no other place's: `conversation_rename` refuses one that
+        // is gone, whole (Rule 8). A tab's pane and tab ids repeat across places, so its run answers
+        // to where the palette opened — never another place's tab (Invariant 4).
+        if case .runName(let action, _, _) = effect {
+            guard action == "browser_rename_tab", let opened = paletteOpenedIn else { return nil }
+            if opened == .organisationLeft { return orgChanged }
+            return opened == paletteIdentity ? nil : Self.paletteOpenedFor(opened)
+        }
         let step: String?
         switch effect {
         case .run(_, let s): step = s
@@ -7113,12 +7192,15 @@ public final class WindowModel {
             stamp = paletteBuiltIn
         }
         if stamp == .organisationLeft { return orgChanged }
-        if let stamp, stamp != paletteIdentity {
-            let place = "\(stamp.organisation)/\(stamp.project)"
-                + (stamp.environment.isEmpty ? "" : " in \(stamp.environment)")
-            return "the palette was opened for \(place); reopen it"
-        }
+        if let stamp, stamp != paletteIdentity { return Self.paletteOpenedFor(stamp) }
         return nil
+    }
+
+    /// The refusal for rows read in `stamp`'s place, which the window has left.
+    private static func paletteOpenedFor(_ stamp: PaletteIdentity) -> String {
+        let place = "\(stamp.organisation)/\(stamp.project)"
+            + (stamp.environment.isEmpty ? "" : " in \(stamp.environment)")
+        return "the palette was opened for \(place); reopen it"
     }
 
     /// Where a palette run began: the `status` write count (`paletteFailure`) and the close count
@@ -7150,7 +7232,7 @@ public final class WindowModel {
             }
             await refreshPanes()
             return await focusActedOn(since: before, named: focusedEditorPane(), mark: mark)
-        case .pushStep, .drill:
+        case .pushStep, .drill, .pushName:
             return nil
         }
     }
@@ -7583,20 +7665,31 @@ public final class WindowModel {
     /// for the same reason `SessionList.Skipped` exists on the Go side: an
     /// incomplete listing must say it is incomplete.
     private func sessionPaletteItems() async -> (items: [PaletteItem], note: String?) {
+        // The organisation the listing is asked in, taken before it suspends: the sessions are that
+        // organisation's, whatever the window has switched to by the time they arrive (Invariant 4).
+        let org = organization
         let source = await paletteSource("session_list")
         guard let structured = source.structured else { return ([], source.note) }
         guard case .array(let rows)? = structured["sessions"] else {
             return ([], "session_list: the result carried no \"sessions\" array")
         }
-        let items = Self.sessionItems(from: rows)
+        // Read once per listing, with the organisation it was asked in (the sessions listed are its own).
+        // Unreadable: today's titles, and the file's sentence in `status`.
+        var names: [String: StoredConversationName] = [:]
+        var unreadable: String?
+        if let file = conversationNameFile(org: org) {
+            do { names = try file.read() } catch { unreadable = "\(error)" }
+        }
+        let items = PaletteItems.sessionItems(from: rows, names: names)
         let withoutId = rows.count { row in
             guard case .object(let fields) = row, case .string? = fields["id"] else { return true }
             return false
         }
         guard withoutId == 0 else {
-            return (items, "session_list: \(withoutId) of \(rows.count) sessions had no id")
+            let note = "session_list: \(withoutId) of \(rows.count) sessions had no id"
+            return (items, [note, unreadable].compactMap { $0 }.joined(separator: "; "))
         }
-        return (items, nil)
+        return (items, unreadable)
     }
 
     nonisolated internal static func sessionItems(from rows: [JSONValue]) -> [PaletteItem] {
@@ -8295,6 +8388,9 @@ public final class WindowModel {
             }
             retainAgentPlace()
         }
+        // A name given before the conversation had a lineage root is written under the one it has now
+        // (names call 8).
+        saveUnsavedNames(of: agent)
         guard let harness = agent.harness else {
             // Unreachable today — `harness` and `sessionId` are only ever
             // set together, below — but `startHarness()` already set
@@ -8533,6 +8629,7 @@ public final class WindowModel {
             status = "resume \(parent): that is the session already running in this window"
             return
         }
+        let reviving = parent == agent.sessionId
         // A running agent forks under its own account; a place with none takes the window's —
         // only while it is the conversation on screen: one the screen has left keeps the account
         // it was given in its own organisation (Invariant 4).
@@ -8639,7 +8736,13 @@ public final class WindowModel {
         // workspace. `inheritedRoot` was read before the swap, from the
         // parent's own lineage, so a chain of any length resolves to the
         // same arrangement.
+        let previousRoot = agent.lineageRoot
         agent.lineageRoot = inheritedRoot
+        // Its names are the root's it inherits (names call 8); a revival keeps its own root, and them.
+        if inheritedRoot != previousRoot { adoptStoredNames(of: agent) }
+        // A resume carries a past session, already named or not (names call 6) — never asked. Forking
+        // the conversation's own ended session is its revival, not a resume.
+        if !reviving { agent.namingAsked = true }
         startEventPump(next, for: agent)
         status = agent.socketFailure ?? ""
         // Best effort, and after the swap: a lineage record that failed to
@@ -8927,6 +9030,12 @@ public final class WindowModel {
         // (re-walk #4) — re-reading the seed would rebuild every api pane from an empty draft.
         let previousRoot = agent.lineageRoot
         agent.lineageRoot = fresh
+        // Its names go under the new root too (names, review I1): Continue lists the post-switch
+        // session by that root, and the old root keeps what it had.
+        if agent.operatorName != nil || agent.aiName != nil {
+            agent.namesUnsaved = true
+            saveUnsavedNames(of: agent)
+        }
         // The window's provider, and the remembered default below, are the screen's place's:
         // written only while that is still the place switched (Invariant 4). The lookup and the
         // start suspended, and an org switch landing there moved the screen — and the window's
@@ -9135,7 +9244,7 @@ public final class WindowModel {
             .map { agent in
                 LiveConversation(
                     id: agent.id, session: agent.sessionId, place: agent.place, title: agent.title,
-                    state: .of(
+                    titleSource: agent.titleSource, fallbackTitle: agent.fallbackTitle, state: .of(
                         waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
                         working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
@@ -10368,6 +10477,19 @@ public final class WindowModel {
         if case .result(let isError, _) = event {
             agent.turnInFlight = false
             markUnseen(failed: isError, for: agent)
+        }
+        // Names: the first clean exchange — its reply's start, then the one ask.
+        switch event {
+        case .assistantText(let text):
+            agent.noteReplyText(text)
+        case .result(false, _) where !agent.firstCleanTurnDone:
+            agent.firstCleanTurnDone = true
+            nameIfDue(agent)
+        case .result(true, _) where !agent.firstCleanTurnDone:
+            // An errored turn's text is not the reply sent: REPLY is the first clean exchange's.
+            agent.replyStart = ""
+        default:
+            break
         }
         // Task 15, fix round 1 (Critical): `Date()` is captured exactly
         // here, at the one place a harness event actually arrives, and

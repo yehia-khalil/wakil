@@ -26,6 +26,8 @@ struct BrowserTabColumn: View {
     let dispatch: (String, [String: JSONValue]) -> Void
     let menus: BrowserGroupMenuContext
     @Binding var renaming: String?
+    /// The tab whose name is being edited in place (names): a row only, never a tile.
+    @Binding var renamingTab: String?
     /// The group header ⌘R acts on in this pane; nil, none.
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
@@ -49,7 +51,7 @@ struct BrowserTabColumn: View {
 
     private var presses: BrowserEntryPresses {
         BrowserEntryPresses(dispatch: dispatch, renaming: $renaming, headerFocus: headerFocus,
-                            setHeaderFocus: setHeaderFocus)
+                            setHeaderFocus: setHeaderFocus, renamingTab: renamingTab)
     }
 
     static let rowHeight = CGFloat(BrowserColumnLayout.rowHeight)
@@ -155,7 +157,7 @@ struct BrowserTabColumn: View {
                         if case .tab(let t) = entry {
                             interactive(tile(t, on: list.active == entry.id, lifted: hovered == entry.id,
                                              side: CGFloat(layout.tileSide)),
-                                        entry: entry, index: index, list: list, layout: layout, inset: false)
+                                        entry: entry, index: index, list: list, layout: layout, tile: true)
                         }
                     }
                 }
@@ -233,12 +235,13 @@ struct BrowserTabColumn: View {
     }
 
     /// What every row and tile shares: a row's inset, the drag, the press, the middle-click, the
-    /// hover, the menu, the tooltip and how it reads in the accessibility tree.
+    /// hover, the menu, the tooltip and how it reads in the accessibility tree. A `tile` has no inset,
+    /// speaks its tooltip (it draws no title: names §4) and its Rename opens the palette.
     private func interactive(_ content: some View, entry: BrowserStripEntry, index: Int,
-                             list: BrowserStripEntries, layout: BrowserColumnLayout, inset: Bool = true) -> some View {
+                             list: BrowserStripEntries, layout: BrowserColumnLayout, tile: Bool = false) -> some View {
         let on = list.active == entry.id
         return content
-        .padding(.horizontal, inset ? Self.rowInset : 0)
+        .padding(.horizontal, tile ? 0 : Self.rowInset)
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
             .onChanged { g in drag = target(list, layout: layout, from: index, at: g.location) }
@@ -262,15 +265,15 @@ struct BrowserTabColumn: View {
         .contextMenu {
             switch entry {
             case .chip(let g): BrowserGroupMenu(group: g, context: menus)
-            case .tab(let t): BrowserTabMenu(tab: t, context: menus)
+            case .tab(let t): BrowserTabMenu(tab: t, context: menus, inPlace: !tile)
             }
         }
-        .help(BrowserEntryPresses.label(entry))
+        .help(BrowserEntryPresses.help(entry))
         .anchorPreference(key: BrowserTabColumnTipAnchor.self, value: .bounds) { bounds in
             tip(list)?.index == index ? bounds : nil
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(BrowserEntryPresses.label(entry))
+        .accessibilityLabel(BrowserEntryPresses.label(entry, titled: !tile))
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { presses.activate(entry) }
         .accessibilityIdentifier(entry.identifier)
@@ -309,16 +312,30 @@ struct BrowserTabColumn: View {
                     BrowserSiteTagDot(tag: tag, tab: tab.id).offset(x: 3, y: -3)
                 }
             }
-        Text(tab.label)
-            .font(.system(size: BrowserPaneStyle.tabTitleSize))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .foregroundStyle(BrowserPaneStyle.text.opacity(on ? 1 : PaneStripStyle.tabTitleRest))
-        Spacer(minLength: 0)
-        if lifted { closeButton(tab).transition(.opacity) }
+        if renamingTab == tab.id {
+            BrowserTabNameField(
+                tab: tab,
+                commit: { name in dispatch("browser_rename_tab", ["tab": .string(tab.id), "name": .string(name)]) },
+                end: { explicit in
+                    if renamingTab == tab.id { renamingTab = nil }
+                    renameEnded(explicit)
+                },
+                samePlace: menus.samePlace)
+        } else {
+            Text(tab.label)
+                .font(.system(size: BrowserPaneStyle.tabTitleSize))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(BrowserPaneStyle.text.opacity(on ? 1 : PaneStripStyle.tabTitleRest))
+            Spacer(minLength: 0)
+            // Names §3: the mark that says the name is the operator's, before the ×.
+            if tab.name != nil { BrowserTabRenamedMark(tab: tab.id) }
+            if lifted { closeButton(tab).transition(.opacity) }
+        }
     }
 
-    /// A row's or a tile's × under the pointer: `browser_close_tab`, a pinned tab's in one click.
+    /// A row's or a tile's × under the pointer: `browser_close_tab`, a pinned tab's in one click. It
+    /// reads *Close <label>* — the name the row shows, the operator's when it has one (names).
     private func closeButton(_ tab: BrowserTab) -> some View {
         Button { dispatch("browser_close_tab", ["tab": .string(tab.id)]) } label: {
             Image(systemName: "xmark").font(.system(size: PaneStripStyle.closeGlyph, weight: .semibold))

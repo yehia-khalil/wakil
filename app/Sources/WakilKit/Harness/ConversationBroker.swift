@@ -13,6 +13,11 @@ public enum ConversationRequest: Sendable, Equatable {
     /// this drains (conversations 3 of 3): `WindowModel.closeConversation`, which asks first only
     /// with work in flight. A Landing's reserved id, or one no longer live, is nothing to do.
     case close(conversation: String?)
+    /// Name `conversation` — the caller's, checked live by the handler, or nil: the operator's
+    /// screen's when this drains, none on a Landing. `name` is already cleaned; nil clears the
+    /// operator's name, back to the model's or the first message's (names, call 3). It never moves
+    /// the screen (Rule 6).
+    case rename(conversation: String?, name: String?)
 }
 
 /// Where a `session_new`, `session_switch` or `session_close` request waits for the window to act on it — the
@@ -20,8 +25,9 @@ public enum ConversationRequest: Sendable, Equatable {
 /// runs inside `WakilWiring.build`, before any `WindowModel` exists, so the handlers it registers
 /// cannot close over a model. They park here, and the window's `conversationPump` drains it.
 ///
-/// Both actions are operator-only (`operatorOnlyActions`): an agent must not push aside the
-/// operator's conversation, so the agent never reaches `request(_:)`.
+/// The three `session_*` actions are operator-only (`operatorOnlyActions`): an agent must not push
+/// aside the operator's conversation, so the agent never reaches `request(_:)` with one. The agent
+/// does reach it with `conversation_rename`, for its own conversation only (names, call 3).
 ///
 /// One buffered request survives a period with no subscriber, and exactly one subscriber is ever
 /// allowed — see `ResumeBroker`'s doc comment for the argument, which applies unchanged: a second

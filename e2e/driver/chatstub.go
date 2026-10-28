@@ -36,6 +36,18 @@ const CommitDraftReply = `{"message":"Stage the e2e change"}`
 // commitDraftAsk is the phrase CommitDraft's instructions open with in WakilKit.
 const commitDraftAsk = "Write a git commit message"
 
+// ConversationNameReply is what the stub answers a conversation-naming request
+// with (names): a request whose instructions ask to name a conversation.
+const ConversationNameReply = `{"name":"Fixture Named Conversation"}`
+
+// conversationNameAsk is the phrase the naming instructions open with in WakilKit.
+const conversationNameAsk = "Name this conversation"
+
+// slowNameMessage marks a naming request whose first message starts `slow name`
+// (its input is `MESSAGE: <first message>`): it waits SlowReply, so a check can
+// rename the conversation before the model's name lands.
+const slowNameMessage = "MESSAGE: slow name"
+
 // GroupNameReply is what the stub answers a request to name a browser tab group
 // with (3d-i): one name, as `BrowserGroupNames.parse` reads it, whatever the titles.
 const GroupNameReply = `{"name":"Fixture Pages"}`
@@ -71,10 +83,19 @@ func StartChatStub() (string, func(), error) {
 		if n := len(body.Messages); n > 0 {
 			line = FastPathLine(body.Messages[n-1].Content)
 		}
-		drafting, naming := false, false
+		drafting, naming, slowNaming, groupNaming := false, false, false, false
 		for _, m := range body.Messages {
 			drafting = drafting || strings.Contains(m.Content, commitDraftAsk)
-			naming = naming || strings.Contains(m.Content, groupNameAsk)
+			naming = naming || strings.Contains(m.Content, conversationNameAsk)
+			groupNaming = groupNaming || strings.Contains(m.Content, groupNameAsk)
+			slowNaming = slowNaming || strings.HasPrefix(m.Content, slowNameMessage)
+		}
+		if naming && slowNaming {
+			select {
+			case <-time.After(SlowReply):
+			case <-r.Context().Done():
+				return
+			}
 		}
 		if rest, ok := strings.CutPrefix(line, SlowPrefix); ok {
 			line = rest
@@ -92,6 +113,9 @@ func StartChatStub() (string, func(), error) {
 			reply = CommitDraftReply
 		}
 		if naming {
+			reply = ConversationNameReply
+		}
+		if groupNaming {
 			reply = GroupNameReply
 		}
 		w.Header().Set("content-type", "application/json")

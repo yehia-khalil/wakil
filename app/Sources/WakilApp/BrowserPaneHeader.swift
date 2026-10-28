@@ -282,6 +282,8 @@ struct BrowserTabList: View {
     let menus: BrowserGroupMenuContext
     /// The group whose name is being edited.
     @Binding var renaming: String?
+    /// The tab whose name is being edited in place (names): a full entry only.
+    @Binding var renamingTab: String?
     /// The group header ⌘R acts on in this pane; nil, none.
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
@@ -295,7 +297,7 @@ struct BrowserTabList: View {
 
     private var presses: BrowserEntryPresses {
         BrowserEntryPresses(dispatch: dispatch, renaming: $renaming, headerFocus: headerFocus,
-                            setHeaderFocus: setHeaderFocus)
+                            setHeaderFocus: setHeaderFocus, renamingTab: renamingTab)
     }
 
     var body: some View {
@@ -318,7 +320,9 @@ struct BrowserTabList: View {
                 case .tab(let t): tabEntry(t, active: active)
                 }
             },
-            label: { BrowserEntryPresses.label(entries[$0]) },
+            // A pinned tile or a folded entry draws no title: it speaks its tooltip (names §4).
+            label: { BrowserEntryPresses.label(entries[$0], titled: mode == .full && !list.isTile($0)) },
+            help: { BrowserEntryPresses.help(entries[$0]) },
             tap: { presses.tap(entries[$0]) },
             activate: { presses.activate(entries[$0]) },
             // Every drag reads the pinned section's line (`section`, below).
@@ -337,7 +341,7 @@ struct BrowserTabList: View {
             contextMenu: { index in
                 switch entries[index] {
                 case .chip(let g): AnyView(BrowserGroupMenu(group: g, context: menus))
-                case .tab(let t): AnyView(BrowserTabMenu(tab: t, context: menus))
+                case .tab(let t): AnyView(BrowserTabMenu(tab: t, context: menus, inPlace: mode == .full && !list.isTile(index)))
                 }
             },
             underline: { list.underline($0) },
@@ -379,11 +383,24 @@ struct BrowserTabList: View {
                     }
                 }
             if mode == .full {
-                Text(tab.label)
-                    .font(.system(size: BrowserPaneStyle.tabTitleSize))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(BrowserPaneStyle.text.opacity(active ? 1 : PaneStripStyle.tabTitleRest))
+                if renamingTab == tab.id {
+                    BrowserTabNameField(
+                        tab: tab,
+                        commit: { name in dispatch("browser_rename_tab", ["tab": .string(tab.id), "name": .string(name)]) },
+                        end: { explicit in
+                            if renamingTab == tab.id { renamingTab = nil }
+                            renameEnded(explicit)
+                        },
+                        samePlace: menus.samePlace)
+                } else {
+                    Text(tab.label)
+                        .font(.system(size: BrowserPaneStyle.tabTitleSize))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(BrowserPaneStyle.text.opacity(active ? 1 : PaneStripStyle.tabTitleRest))
+                    // Names §3: after the name, the mark that says it is the operator's.
+                    if tab.name != nil { BrowserTabRenamedMark(tab: tab.id) }
+                }
             }
         }
     }

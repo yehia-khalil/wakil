@@ -641,6 +641,8 @@ extension WakilWindow {
                             model.browserHeaderFocus = group.map { BrowserHeaderFocus(pane: pane.id, group: $0) }
                         },
                         refreshPullRequests: { Task { await model.refreshBrowserPullRequests() } },
+                        openRenameTabPalette: { tab in model.openRenameTabPalette(pane: pane.id, tab: tab) },
+                        placeNow: { model.browserScope },
                         verticalTabs: model.browserSettings.tabs == "vertical")
                     // **One view per place and pane.** Pane ids repeat from place to place, so
                     // without this a switch from A's `browser-1` to B's would keep the view: no

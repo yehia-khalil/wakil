@@ -75,18 +75,31 @@ struct BrowserEntryPresses {
     /// The group header ⌘R acts on in this pane; nil, none.
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
+    /// The tab whose name is being edited in place (names).
+    var renamingTab: String? = nil
 
-    /// The entry's tooltip and accessibility name.
-    static func label(_ entry: BrowserStripEntry) -> String {
+    /// The entry's accessibility name: a tab's label where its title is drawn; its tooltip where it
+    /// is not (a pinned tile, a folded entry: names spec §4).
+    static func label(_ entry: BrowserStripEntry, titled: Bool = true) -> String {
         switch entry {
         case .chip(let g): BrowserGroupChip.label(g)
-        case .tab(let t): t.label
+        case .tab(let t): titled ? t.label : t.tooltip
+        }
+    }
+
+    /// The entry's tooltip: a tab's keeps its page title in reach, `<name> — <page title>` (names §3).
+    static func help(_ entry: BrowserStripEntry) -> String {
+        switch entry {
+        case .chip(let g): BrowserGroupChip.label(g)
+        case .tab(let t): t.tooltip
         }
     }
 
     func tap(_ entry: BrowserStripEntry) {
         switch entry {
         case .tab(let t):
+            // A click in the open name field is the field's.
+            guard renamingTab != t.id else { return }
             if headerFocus != nil { setHeaderFocus(nil) }
             select(t)
         case .chip(let g):
@@ -316,6 +329,94 @@ struct BrowserGroupNameField: View {
     }
 }
 
+/// A tab's name being edited in place (names spec §3), in a full strip entry or a column row: it
+/// arrives focused with the shown label selected (Rule 3); Return or focus leaving keeps what was
+/// typed through `RenameDraft` — the shown label unchanged does nothing, nothing left clears (Rule 2)
+/// — and Esc puts the name back. It commits once (Rule 5). `BrowserGroupNameField`'s shape; it hands
+/// the name to `commit`, which dispatches `browser_rename_tab` (Invariant 2), never sets it.
+struct BrowserTabNameField: View {
+    let tab: BrowserTab
+    /// The name to dispatch; empty clears.
+    let commit: (String) -> Void
+    /// The field has gone; `explicit` when Return or Esc ended it.
+    let end: (_ explicit: Bool) -> Void
+    /// The window still shows the place (and organisation) this field was opened in. A tab id is the
+    /// pane's and a pane id repeats from place to place, so after a switch the dispatch would land
+    /// on another place's tab: then nothing is committed.
+    let samePlace: () -> Bool
+
+    @State private var text = ""
+    /// The label as the field opened: what an unchanged line is compared with.
+    @State private var shown = ""
+    @FocusState private var focused: Bool
+    @State private var done = false
+
+    var body: some View {
+        TextField("Tab name", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: BrowserPaneStyle.tabTitleSize))
+            .foregroundStyle(BrowserPaneStyle.text)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .focused($focused)
+            .onSubmit { finish(keep: true, explicit: true) }
+            .onExitCommand { finish(keep: false, explicit: true) }
+            .onChange(of: focused) { _, now in
+                if now { selectAll() } else { finish(keep: true, explicit: false) }
+            }
+            .onAppear {
+                text = tab.label
+                shown = tab.label
+                // As the group field: asked once it is in the window; never given the keyboard, the
+                // entry goes back to its label.
+                DispatchQueue.main.async {
+                    focused = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if !focused, !done { finish(keep: false, explicit: false) }
+                    }
+                }
+            }
+            // Gone without Return or Esc — the strip folded, the entry scrolled away: what was typed
+            // is kept, as focus leaving keeps it (Rule 2).
+            .onDisappear { finish(keep: true, explicit: false) }
+            .accessibilityLabel("Tab name")
+            .accessibilityIdentifier("browser.tab.\(tab.id).name")
+    }
+
+    private func finish(keep: Bool, explicit: Bool) {
+        guard !done else { return }
+        done = true
+        if keep, samePlace(), let name = RenameDraft.decide(typed: text, shown: shown).name { commit(name) }
+        end(explicit)
+    }
+
+    /// The whole label selected in the field's own editor, so typing replaces it (as the group field).
+    private func selectAll(tries: Int = 10) {
+        guard focused else { return }
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.delegate is NSTextField,
+              editor.string == text else {
+            if tries > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { selectAll(tries: tries - 1) } }
+            return
+        }
+        editor.selectAll(nil)
+    }
+}
+
+/// The mark after a renamed tab's name (names spec §3): a small pencil at the title's rest opacity,
+/// saying the name is the operator's. The page title is in the entry's tooltip.
+struct BrowserTabRenamedMark: View {
+    let tab: String
+
+    var body: some View {
+        Image(systemName: "pencil")
+            .font(.system(size: BrowserPaneStyle.tabTitleSize - 3))
+            .foregroundStyle(BrowserPaneStyle.text.opacity(PaneStripStyle.tabTitleRest))
+            .fixedSize()
+            .accessibilityLabel("Renamed")
+            .accessibilityIdentifier("browser.tab.\(tab).customMark")
+    }
+}
+
 /// What the tab and group menus act through, and what they need to know.
 struct BrowserGroupMenuContext {
     let snapshot: BrowserSnapshot
@@ -330,19 +431,40 @@ struct BrowserGroupMenuContext {
     let rename: (String) -> Void
     /// *New Group…*: makes a group of the tab and opens its rename field.
     let newGroup: (String) -> Void
+    /// *Rename Tab…* where the entry draws its title (a full strip entry, a column row): its name
+    /// becomes the field, in place (Rule 3).
+    let renameTab: (String) -> Void
+    /// *Rename Tab…* where it does not (a pinned tile, a folded entry): ⌘P on the name step (names,
+    /// Calls made 12).
+    let renameTabInPalette: (String) -> Void
+    /// The window still shows the place this pane was drawn in (`BrowserTabNameField.samePlace`).
+    let samePlace: () -> Bool
 
     var pinTitle: String { "Pin to \(project.isEmpty ? "Project" : project)" }
 }
 
-/// A tab's menu (Global Constraints' copy): New Group…, Add to Group, Remove from Group, Pin to
-/// <project> or Unpin (Unpin Group on a member of a pinned group), Pin Current Page, Close Tab. Nothing here asks (Rule 1) and nothing selects
-/// the tab or takes the keyboard (Rule 6) — but *New Group…*, whose name field arrives focused.
+/// A tab's menu (Global Constraints' copy): Rename Tab… and Clear Name when it has one (names), New
+/// Group…, Add to Group, Remove from Group, Pin to <project> or Unpin (Unpin Group on a member of a
+/// pinned group), Pin Current Page, Close Tab. Nothing here asks (Rule 1) and nothing selects the tab
+/// or takes the keyboard (Rule 6) — but *New Group…* and *Rename Tab…*, whose fields arrive focused.
+/// A pull-request row is not renamed (3d-i ruling 18: a listing, never saved): neither item is there.
 struct BrowserTabMenu: View {
     let tab: BrowserTab
     let context: BrowserGroupMenuContext
+    /// The entry draws its title, so *Rename Tab…* edits it in place; else it opens the palette.
+    var inPlace = true
 
     var body: some View {
         let s = context.snapshot
+        if tab.pullRequest == nil {
+            Button("Rename Tab…") { inPlace ? context.renameTab(tab.id) : context.renameTabInPalette(tab.id) }
+            if tab.name != nil {
+                Button("Clear Name") {
+                    context.dispatch("browser_rename_tab", ["tab": .string(tab.id), "name": .string("")])
+                }
+            }
+            Divider()
+        }
         let pinned = s.isPinned(tab)
         // A tab pinned itself stays out of groups; a tab of a pinned group may leave it.
         let targets = s.groups.filter { $0.kind != .pullRequests && $0.id != tab.group }

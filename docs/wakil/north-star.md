@@ -282,6 +282,7 @@ live app; *accepted* means it was marked met without one.
 | **3d-iii** | Picture in picture | — | 3c-i |
 | **3d-iv** | Passwords in the Keychain | — | 3c-ii |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
+| **Names** | Conversations named by the quick model and renamed anywhere; browser tabs renamed | — | 3d-i (browser half) |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

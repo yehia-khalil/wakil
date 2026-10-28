@@ -2402,6 +2402,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
             ["api_remove_entry", "api_set_entry", "api_update_entry",
+             "conversation_rename",
              "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_config_tree", "ctx_create_environment",
              "ctx_create_org", "ctx_create_project", "ctx_editor_settings",
              "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
@@ -2792,6 +2793,8 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         // `session_set_provider` does; neither touches a client. Conversations 3 of 3:
         // `session_close` parks there too.
         "session_close", "session_new", "session_switch",
+        // Names: `conversation_rename` parks there too, and checks no client.
+        "conversation_rename",
         // Checks no client before touching `panes`/`layout`. With no
         // `layout` wired (this test's `registerStandardActions` call
         // passes none, so it defaults to `nil`), `requireOpenPane`

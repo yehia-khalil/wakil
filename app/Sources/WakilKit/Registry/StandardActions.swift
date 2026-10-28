@@ -1389,6 +1389,7 @@ public func registerStandardActions(
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
                 "commitDrafts": .object(["type": .string("boolean")]),
+                "conversationNames": .object(["type": .string("boolean")]),
                 "pullStrategy": .object(["type": .string("string")]),
                 "agentGeneral": .object(["type": .string("string")]),
                 "gitCommitInstructions": .object(["type": .string("string")]),
@@ -1414,7 +1415,7 @@ public func registerStandardActions(
                         "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
-            for key in ["ghostText", "fastPath", "commitDrafts"] {
+            for key in ["ghostText", "fastPath", "commitDrafts", "conversationNames"] {
                 if let value = fields[key], case .bool = value { arguments[key] = value }
             }
             return try await callChecked(
@@ -2576,6 +2577,10 @@ public func registerStandardActions(
         }
     ))
 
+    // Names, call 3: beside the `session_*` actions, parked on the same broker for the same reason.
+    await registry.register(conversationRenameAction(
+        conversationRequests: conversationRequests, liveConversations: liveConversations))
+
     // **`.control`, for the identical reason `session_resume` above is:**
     // this changes which account Wakil's own session runs under and
     // touches nothing outside Wakil, so the environment never blocks it.
@@ -3492,4 +3497,61 @@ private func callChecked(
         throw StandardActionError.serverError(action: action, message: mcpErrorText(from: obj) ?? "\(tool) failed with no message")
     }
     return result
+}
+
+/// `conversation_rename`'s refusals (names, call 3): Rule 7's "refuse only what a recorded decision
+/// forbids, and say which", and Rule 8's whole sentence for an id that names nothing.
+public struct ConversationRenameRefusal: Error, Sendable, Equatable, CustomStringConvertible {
+    public let description: String
+}
+
+/// `conversation_rename` (names, call 3): **`.control`** — a conversation's name is Wakil's own state —
+/// and **agent-reachable**, for the agent's own conversation only (conversations call 5: an agent does
+/// not know about the others). `conversation` defaults to the caller's, or — the operator's, with none —
+/// to the one on screen when the request drains (`WindowModel.renameConversation`); an id that names
+/// no live conversation is refused here, before parking, so the caller hears it. `name` is cleaned
+/// (call 4); empty or whitespace clears the operator's name. The agent's rename is the operator's name,
+/// not a third slot: the later value wins (Rule 7), and the journal records who.
+///
+/// A builder, as `layoutActions` is, so a test can register it into a window's own registry.
+/// `liveConversations` nil (no window, as for a test that wires none) checks nothing.
+public func conversationRenameAction(
+    conversationRequests: ConversationBroker,
+    liveConversations: (@Sendable (Place?) async -> [LiveConversation])?
+) -> Action {
+    Action(
+        name: "conversation_rename",
+        description: "Name a live conversation, as the operator's name for it: it wins over the name "
+            + "Wakil's quick model gave it. An empty or blank name clears it, back to the model's name "
+            + "or the first message. `conversation` is its id; an agent names only its own conversation, "
+            + "and omits it.",
+        kind: .control,
+        audience: .agentReachable,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "conversation": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("name")]),
+        ]),
+        handler: { params in
+            let raw = try requireStringParam(params, "name", action: "conversation_rename")
+            let requested = optionalStringParam(params, "conversation")
+            let own = ActionRegistry.dispatchCaller?.conversation
+            if ActionRegistry.dispatchOrigin == .agent, own == nil || (requested != nil && requested != own) {
+                throw ConversationRenameRefusal(description: "conversation_rename: an agent renames only its "
+                    + "own conversation (conversations call 5: an agent does not know about the others)")
+            }
+            let id = requested ?? own
+            if let id, let liveConversations, !(await liveConversations(nil)).contains(where: { $0.id == id }) {
+                throw ConversationRenameRefusal(description: "conversation_rename: no live conversation \(id)")
+            }
+            let name = cleanConversationName(raw)
+            await conversationRequests.request(.rename(conversation: id, name: name))
+            return .object([
+                "renaming": id.map(JSONValue.string) ?? .null,
+                "name": name.map(JSONValue.string) ?? .null,
+            ])
+        })
 }

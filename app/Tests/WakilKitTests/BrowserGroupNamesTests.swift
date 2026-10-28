@@ -34,6 +34,15 @@ struct BrowserGroupNamesTests {
         #expect(BrowserGroupNames.titles(of: "g1", in: s) == ["one", "two", "three", "four", "nine"])
     }
 
+    @Test func aNamedTabSendsItsNameAndCountsAsTitled() {
+        var invoices = tab("t1", "")
+        invoices.name = "Invoices"
+        let tabs = [invoices, tab("t2", "Stripe")]
+        let s = pane(tabs, groups: [group()])
+        #expect(BrowserGroupNames.titles(of: "g1", in: s) == ["Invoices", "Stripe"])
+        #expect(BrowserGroupNames.due(s) == ["g1"])
+    }
+
     @Test func dueNeedsTwoTitledTabsAndAnUnnamedAutomaticGroup() {
         let tabs = [
             tab("t1", "a", group: "g1"), tab("t2", "b", group: "g1"),

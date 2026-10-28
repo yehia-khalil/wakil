@@ -1451,6 +1451,9 @@ struct SettingsPane: View {
             quickTaskSwitchRow(
                 "Commit drafts", hint: "Drafts a message from what you are about to commit, when you press ✨",
                 on: tree.org.commitDrafts, key: .commitDrafts)
+            quickTaskSwitchRow(
+                "Name conversations with AI", hint: "Names a conversation from its first message and reply",
+                on: tree.org.conversationNames, key: .conversationNames)
             if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
                 Text(note)
                     .font(.system(size: Scale.body))

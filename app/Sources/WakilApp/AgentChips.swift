@@ -48,11 +48,15 @@ struct AgentChips: View {
         let tray = AgentChipTray(model.chips)
         VStack(alignment: .trailing, spacing: 6) {
             ForEach(tray.shown) { chip in
-                AgentChipView(chip: chip) { Task { await model.switchToRunning(chip.conversation) } }
+                AgentChipView(
+                    chip: chip, go: { Task { await model.switchToRunning(chip.conversation) } },
+                    rename: { model.openRenamePalette(conversation: chip.conversation) })
                     .transition(arrival)
             }
             if let state = tray.hiddenState {
-                MoreChip(tray: tray, state: state) { chip in Task { await model.switchToRunning(chip.conversation) } }
+                MoreChip(
+                    tray: tray, state: state, go: { chip in Task { await model.switchToRunning(chip.conversation) } },
+                    rename: { chip in model.openRenamePalette(conversation: chip.conversation) })
                     .transition(arrival)
             }
         }
@@ -170,6 +174,9 @@ private struct ChipButton<Content: View>: View {
 private struct AgentChipView: View {
     let chip: AgentChip
     let go: () -> Void
+    /// Names, Calls made 12: the chip draws no title to edit in place, so **Rename…** opens ⌘P on
+    /// the name step for its conversation; Esc there closes straight back (Rule 6).
+    let rename: () -> Void
 
     /// `chip.label` in three: the organisation and project, which may be truncated in the
     /// middle; the environment segment, which never is — so a production place's red segment
@@ -216,6 +223,9 @@ private struct AgentChipView: View {
             // chip it means — and a place's three parts, joined by `/`, can never spell `more`.
             .accessibilityIdentifier(chip.identifier)
             .help("Switch to \(chip.label)\(chip.state.suffix)")
+            .contextMenu {
+                Button("Rename…", action: rename)
+            }
     }
 }
 
@@ -225,6 +235,7 @@ private struct MoreChip: View {
     let tray: AgentChipTray
     let state: AgentChip.State
     let go: (AgentChip) -> Void
+    let rename: (AgentChip) -> Void
 
     @State private var open = false
 
@@ -239,10 +250,17 @@ private struct MoreChip: View {
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(alignment: .trailing, spacing: 6) {
                 ForEach(tray.hidden) { chip in
-                    AgentChipView(chip: chip) {
-                        open = false
-                        go(chip)
-                    }
+                    AgentChipView(
+                        chip: chip,
+                        go: {
+                            open = false
+                            go(chip)
+                        },
+                        rename: {
+                            // The popover goes first: the palette takes the window.
+                            open = false
+                            rename(chip)
+                        })
                 }
             }
             .padding(10)

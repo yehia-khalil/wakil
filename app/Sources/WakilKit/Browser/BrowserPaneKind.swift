@@ -76,6 +76,7 @@ enum BrowserPaneKind: PaneKind {
                 if case .environment(let name)? = sites.tag(t.url) { environment = .string(name) }
                 return .object([
                     "id": .string(t.id), "url": .string(t.url), "title": .string(t.title),
+                    "name": t.name.map { .string($0) } ?? .null,
                     "loading": .bool(t.isLoading), "active": .bool(t.id == s.active),
                     "site": site.map { .string($0) } ?? .null, "environment": environment,
                     "production": .bool(site.map { sites.isProduction($0) } ?? false),

@@ -285,6 +285,27 @@ private let pinnedGroup = BrowserPin(
     #expect(try files.pins(project: "other") == [])
 }
 
+@Test func aPinsFileWithNoNamesDecodes() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    let url = files.pinsURL(project: "web")
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    // A 3d-i file: a tab pin and a group's tabs with no `name`.
+    try Data("""
+    {"items":[{"id":"p0000000a","kind":"tab","url":"https://example.com/a","title":"A"},
+    {"id":"p0000000b","kind":"group","name":"Docs","colour":"teal","tabs":[{"url":"https://example.com/1","title":"One"}]}]}
+    """.utf8).write(to: url)
+    let pins = try files.pins(project: "web")
+    #expect(pins.first?.name == nil)
+    #expect(pins.last?.tabs?.first?.name == nil)
+    #expect(pins.last?.tabs?.first?.title == "One")
+    // Written back, a tab with no name still has no `name` key.
+    try files.setPins(pins, project: "web")
+    let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    let items = try #require(json["items"] as? [[String: Any]])
+    let tabs = try #require(items[1]["tabs"] as? [[String: Any]])
+    #expect(Set(tabs[0].keys) == ["url", "title"])
+}
+
 @Test func aMissingPinsFileReadsEmpty() throws {
     let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
     #expect(try files.pins(project: "web") == [])

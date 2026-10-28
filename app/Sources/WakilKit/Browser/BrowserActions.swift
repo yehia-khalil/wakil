@@ -31,9 +31,10 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case bookmarksUnreadable(String)
     /// 3d-i: the group named is not in the pane.
     case noGroup(action: String, group: String)
-    /// 3d-i: the pull-request group is the read's; only collapse and expand change it. The word is
-    /// the participle: `renamed`, `recoloured`, `ungrouped`, `closed`.
-    case pullRequestGroupRefuses(String)
+    /// 3d-i: the pull-request group is the read's; only collapse and expand change it, and its rows
+    /// are never named (`browser_rename_tab`). The word is the participle: `renamed`, `recoloured`,
+    /// `ungrouped`, `closed`; `action` is the refusing action, whose name the sentence leads with.
+    case pullRequestGroupRefuses(action: String, word: String)
     case unknownColour
     case unknownGroupAction(String)
     /// 3d-i: pins are per project, and the place on screen has none.
@@ -61,7 +62,10 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .bookmarksUnreadable(let error):
             "browser_bookmark: bookmarks.json can't be read (\(error)) — fix or move it; Wakil won't write over it."
         case .noGroup(let action, let group): "\(action): this pane has no group \(group)"
-        case .pullRequestGroupRefuses(let word): "browser_group: the pull-request group can't be \(word)"
+        case .pullRequestGroupRefuses(let action, let word):
+            action == "browser_group"
+                ? "browser_group: the pull-request group can't be \(word)"
+                : "\(action): a pull-request row can't be \(word) (3d-i ruling 18: a listing, never saved)"
         case .unknownColour:
             "browser_group: colour is one of " + BrowserGroupColour.allCases.map(\.rawValue).joined(separator: ", ")
         case .unknownGroupAction(let verb):
@@ -90,13 +94,13 @@ func browserZoom(_ zoom: Double, stepIn: Bool) -> Double {
     return browserZoomSteps.last { $0 < zoom - 0.0001 } ?? zoom
 }
 
-/// What a browser pane saves in the layout as its tabs: each tab's id, URL, title, group, opener, pin
-/// and `keptLoose`, in order. A pull-request tab is skipped (ruling 18): the next refresh lists it
+/// What a browser pane saves in the layout as its tabs: each tab's id, URL, title, group, opener, pin,
+/// `keptLoose` and name, in order. A pull-request tab is skipped (ruling 18): the next refresh lists it
 /// again. Its group is saved with the rest of `groups`, without tabs, so its `collapsed` is kept.
 func browserSavedTabs(_ s: BrowserSnapshot) -> [BrowserSavedTab] {
     s.tabs.filter { $0.pullRequest == nil }.map {
         BrowserSavedTab(id: $0.id, url: $0.url, title: $0.title, group: $0.group, opener: $0.opener,
-                        pin: $0.pin, keptLoose: $0.keptLoose)
+                        pin: $0.pin, keptLoose: $0.keptLoose, name: $0.name)
     }
 }
 
@@ -145,7 +149,8 @@ extension BrowserSnapshot {
         guard tabs.contains(where: { ids.contains($0.id) }) else { return 0 }
         let gone = tabs.filter { ids.contains($0.id) }
         for tab in gone {
-            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group, pin: tab.pin))
+            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group, pin: tab.pin,
+                                          name: tab.name))
         }
         if closed.count > browserClosedLimit { closed.removeFirst(closed.count - browserClosedLimit) }
         removeTabs(ids)
@@ -593,7 +598,7 @@ func browserActions(
             let pane = try await browserPane(params, action: "browser_reopen_tab").id
             let ok = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let saved = s.closed.popLast() else { return false }
-                var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title)
+                var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title, name: saved.name)
                 if saved.url.isEmpty { tab.issue(.focusAddress) } else { tab.issue(.load(saved.url)) }
                 // A pinned tab comes back pinned, so a full reconcile does not add its pin a second
                 // time; when the pane holds that pin again meanwhile, it comes back plain.
@@ -756,7 +761,7 @@ func browserActions(
                 }
                 if s.groups[g].kind == .pullRequests {
                     let words = ["rename": "renamed", "recolour": "recoloured", "ungroup": "ungrouped", "close": "closed"]
-                    if let word = words[verb] { return .failure(.pullRequestGroupRefuses(word)) }
+                    if let word = words[verb] { return .failure(.pullRequestGroupRefuses(action: action, word: word)) }
                 }
                 switch verb {
                 case "rename":
@@ -796,6 +801,53 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_rename_tab",
+        description: "Name a browser tab (tab, default the active one): the name shows instead of the page title "
+            + "and is kept across navigations until cleared with an empty name. Never selects the tab.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "name": string], required: ["name"]),
+        handler: { params in
+            let action = "browser_rename_tab"
+            let typed = try requireString(params, "name", action: action)
+            let pane = try await browserPane(params, action: action).id
+            let tab = optionalString(params, "tab")
+            // Names call 14: cleaned as a conversation's name; nothing left clears it.
+            let name = cleanConversationName(typed)
+            let renamed = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<String?, BrowserActionError> in
+                guard let i = s.tabIndex(tab) else { return .failure(.noTab(action: action, tab: tab)) }
+                // 3d-i ruling 18: the pull-request rows are a listing, never saved.
+                if s.tabs[i].pullRequest != nil {
+                    return .failure(.pullRequestGroupRefuses(action: action, word: "renamed"))
+                }
+                s.tabs[i].name = name
+                return .success(s.tabs[i].pin)
+            }
+            let pin = try renamed.get()
+            await persist(pane)
+            // Names call 15: a pinned tab's name goes to its pin at once, and every other pane of the
+            // project takes it. With no project or no organisation there are no pins to write. A pins
+            // file that can't be read or written never refuses the rename (call 14) and is never
+            // written over (ruling 13): its error goes on the pane whole (`pinsError`, Rule 8), so the
+            // strip and the reply say the name is this pane's only.
+            if let pin, let place = try? await pinsPlace(action) {
+                do {
+                    var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+                    if let at = pins.firstIndex(where: { $0.id == pin && $0.kind == .tab }), pins[at].name != name {
+                        pins[at].name = name
+                        try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+                        await reconcileOthers(pane, add: pins[at], remove: nil)
+                    }
+                } catch {
+                    let why = (error as? BrowserActionError)?.description
+                        ?? "\(action): \(BrowserOrgFiles.pinsName(project: place.project)) can't be written "
+                        + "(\(error.localizedDescription)) — the name is kept in this pane only."
+                    await panes.updateBrowser(paneId: pane) { s in s.pinsError = why }
+                }
+            }
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
         name: "browser_pin",
         description: "Pin a tab (tab, default the active one) or a group (group, a group id from read_pane's "
             + "groups; pr is the pull-request group) to the project: it is kept in the project's pins and "
@@ -825,14 +877,15 @@ func browserActions(
                 entry = g.kind == .pullRequests
                     ? BrowserPin(id: id, kind: .pullRequests)
                     : BrowserPin(id: id, kind: .group, name: g.name, colour: g.colour,
-                                 tabs: s.tabs.filter { $0.group == gid }.map { BrowserPinTab(url: $0.url, title: $0.title) })
+                                 tabs: s.tabs.filter { $0.group == gid }.map { BrowserPinTab(url: $0.url, title: $0.title, name: $0.name) })
             case .tab(let tid):
                 guard let tab = s.tabs.first(where: { $0.id == tid }) else {
                     throw BrowserActionError.noTab(action: action, tab: tid)
                 }
                 // A tab of a pinned group is pinned with it.
                 if tab.pin == nil, s.isPinned(tab) { return await reply(pane) }
-                entry = BrowserPin(id: tab.pin ?? BrowserPin.newId(), kind: .tab, url: tab.url, title: tab.title)
+                entry = BrowserPin(id: tab.pin ?? BrowserPin.newId(), kind: .tab, url: tab.url, title: tab.title,
+                                   name: tab.name)
             }
             let present = pins.firstIndex { $0.id == entry.id }
             guard present == nil || update else { return await reply(pane) }
@@ -1073,7 +1126,7 @@ func browserActions(
             guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notBookmarkable(scheme: scheme) }
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
             do {
-                try files.setBookmark(url: target.url, title: target.label, on: wanted, now: Date())
+                try files.setBookmark(url: target.url, title: target.pageLabel, on: wanted, now: Date())
                 await panes.browserSetBookmarks(org: files.org, try files.bookmarks())
             } catch let error as BrowserBookmarksUnreadable {
                 throw BrowserActionError.bookmarksUnreadable(error.reason)

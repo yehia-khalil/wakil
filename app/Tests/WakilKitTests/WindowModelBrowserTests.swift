@@ -59,6 +59,55 @@ private func browserWindow(
         return (model, pane, layout, journal, panes)
     }
 
+    // MARK: Names Task 15: Rename Tab… on the focused browser pane's active tab
+
+    /// ⌘K's context names the focused browser pane's active tab: its label, and what clearing
+    /// would show (its page label). A pull-request row is not one (3d-i ruling 18).
+    @Test func theContextNamesTheFocusedBrowserPanesActiveTab() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let tab = try #require(model.browser(pane)?.active)
+        await model.dispatchFromSurface(
+            "browser_rename_tab", .object(["pane": .string(pane), "tab": .string(tab), "name": .string("Mine")]))
+        await model.refreshPanes()
+        let pageLabel = try #require(model.browser(pane)?.activeTab?.pageLabel)
+        let context = await model.paletteContext()
+        #expect(context.browserActiveTab == PaletteSubject(id: tab, name: "Mine", fallback: pageLabel))
+        #expect(CommandCatalog.entries(for: context).contains { $0.id == "browser.renameTab" })
+        await panes.updateBrowser(paneId: pane) { s in s.tabs[0].pullRequest = "https://github.com/o/r/pull/1" }
+        await model.refreshPanes()
+        #expect(await model.paletteContext().browserActiveTab == nil)
+        await model.shutdown()
+    }
+
+    /// Calls made 12: a pinned tile's or a folded entry's Rename opens ⌘P on the name step for that
+    /// tab, by pane and tab id, so nothing is selected when it runs (Rule 6).
+    @Test func openRenameTabPaletteStartsOnTheNameStep() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let tab = try #require(model.browser(pane)?.active)
+        await model.dispatchFromSurface(
+            "browser_rename_tab", .object(["pane": .string(pane), "tab": .string(tab), "name": .string("Mine")]))
+        await model.refreshPanes()
+        let pageLabel = try #require(model.browser(pane)?.activeTab?.pageLabel)
+        model.openRenameTabPalette(pane: pane, tab: tab)
+        let press = try #require(model.paletteKeyPress)
+        #expect(press.mode == .open)
+        let palette = model.makePalette(mode: press.mode, renaming: press.rename)
+        let step = try #require(palette.steps.last)
+        #expect(step.isName)
+        #expect(step.rename == PaletteRename(
+            action: "browser_rename_tab", params: .object(["pane": .string(pane), "tab": .string(tab)]),
+            current: "Mine", fallback: pageLabel, placeholder: "Tab name"))
+        // A tab that is not there, or a pull-request row, opens nothing.
+        model.openRenameTabPalette(pane: pane, tab: "nope")
+        model.openRenameTabPalette(pane: "nope", tab: tab)
+        #expect(model.paletteKeyPress == press)
+        await panes.updateBrowser(paneId: pane) { s in s.tabs[0].pullRequest = "https://github.com/o/r/pull/1" }
+        await model.refreshPanes()
+        model.openRenameTabPalette(pane: pane, tab: tab)
+        #expect(model.paletteKeyPress == press)
+        await model.shutdown()
+    }
+
     // MARK: 3d-i Task 12: New Group… opens the field of the group the call made
 
     @Test func aSurfaceCallAnswersTheGroupItMadeAndNothingWhenRefused() async throws {

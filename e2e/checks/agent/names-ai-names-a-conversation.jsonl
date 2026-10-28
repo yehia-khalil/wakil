@@ -1,0 +1,21 @@
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"dispatch":{"action":"pane_restore","params":{}}}
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"journal":{"contains":"\"action\":\"conversation_named\""}}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"Fixture Named Conversation"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"Value: Fixture Named Conversation"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}

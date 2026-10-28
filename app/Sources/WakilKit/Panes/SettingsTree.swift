@@ -264,6 +264,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var fastPath: Bool
     /// The organisation's commit-drafts switch (3a-ii-b): the commit box's ✨. On unless switched off.
     public var commitDrafts: Bool
+    /// The organisation's conversation-naming switch (names phase): the quick model names a conversation. On unless switched off.
+    public var conversationNames: Bool
     /// 3a-iii: the organisation's git accounts (no secrets) and its pull strategy (rebase when unset).
     public var gitAccounts: [SettingsGitAccount]
     public var pullStrategy: String
@@ -283,7 +285,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
         speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
-        fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true,
+        fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true, conversationNames: Bool = true,
         gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = "",
         gitSignIn: [String] = [], agentGeneral: String = "", gitCommitInstructions: String = "",
         gitPRInstructions: String = ""
@@ -297,6 +299,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.ghostText = ghostText
         self.fastPath = fastPath
         self.commitDrafts = commitDrafts
+        self.conversationNames = conversationNames
         self.gitAccounts = gitAccounts
         self.pullStrategy = pullStrategy
         self.lastCloneFolder = lastCloneFolder
@@ -319,6 +322,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         ghostText = try container.decodeIfPresent(Bool.self, forKey: .ghostText) ?? true
         fastPath = try container.decodeIfPresent(Bool.self, forKey: .fastPath) ?? false
         commitDrafts = try container.decodeIfPresent(Bool.self, forKey: .commitDrafts) ?? true
+        conversationNames = try container.decodeIfPresent(Bool.self, forKey: .conversationNames) ?? true
         gitAccounts = try container.decodeIfPresent([SettingsGitAccount].self, forKey: .gitAccounts) ?? []
         pullStrategy = try container.decodeIfPresent(String.self, forKey: .pullStrategy) ?? "rebase"
         lastCloneFolder = try container.decodeIfPresent(String.self, forKey: .lastCloneFolder) ?? ""
@@ -331,7 +335,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, conversationNames, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
             agentGeneral, gitCommitInstructions, gitPRInstructions
         case gitName, gitEmail
     }

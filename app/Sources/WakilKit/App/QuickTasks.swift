@@ -88,6 +88,12 @@ public actor QuickTasks {
     public func endpointErrors() -> [String: String] { errors }
     public func answered() -> Set<String> { succeeded }
     public func routedId(_ op: QuickOperation) -> String? { quickRoute(op, config).first?.id }
+    /// A caller's own failure with a reply the provider gave (one it could not read), kept whole against
+    /// the provider `op` routes to, as `run` keeps the provider's own errors.
+    public func recordFailure(_ message: String, for op: QuickOperation) {
+        guard let id = routedId(op) else { return }
+        note(message, for: id)
+    }
 
     /// `quick-tasks:` lines beside the editor's `monaco-editor:` ones.
     public static let logToStandardError: @Sendable (String) -> Void = { line in
@@ -153,13 +159,6 @@ public actor QuickTasks {
             }
         }
         throw QuickModelError.noProvider(op)
-    }
-
-    /// A reply the model gave but its caller could not use (a name that did not parse): kept under the
-    /// provider `op` routes to, like a model's own error, so Settings shows it whole.
-    public func recordFailure(_ error: String, for op: QuickOperation) {
-        guard let id = routedId(op) else { return }
-        note(error, for: id)
     }
 
     /// Keeps `error` whole as `id`'s last error, logging it when it differs from the one kept. A
