@@ -1,0 +1,95 @@
+import Testing
+@testable import WakilKit
+
+@Suite struct KeymapTests {
+    private func c(_ text: String) -> KeyChord { KeyChord(text)! }
+    private let plain = Keymap(overrides: [:])
+
+    @Test func tableHasAllFortyFourCommands() {
+        #expect(KeyCommand.all.count == 44)
+        #expect(Set(KeyCommand.all.map(\.id)).count == 44)
+        #expect(FixedKey.all.count == 8)
+    }
+
+    @Test func noTwoDefaultsShareAChordInOnePlace() {
+        var seen = Set<String>()
+        for command in KeyCommand.all {
+            #expect(seen.insert("\(command.place)|\(command.defaultChord.text)").inserted, "\(command.id)")
+            #expect(!command.defaultChord.isRefused, "\(command.id)")
+        }
+    }
+
+    @Test func sharedChordResolvesPaneFirst() {
+        #expect(plain.resolve(c("⌘T"), paneKind: "browser") == ["browser.newTab", "editor.newScratch"])
+        #expect(plain.resolve(c("⌘T"), paneKind: "editor") == ["editor.newScratch"])
+    }
+
+    @Test func unboundChordResolvesEmpty() {
+        #expect(plain.resolve(c("⌃⌘J"), paneKind: nil) == [])
+    }
+
+    @Test func assignTakesAndReports() throws {
+        let done = try plain.assign("editor.save", c("⌘P")).get()
+        #expect(done.tookFrom == "window.open")
+        #expect(done.overrides == ["editor.save": "⌘P", "window.open": ""])
+    }
+
+    @Test func assignInOtherPlaceDoesNotTake() throws {
+        let done = try plain.assign("browser.reload", c("⌘B")).get()
+        #expect(done.tookFrom == nil)
+        #expect(done.overrides == ["browser.reload": "⌘B"])
+    }
+
+    @Test func movingTheAnywhereHalfLeavesThePaneHalf() throws {
+        let map = Keymap(overrides: try plain.assign("editor.newScratch", c("⌃⌘T")).get().overrides)
+        #expect(map.resolve(c("⌘T"), paneKind: "browser") == ["browser.newTab"])
+        #expect(map.resolve(c("⌘T"), paneKind: "editor") == [])
+    }
+
+    @Test func assignRefusesDecision50() {
+        guard case .failure(let refusal) = plain.assign("pane.close", c("⌘Q")) else {
+            Issue.record("expected a refusal"); return
+        }
+        #expect(refusal.message.contains("Decision 50"))
+    }
+
+    @Test func assignNilClears() throws {
+        let done = try plain.assign("pane.close", nil).get()
+        #expect(done.overrides == ["pane.close": ""])
+        let map = Keymap(overrides: done.overrides)
+        #expect(map.chord("pane.close") == nil)
+        #expect(map.resolve(c("⌘W"), paneKind: nil) == [])
+    }
+
+    @Test func assigningTheDefaultDropsTheEntry() throws {
+        let moved = Keymap(overrides: try plain.assign("pane.close", c("⌃⌘J")).get().overrides)
+        #expect(try moved.assign("pane.close", c("⌘W")).get().overrides == [:])
+    }
+
+    @Test func restoringDefaultDropsTheEntry() {
+        let map = Keymap(overrides: ["pane.close": "⌃⌘J", "window.open": ""])
+        #expect(map.restoringDefault("pane.close") == ["window.open": ""])
+        #expect(map.isDefault("pane.close") == false)
+        #expect(plain.isDefault("pane.close"))
+    }
+
+    @Test func unknownIdsSurviveAssign() throws {
+        let map = Keymap(overrides: ["future.cmd": "⌃⌘J"])
+        #expect(try map.assign("editor.save", c("⌃⌘K")).get().overrides["future.cmd"] == "⌃⌘J")
+        #expect(try map.assign("editor.save", nil).get().overrides["future.cmd"] == "⌃⌘J")
+        #expect(map.restoringDefault("editor.save")["future.cmd"] == "⌃⌘J")
+    }
+
+    @Test func storedRefusedChordFallsBackToDefault() {
+        let map = Keymap(overrides: ["pane.close": "⌘Q"])
+        #expect(map.chord("pane.close") == c("⌘W"))
+        #expect(map.problem("pane.close")?.contains("Decision 50") == true)
+    }
+
+    @Test func duplicateStoredChordFirstInTableWins() {
+        let map = Keymap(overrides: ["conversation.new": "⌃⌘J", "pane.close": "⌃⌘J"])
+        #expect(map.resolve(c("⌃⌘J"), paneKind: nil) == ["conversation.new"])
+        #expect(map.problem("pane.close")?.contains("New Conversation") == true)
+        #expect(map.problem("conversation.new") == nil)
+    }
+}
