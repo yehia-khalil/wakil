@@ -25,6 +25,9 @@ type Fixture struct {
 	// AnthropicBaseURL is the capacity probe's API: the stub a launch
 	// started. Empty makes Env emit a closed port instead.
 	AnthropicBaseURL string
+	// GitHubAPI is the Ticket view's GitHub GraphQL endpoint: the stub a seeded launch started
+	// (StartGitHubStub). Empty makes Env emit a closed port instead.
+	GitHubAPI string
 }
 
 // NewFixture lays out a fixture under root.
@@ -133,6 +136,14 @@ func (f Fixture) Env(basePATH string, seeded Seeded) []string {
 		base = "http://127.0.0.1:9"
 	}
 	env = append(env, "WAKIL_ANTHROPIC_BASE_URL="+base)
+	// The Ticket view's GitHub (Ticket view Cover), for the same reason: always set, a stub or a
+	// closed port, so no run reads or posts a pull request on api.github.com with a fixture token.
+	// The window forwards it to wakil-ticket, the one child that reads it.
+	gh := f.GitHubAPI
+	if gh == "" {
+		gh = "http://127.0.0.1:9/graphql"
+	}
+	env = append(env, "WAKIL_GITHUB_API="+gh)
 	// 3a-iii: wakil-git allows a file remote — a bare repository on this Mac — only when the
 	// launcher sets this, and the app forwards it to its children. Every remote a check pushes to
 	// or pulls from is one the check made inside the fixture, so no launch reaches a network host.

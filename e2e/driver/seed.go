@@ -92,6 +92,12 @@ type SeedSpec struct {
 	// to (#331, 2c-iv W1). Seeded only with the scripted agent, because USE
 	// refuses an account with no claude path or credential. Never the default.
 	SpareProvider string
+	// TicketRepo gives the git project's e2e-api what the Ticket view reads (Ticket view Cover):
+	// an `origin` on github.com/initech/api, one branch per GitHub stub answer with
+	// `ini-142-login` checked out, the PM project key INI, and a record for INI-142. **Only the
+	// ticket checks' launches ask for it** (`WantsTicketRepo`): an origin and a different branch
+	// would change what every Changes-view check reads.
+	TicketRepo bool
 }
 
 // DefaultSeed is the state every check gets unless it asks for another.
@@ -136,6 +142,9 @@ type Seeded struct {
 	// SpareProvider is the second account in the first org, when the launch
 	// seeded one (SeedSpec.SpareProvider): the credential store needs its id.
 	SpareProvider string
+	// TicketHeadSHA is e2e-api's HEAD when the launch seeded the ticket repository
+	// (SeedSpec.TicketRepo): the GitHub stub gives it as PR #212's head.
+	TicketHeadSHA string
 }
 
 // Seed writes one fixture's ~/.wakil state through wakilcore's OWN writers.
@@ -201,6 +210,13 @@ func Seed(fixture Fixture, spec SeedSpec) (Seeded, error) {
 	}
 	if err := seedCells(fixture.Root); err != nil {
 		return Seeded{}, err
+	}
+	if spec.TicketRepo && spec.GitProject != "" {
+		sha, err := seedTicketRecord(fixture.Root, spec.Org)
+		if err != nil {
+			return Seeded{}, err
+		}
+		seeded.TicketHeadSHA = sha
 	}
 	second := spec.second()
 	if err := seedSecondOrg(fixture, spec.Org, second); err != nil {

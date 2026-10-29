@@ -68,7 +68,18 @@ enum EditorPaneKind: PaneKind {
                 .object(["root": .string(g.root), "group": .string(g.group)]) }),
             "changes_highlight": c.changesHighlight.map { h in
                 .object(["root": .string(h.root), "path": .string(h.path), "group": .string(h.group)]) } ?? .null,
+            "ticket_shown": c.ticketShown.map { .string($0) } ?? .null,
+            "ticket_shown_at": c.ticketShownAt.map { .object(["root": .string($0.root), "branch": .string($0.branch)]) } ?? .null,
         ]) } ?? .null
+        // The Ticket view (Invariant 3): the root this pane follows, its branch, tickets and PRs, and
+        // which review threads have a draft — never a draft's text.
+        let shared = store.kindState(EditorPaneKind.self)
+        o["ticket"] = shared.ticket.json(front: editorFrontRoot(s))
+        // The thread whose review box is on the cursor's line, as placed in the front file.
+        if case .object(var t) = o["ticket"] {
+            t["cursorThread"] = editorCursorThread(tab, shared.reviews).map { .string($0) } ?? .null
+            o["ticket"] = .object(t)
+        }
         let f = s.findReport.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.number(Double(r.count)), r.shown) }
             ?? s.find.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.null, true) }
         o["find"] = f.map { q, c, w, r, count, shown in .object([
@@ -94,6 +105,17 @@ enum EditorPaneKind: PaneKind {
 /// (`PaneStore.editorChanges()`).
 struct EditorShared: Sendable {
     var changeSubscribers: [UUID: AsyncStream<String>.Continuation] = [:]
+    /// The Ticket view's readable state, for every editor pane (`registerTicketActions`).
+    var ticket: EditorTicketMirror = .empty
+    /// What the Ticket views draw from (`EditorTicketViewState`); `read_pane` reads `ticket`.
+    var ticketView: EditorTicketViewState = .empty
+    /// What the panes draw review boxes from (`EditorReviewsState`); never in `read_pane` but for
+    /// the thread under the cursor.
+    var reviews: EditorReviewsState = .empty
+    /// Head texts being read now (`claimEditorReviewHeads`), so a file's is read once.
+    var reviewHeadsPending: Set<EditorReviewHead> = []
+    /// Bumped by an org switch: a head read an action started before it lands on nothing.
+    var reviewHeadsGeneration = 0
 }
 
 extension PaneSnapshot {

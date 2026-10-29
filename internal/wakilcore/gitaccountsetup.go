@@ -120,6 +120,74 @@ func SetGitToken(org, host, token string) error {
 	return SecretSetFor(org, gitTokenRef(host), strings.TrimSpace(token))
 }
 
+// setAPIAccess keeps token for org's ssh GitHub account on host and records how it got there. The
+// account keeps its method, key and user: git still pushes over ssh.
+func setAPIAccess(org, host, token, how string) error {
+	host = strings.ToLower(strings.TrimSpace(host))
+	a, ok := GitAccountFor(org, host)
+	if !ok {
+		return UserError("no git account for " + host + " in " + org)
+	}
+	if a.Method != "ssh" || a.Provider != "github" {
+		return UserError("API access belongs to an ssh GitHub account; " + host + "'s account signs in with " + a.Method)
+	}
+	if err := SetGitToken(org, host, token); err != nil {
+		return err
+	}
+	a.APIAccess = how
+	return AddGitAccount(org, a)
+}
+
+// SetGitAPIAccessToken gives org's ssh GitHub account on host API access with an access token.
+func SetGitAPIAccessToken(org, host, token string) error {
+	return setAPIAccess(org, host, token, "token")
+}
+
+// FinishAPIAccessSignIn is SetGitAPIAccessToken for a device flow's token.
+func FinishAPIAccessSignIn(org, host, token string) error {
+	return setAPIAccess(org, host, token, "signin")
+}
+
+// RemoveGitAPIAccess drops an ssh account's API access: its token leaves the Keychain and the
+// account stays as it was.
+func RemoveGitAPIAccess(org, host string) error {
+	host = strings.ToLower(strings.TrimSpace(host))
+	a, ok := GitAccountFor(org, host)
+	if !ok {
+		return UserError("no git account for " + host + " in " + org)
+	}
+	if a.Method != "ssh" || a.Provider != "github" {
+		return UserError("API access belongs to an ssh GitHub account; " + host + "'s account signs in with " + a.Method)
+	}
+	if err := SecretDelete(org, gitTokenRef(host)); err != nil {
+		return err
+	}
+	a.APIAccess = ""
+	return AddGitAccount(org, a)
+}
+
+// GitHubTokenFor is the one resolver the ticket view reads GitHub through: org's git account for
+// host must be a GitHub one, and carry a token — a Sign in, an access token, or an ssh account's
+// API access.
+func GitHubTokenFor(org, host string) (string, error) {
+	host = strings.ToLower(host)
+	a, ok := GitAccountFor(org, host)
+	if !ok {
+		return "", UserError("Pull requests not read: this organization has no git account for " + host + ". Add one in Settings → Organisation → Git.")
+	}
+	if a.Provider != "github" {
+		return "", UserError("Pull requests are read from GitHub only.")
+	}
+	if a.Method == "ssh" && a.APIAccess == "" {
+		return "", UserError("Pull requests not read: this organization's " + host + " account signs in with SSH, which reads no pull requests. Add API access to the GitHub account in Settings → Organisation → Git.")
+	}
+	token, _ := SecretGetFor(org, gitTokenRef(host))
+	if token == "" {
+		return "", UserError("no token kept for " + host)
+	}
+	return token, nil
+}
+
 func SetGitKeyPassphrase(org, host, passphrase string) error {
 	return SecretSetFor(org, gitPassphraseRef(host), passphrase)
 }
@@ -184,6 +252,23 @@ func TestGitAccount(ctx context.Context, org, host string) (string, error) {
 		}
 		return "", UserError(strings.TrimSpace(text))
 	}
+	return gitUserViaAPI(ctx, org, a, host)
+}
+
+// TestGitAPIAccess asks GitHub who the token behind org's account for host is. It is the test an
+// ssh account's API access row has, since TestGitAccount asks ssh for such an account.
+func TestGitAPIAccess(ctx context.Context, org, host string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if _, err := GitHubTokenFor(org, host); err != nil {
+		return "", err
+	}
+	a, _ := GitAccountFor(org, host)
+	return gitUserViaAPI(ctx, org, a, strings.ToLower(host))
+}
+
+// gitUserViaAPI reads the provider's user API with the account's token.
+func gitUserViaAPI(ctx context.Context, org string, a GitAccount, host string) (string, error) {
 	api, ok := gitUserAPI[a.Provider]
 	if !ok {
 		return "", UserError("Wakil cannot test a token on " + host + "; it is used on the next fetch")

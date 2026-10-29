@@ -203,6 +203,8 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		spec.GitHook = WantsGitHook(checks)
 		// 3a-iii's last clone folder, for the clone check's launch only (SeedSpec.CloneFolder).
 		spec.CloneFolder = WantsCloneFolder(checks)
+		// The Ticket view's repository, branches and record, for the ticket checks' launches only.
+		spec.TicketRepo = WantsTicketRepo(checks)
 		// 3c-ii's staging site and production project, for the tags and production checks only.
 		spec.BrowserSites = WantsBrowserSites(checks)
 		spec.PageStub = pageStub
@@ -210,6 +212,14 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		if err != nil {
 			return Result{}, err
 		}
+		// The Ticket view's GitHub (Ticket view Cover). Alive for the whole launch; started after
+		// the seed, which made the commit PR #212's head names.
+		ghAPI, stopGitHub, err := StartGitHubStub(seeded.TicketHeadSHA)
+		if err != nil {
+			return Result{}, err
+		}
+		defer stopGitHub()
+		fixture.GitHubAPI = ghAPI
 		s.logf("seeded org %q, project %q, environment %q",
 			seeded.Org, seeded.Project, seeded.Environment)
 	} else {

@@ -244,7 +244,8 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "ctx_config_tree", "ctx_config_tree_for",
              "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove", "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_connection_update",
              "ctx_create_environment", "ctx_create_org", "ctx_create_project",
-             "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
+             "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_api_access_remove",
+            "ctx_git_api_access_test", "ctx_git_api_access_token_set", "ctx_git_device_poll",
              "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
              "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set", "ctx_github_pull_requests", "ctx_jira_token_set", "ctx_keyboard", "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs",
@@ -271,9 +272,11 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "pane_open", "pane_resize", "pane_restore", "pane_scroll_clear",
              "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
              "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
-             "rail_set", "session_close", "session_get", "session_list", "session_new", "session_read",
+             "rail_set", "review_open", "review_reply_draft", "review_reply_send", "review_resolve", "review_step",
+             "session_close", "session_get", "session_list", "session_new", "session_read",
              "session_record_parent", "session_resume", "session_set_provider", "session_switch", "settings_open", "term_open",
-             "term_propose", "term_run", "term_scroll"])
+             "term_propose", "term_run", "term_scroll",
+             "ticket_in_flight", "ticket_link", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)
     // #185 made `wakil-http` the third Wakil-owned client, so three
@@ -599,12 +602,12 @@ private func listedProjectNames(_ registry: ActionRegistry) async throws -> Set<
     let declared = declaredClientProperties(of: wiring)
     // Sanity: reflection must actually be finding them, or this test
     // passes by seeing nothing.
-    #expect(declared == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient"],
+    #expect(declared == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient", "ticketClient"],
             "WakilWiring's MCPClient properties are \(declared)")
     #expect(wiring.wakilOwnedClients.count == declared.count,
             "a client is declared on WakilWiring and missing from wakilOwnedClients, so an org switch would leave it pointed at the outgoing org and shutdown would orphan it")
     #expect(Set(wiring.wakilOwnedClients.map(\.name))
-            == ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http"])
+            == ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http", "wakil-ticket"])
 }
 
 /// Every `MCPClient?` stored property of `wiring`, by name, sorted.
@@ -659,7 +662,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
 /// distinguishes a client that came back from one that was never stopped.
 @Test func everyWakilOwnedClientIsANewProcessAfterAnOrgSwitch() async throws {
     let binDir = repoRoot().appendingPathComponent("bin")
-    for name in ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http"] {
+    for name in ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http", "wakil-ticket"] {
         try #require(
             FileManager.default.isExecutableFile(atPath: binDir.appendingPathComponent(name).path),
             "run `make build` first — \(name) missing")
@@ -685,8 +688,8 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
     // it could not tell a type match from the nil quirk it was written to
     // avoid.
     #expect(declaredClientProperties(of: wiring)
-            == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient"])
-    #expect(wiring.wakilOwnedClients.count == 5)
+            == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient", "ticketClient"])
+    #expect(wiring.wakilOwnedClients.count == 6)
 
     var before: [String: Int32] = [:]
     for (name, client) in wiring.wakilOwnedClients {
@@ -694,7 +697,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         #expect(pid != nil, "\(name) did not start: \(wiring.diagnostics)")
         before[name] = pid
     }
-    #expect(before.count == 5, "every Wakil-owned client starts eagerly")
+    #expect(before.count == 6, "every Wakil-owned client starts eagerly")
 
     let diagnostics = await wiring.switchOrg(to: orgB)
     #expect(diagnostics.isEmpty, "\(diagnostics)")
@@ -876,6 +879,20 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
     #expect(empty["WAKIL_ANTHROPIC_BASE_URL"] == nil)
 }
 
+/// The e2e GitHub stub reaches the window's wakil-ticket only through this: set, it is forwarded;
+/// unset or empty, it is absent and the child calls GitHub's own API.
+@Test func childEnvironmentForwardsTheGitHubAPI() {
+    let env = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GITHUB_API": "http://127.0.0.1:4646/graphql"],
+        org: "initech", provider: "main")
+    #expect(env["WAKIL_GITHUB_API"] == "http://127.0.0.1:4646/graphql")
+    let without = WakilWiring.childProcessEnvironment(from: ["HOME": "/h", "PATH": "/p"], org: "initech", provider: "main")
+    #expect(without["WAKIL_GITHUB_API"] == nil)
+    let empty = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GITHUB_API": ""], org: "initech", provider: "main")
+    #expect(empty["WAKIL_GITHUB_API"] == nil)
+}
+
 /// Background agents, 2 of 4: an agent's dispatch reaches a client pinned to its own place,
 /// through the registry `build` itself assembled. **The guard against a `register*` call in
 /// `build` being handed a window client instead of a routed one**: every unit test of the router
@@ -1020,6 +1037,8 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
             "pane": .string(editor.id), "root": .string("/tmp"), "path": .string("x"), "group": .string("changed"),
         ])),
         (.files, "files_search", .object(["query": .string("needle")])),
+        // Ticket view: wakil-ticket is reached through the registry's ticket actions only.
+        (.ticket, "ticket_in_flight", .object([:])),
     ]
     for (role, action, params) in calls {
         _ = try? await wiring.registry.dispatch(

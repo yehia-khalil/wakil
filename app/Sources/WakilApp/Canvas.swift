@@ -583,7 +583,21 @@ extension WakilWindow {
                             undoApply: { await model.changesStashUndoApply(root: $0) })),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
-                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
+                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) },
+                    // Ticket view: the review boxes in the file.
+                    reviews: model.editorReviews,
+                    dispatchReply: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        return await model.dispatchFromSurfaceReply(name, .object(withPane))
+                    },
+                    // Ticket view: the column's Ticket view.
+                    ticket: model.editorTicket,
+                    dispatchThrowingReply: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        return try await model.dispatchFromSurfaceThrowing(name, .object(withPane))
+                    })
             case "browser":
                 // 3c-i. Every control is a `browser_*` action with this pane folded in; the web views
                 // are the window's (`BrowserTabHost`), so a rebuild here never reloads a page.
@@ -699,7 +713,11 @@ extension WakilWindow {
                         setPassphrase: { host, pass in await model.setGitKeyPassphrase(host: host, passphrase: pass) },
                         test: { host in await model.testGitAccount(host: host) },
                         deviceStart: { provider in await model.gitDeviceStart(provider: provider) },
-                        devicePoll: { provider, host, code in await model.gitDevicePoll(provider: provider, host: host, deviceCode: code) },
+                        devicePoll: { provider, host, code, apiAccess in
+                            await model.gitDevicePoll(provider: provider, host: host, deviceCode: code, apiAccess: apiAccess) },
+                        setAPIToken: { host, token in await model.setGitAPIAccessToken(host: host, token: token) },
+                        removeAPIAccess: { host in await model.removeGitAPIAccess(host: host) },
+                        testAPIAccess: { host in await model.testGitAPIAccess(host: host) },
                         ghLogins: { await model.gitGhLogins() },
                         ghImport: { host, user in await model.gitGhImport(host: host, user: user) }),
                     connections: ConnectionActions(

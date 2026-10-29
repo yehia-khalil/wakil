@@ -251,6 +251,39 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     }
     func captureKeys(_ keys: [String]) { calls.append("keys \(keys)") }
     func showPeek(key: String, _ peek: EditorPeekView?) { calls.append("peek \(key) \(peek?.title ?? "nil")") }
+    func setReviews(key: String, boxes: [ReviewBox]) { calls.append("reviews \(key) \(boxes.map(\.thread))") }
+}
+
+// Ticket view: the shown file tab's review boxes reach the renderer once each time they change;
+// a diff tab of the same file draws none.
+@MainActor @Test func rendererSendsSetReviewsForTheShownTab() {
+    let head = "a\nb\nc\n"
+    var reviews = EditorReviewsState.empty
+    reviews.reads.byRoot["/p"] = .init(viewer: "", threads: [
+        ReviewThreadState(id: "T1", path: "a.go", line: 2, comments: [ReviewCommentState(author: "lena", body: "Nit", createdAt: "")],
+                          number: 212, headSHA: "abc", repo: "github.com/initech/api", root: "/p")])
+    let key = EditorReviewHead(root: "/p", path: "a.go", sha: "abc")
+    reviews.heads[key] = head
+    reviews.fetched.insert(key)
+    let s = EditorSnapshot(tabs: [tab("/p/a.go", head), tab("/p/b.go", "x\n")], active: 0)
+    let r = RecordingRenderer()
+    var sent: [String: [ReviewBox]] = [:]
+    editorShowReviews(s, buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls == ["reviews file:/p/a.go [\"T1\"]"])
+    // Unchanged: nothing is sent again.
+    editorShowReviews(s, buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 1)
+    // A draft changes the box: sent again.
+    reviews.reads.drafts["T1"] = "Thanks"
+    editorShowReviews(s, buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 2)
+    // A file with no threads, and a diff tab of the reviewed file, are sent nothing.
+    editorShowReviews(EditorSnapshot(tabs: s.tabs, active: 1), buffer: "x\n", reviews: reviews, sent: &sent, to: r)
+    var d = EditorTab.diff(root: "/p", path: "a.go", group: .changed)
+    d.diffState = GitDiffState(original: head, modified: head, language: "go", binary: false, bytes: 1, lines: 3,
+                               truncated: false, error: nil, loading: false)
+    editorShowReviews(EditorSnapshot(tabs: [d], active: 0), buffer: nil, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 2)
 }
 
 @MainActor @Test func aFindStepReachesTheRendererLast() {

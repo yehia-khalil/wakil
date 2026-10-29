@@ -826,6 +826,13 @@ public final class WindowModel {
     /// passes `wiring.gitStatus`, the one the actions were registered with; a test that shows no git
     /// says `nil` out loud.
     let gitStatus: GitStatus?
+    /// The Ticket view's reads and drafts (`EditorTicketStore`), the one the ticket actions were
+    /// registered with. Production passes `wiring.ticketStore`; nil shows no ticket. An org switch
+    /// empties it (`invalidateForOrgChange`).
+    let ticket: EditorTicketStore?
+    /// The branch each root was on at the last status read, so a branch change reads its ticket
+    /// state (`ticketBranchesChanged`). The outgoing org's roots go on a switch.
+    var ticketBranches: [String: String] = [:]
     /// 3a-ii. The Changes view's state, per root, for the window's life only (R3: nothing persists).
     /// The message being typed; absent is empty.
     public internal(set) var changesMessages: [String: String] = [:]
@@ -891,6 +898,12 @@ public final class WindowModel {
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
     public private(set) var editorFiles: EditorFileListsState = .empty
+    /// Ticket view: what the editor panes draw review boxes from — the read threads, drafts, sends
+    /// and head texts (`EditorReviewsState`). Mirrored on refreshPanes; the outgoing org's go on a switch.
+    public internal(set) var editorReviews: EditorReviewsState = .empty
+    /// Ticket view: what the editor panes' Ticket views draw (`EditorTicketViewState`). Mirrored on
+    /// refreshPanes; the outgoing org's go on a switch.
+    public internal(set) var editorTicket: EditorTicketViewState = .empty
     /// The provider this window's session currently runs under, from
     /// `wakil-ctx`'s `get_context` (`ActiveContext.activeProvider`) at
     /// window-open. A session found under another provider cannot be
@@ -1143,6 +1156,8 @@ public final class WindowModel {
         // 3b-iii. Defaulted to nil here for `rootWatcher`'s reason; the public initialiser
         // production calls takes it with no default.
         gitStatus: GitStatus? = nil,
+        // Ticket view. Defaulted to nil here for `rootWatcher`'s reason.
+        ticket: EditorTicketStore? = nil,
         // The palette's direct reads. Defaulted to none here for `rootWatcher`'s reason; the
         // public initialiser production calls takes it with no default.
         paletteClients: PaletteClients = PaletteClients(),
@@ -1185,6 +1200,7 @@ public final class WindowModel {
         self.editorWatcher = editorRootWatcher.map { GitRootWatcher(watcher: $0) }
         self.fileLists = fileLists
         self.gitStatus = gitStatus
+        self.ticket = ticket
         self.providerId = providerId
         self.lookupFactory = lookupFactory
         // `organization` is still `""` at this point — it is learned
@@ -1672,6 +1688,10 @@ public final class WindowModel {
         // with nothing failing. Production passes `wiring.gitStatus`; a test that shows no git says
         // `nil` out loud.
         gitStatus: GitStatus?,
+        // Ticket view: the store the ticket actions were registered with. Defaulted to nil, unlike
+        // its neighbours, so the windows tests build need not name it; production passes
+        // `wiring.ticketStore` and `AppWiringTests` pins that it does.
+        ticket: EditorTicketStore? = nil,
         // The palette's direct reads (`PaletteClients`). No default, for `rootWatcher`'s
         // reason: production passes the wiring's clients, and a test with no palette says
         // `PaletteClients()` out loud.
@@ -1705,6 +1725,7 @@ public final class WindowModel {
             editorRootWatcher: editorRootWatcher,
             fileLists: fileLists,
             gitStatus: gitStatus,
+            ticket: ticket,
             paletteClients: paletteClients,
             placeClients: placeClients,
             agentSocketFactory: agentSocketFactory,
@@ -1768,6 +1789,7 @@ public final class WindowModel {
         gitStatus: GitStatus? = nil,
         claudeLocator: ClaudeExecutableLocator? = nil,
         apiHTTP: (any ToolCaller)? = nil,
+        ticket: EditorTicketStore? = nil,
         // Names: a test that registers `conversationRenameAction` parks on the broker this drains.
         conversationRequests: ConversationBroker = ConversationBroker()
     ) -> WindowModel {
@@ -1853,6 +1875,7 @@ public final class WindowModel {
             editorRootWatcher: nil,
             fileLists: nil,
             gitStatus: gitStatus,
+            ticket: ticket,
             paletteClients: paletteClients,
             placeClients: placeClients,
             agentSocketFactory: agentSocketFactory,
@@ -2438,6 +2461,12 @@ public final class WindowModel {
         editorFiles = .empty
         await gitStatus?.reset()
         gitRoots = []
+        // The Ticket view: the outgoing org's reads, drafts and flights, and what the panes read of them.
+        await ticket?.reset()
+        await panes.resetEditorTicket()
+        editorReviews = .empty
+        editorTicket = .empty
+        ticketBranches = [:]
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
@@ -4740,6 +4769,11 @@ public final class WindowModel {
             paneCells = paneCells.filter { open.contains($0.key) }
         }
         await mirrorEditorFiles()
+        let reviews = await panes.editorReviews()
+        if reviews != editorReviews { editorReviews = reviews }
+        let ticketView = await panes.editorTicketView()
+        if ticketView != editorTicket { editorTicket = ticketView }
+        await readReviewHeads()
     }
 
     /// Copies the file lists' state into `editorFiles`, for the trees.
@@ -4771,6 +4805,14 @@ public final class WindowModel {
     /// afterwards.
     public func dispatchFromSurface(_ name: String, _ params: JSONValue) async {
         await dispatchFromSurfaceRan(name, params)
+    }
+
+    /// `dispatchFromSurface`, answering the action's reply (nil when it did not run; its refusal is
+    /// in `status`): a review box's ⌥↓ hands the keyboard to the box of the thread it stepped to.
+    public func dispatchFromSurfaceReply(_ name: String, _ params: JSONValue) async -> JSONValue? {
+        let result = await dispatch(name, params)
+        await refreshPanes()
+        return result
     }
 
     /// Several surface calls, **each awaited before the next begins**, in the order given —
@@ -5265,11 +5307,21 @@ public final class WindowModel {
     /// One read of the window's status, for `only` or every root, shown as it happens: the status
     /// marks its roots loading (and the window's mirror lists them so), then the read is awaited
     /// and the editor panes take what it found. Without a status there is no git to show.
+    /// An editor pane's snapshot, for the window's own extensions (`WindowModel+Ticket`).
+    func editorSnapshot(pane: String) async -> EditorSnapshot { await panes.editorSnapshot(paneId: pane) }
+    /// The panes' review head texts, claimed and landed for `readReviewHeads` (`WindowModel+Ticket`).
+    func claimReviewHeads(_ wanted: [EditorReviewHead]) async -> [EditorReviewHead] { await panes.claimEditorReviewHeads(wanted) }
+    nonisolated func landReviewHead(_ head: EditorReviewHead, text: String?) async {
+        await panes.landEditorReviewHead(head, text: text)
+    }
+
     private func readStatus(only root: String?) async {
         guard let gitStatus else { return }
-        let ticket = await gitStatus.begin(only: root)
+        let begun = await gitStatus.begin(only: root)
         gitRoots = await gitStatus.roots
-        await gitStatus.finish(ticket)
+        await gitStatus.finish(begun)
+        // A root whose branch changed (or was first seen) reads its ticket state.
+        await ticketBranchesChanged(await gitStatus.roots)
         // The editor panes' git state (the Changes highlight, and later their diff tabs and gutter
         // baselines) against the status just read: `what: git` reads nothing itself.
         for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, EditorPaneKind.self) {
@@ -7988,15 +8040,27 @@ public final class WindowModel {
     /// everyone else — one confirmation flow, read two ways at its edges
     /// rather than implemented twice.
     private func parkAndAwait(_ name: String, _ params: JSONValue) async -> MutationDispatchOutcome {
-        guard let statement = stringParam(params, "statement"), !statement.isEmpty else {
+        // One order with the agent's side (`ActionRegistry.planeStatement`): the action's own
+        // description first, the caller's `statement` only when there is none.
+        let words: (text: String, own: Bool)?
+        do {
+            words = try await registry.planeStatement(
+                name: name, params: params, origin: .ui, caller: DispatchCaller(place: place, session: nil))
+        } catch {
+            status = statusDescribingFailure(name, error)
+            return .refused(status)
+        }
+        guard let words, !words.text.isEmpty else {
             status = "\(name): no statement to confirm — nothing ran"
             return .refused(status)
         }
+        let statement = words.text
+        let own: String? = words.own ? words.text : nil
         let proposal = PendingMutation(
             action: name, params: params,
             database: stringParam(params, "database"),
             statement: statement,
-            affectsEveryRow: mutationAffectsEveryRow(statement),
+            affectsEveryRow: own.map(mutationAffectsEveryRow) ?? false,
             origin: .ui,
             // The screen's, where the operator asked: the plane shows it while they stay.
             place: place)

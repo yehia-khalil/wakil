@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,7 +24,9 @@ type JiraClient struct {
 	BaseURL string
 	Email   string
 	Token   string
-	http    *http.Client
+	// http is built once, on first use: wakil-ticket reads several issues at once on one client.
+	httpOnce sync.Once
+	http     *http.Client
 }
 
 // Issue is the shape wakil-pm's tools return: a deliberately small
@@ -339,14 +342,14 @@ func (c *JiraClient) scrubSecrets(msg string) string {
 var errJiraRedirect = fmt.Errorf("Jira response tried to redirect; refusing to follow")
 
 func (c *JiraClient) client() *http.Client {
-	if c.http == nil {
+	c.httpOnce.Do(func() {
 		c.http = &http.Client{
 			Timeout: 20 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return errJiraRedirect
 			},
 		}
-	}
+	})
 	return c.http
 }
 

@@ -225,6 +225,27 @@ public actor ActionRegistry {
         all().first { $0.name == name }
     }
 
+    /// The words the confirmation plane shows for a gated `name`, in one order for the operator's
+    /// window and the agent's server alike: the action's own `describe` (which may ask a service
+    /// where the write goes, and refuses by throwing), else Wakil's `confirmationDescription`, else
+    /// the caller's own `statement` (SQL, an HTTP request). `own` says the words are the caller's,
+    /// the only case `affectsEveryRow` is read from. Nil when there is nothing to show.
+    ///
+    /// **Wakil's words first.** A caller's `statement` beside a described action is ignored, so a
+    /// stray one can never put other words on the plane than the ones the write carries.
+    public func planeStatement(name: String, params: JSONValue, origin: ActionOrigin,
+                               caller: DispatchCaller) async throws -> (text: String, own: Bool)? {
+        if let describe = actions[name]?.describe {
+            let text = try await Self.$dispatchOrigin.withValue(origin) {
+                try await Self.$dispatchCaller.withValue(caller) { try await describe(params) }
+            }
+            return (text, false)
+        }
+        if let text = confirmationDescription(action: name, params: params) { return (text, false) }
+        if case .object(let o) = params, case .string(let own)? = o["statement"], !own.isEmpty { return (own, true) }
+        return nil
+    }
+
     /// Runs `name`'s handler and returns its result, or throws without
     /// running it. Every outcome this method can produce — an unrecognized
     /// name, a gated refusal, an outright block, a handler that throws, or

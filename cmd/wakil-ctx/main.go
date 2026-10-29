@@ -273,6 +273,7 @@ type gitDevicePollArgs struct {
 	Provider   string `json:"provider" jsonschema:"github or gitlab"`
 	Host       string `json:"host" jsonschema:"the host the account is for"`
 	DeviceCode string `json:"deviceCode" jsonschema:"git_device_start's deviceCode"`
+	APIAccess  bool   `json:"apiAccess,omitempty" jsonschema:"true when the Sign in is an ssh GitHub account's API access: the account keeps ssh"`
 }
 
 type gitDevicePollOut struct {
@@ -825,11 +826,11 @@ func newServer() *mcp.Server {
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.PullRequestsResult, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {
-				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.MyPullRequest{}}, nil
 			}
 			out, err := wakilcore.GitHubPullRequests(ctx, org)
 			if err != nil {
-				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.MyPullRequest{}}, nil
 			}
 			return nil, out, nil
 		})
@@ -1126,6 +1127,31 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "git_api_access_token_set", Description: "Give an organisation's ssh GitHub account API access with an access token, kept at the account's token ref in the Keychain. The account keeps ssh."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetGitAPIAccessToken(a.ID, a.Host, a.Token); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_api_access_remove", Description: "Drop an ssh GitHub account's API access: its token leaves the Keychain and the account stays."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RemoveGitAPIAccess(a.ID, a.Host); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_api_access_test", Description: "Ask GitHub who an ssh account's API access token belongs to. Answers the name, or GitHub's refusal."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitTestOut, error) {
+			user, err := wakilcore.TestGitAPIAccess(ctx, a.ID, a.Host)
+			if err != nil {
+				return toolErr(err), gitTestOut{}, nil
+			}
+			return nil, gitTestOut{User: user}, nil
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "connection_catalog", Description: "The ready-made connections an operator can pick from: id, title, transport, address, sign-in and the fields each asks for (a secret field is marked; its value is never here)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, connectionCatalogOut, error) {
 			return nil, connectionCatalogOut{Kinds: wakilcore.ConnectionCatalog}, nil
@@ -1319,7 +1345,11 @@ func newServer() *mcp.Server {
 			if pending {
 				return nil, gitDevicePollOut{Pending: true}, nil
 			}
-			if err := wakilcore.FinishSignIn(a.ID, a.Provider, a.Host, token); err != nil {
+			finish := wakilcore.FinishSignIn
+			if a.APIAccess {
+				finish = func(org, _, host, token string) error { return wakilcore.FinishAPIAccessSignIn(org, host, token) }
+			}
+			if err := finish(a.ID, a.Provider, a.Host, token); err != nil {
 				return toolErr(err), gitDevicePollOut{}, nil
 			}
 			return nil, gitDevicePollOut{Done: true}, nil

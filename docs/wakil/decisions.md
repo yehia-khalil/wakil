@@ -1994,6 +1994,7 @@ CLI permission layer, since each needs a shell command or a file edit by the ope
 - **`Wakil --dispatch <file> [--environment <name>]`** (`main.swift`) runs a script of actions
   with origin `.debug` in every build, production included, against the real `$HOME`. It is the
   older of the two and needs no relaunch.
+
 ### 2026-10-25 — acting in a web page
 
 `browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll` (`.mutate`,
@@ -2008,3 +2009,34 @@ agent's text only as an argument and runs no string the agent sent. A page over 
 where. The operator typing in the page holds an act for up to 10 s. Still refused: a password, card or
 one-time-code field typed or filled by the agent (a saved password is filled only by the operator's press, Decision 49), an act in a page that is not http or https, a script the agent
 supplies, and the operator's own `.ui` acts in the page on a production site (no surface yet).
+
+### 2026-10-26 — reply to and resolve a review thread
+
+A reply in a review thread, and Resolve or Unresolve on one, on the organization's pull requests
+(`wakil-ticket`'s `review_reply` and `review_resolve`, from the Ticket view). **Only these two.**
+Both go out with the organization's own git account for the remote's host (a Sign in or token
+account; an SSH account through its API access), never `gh` and never a connection. A reply is a
+comment in a conversation the other person is already waiting in, and Resolve is undone by
+Unresolve, so neither needs more than the plane's one sentence.
+
+**The plane carries the exact words for every channel.** A reply is *gate* for the operator, the
+agent and voice alike (`review_reply_send`): the plane shows the thread's place and the text,
+verbatim, and Run posts it. Before the agent's reply or resolve reaches the plane, the thread is
+described from GitHub by its id (`review_thread`), so the words on the plane are GitHub's answer
+and not the caller's; the action refuses if the repository or pull request it was given does not
+match. The operator's own Resolve runs in place. An agent's Resolve is *gate* (`agentPrice`).
+The organization's account is the only credential in play, so nothing is posted as anyone else.
+
+**Still refused:** a new top-level comment on a pull request, a review (approve, request changes,
+comment), editing or deleting a comment, merging or closing, labels, assignees, every other GitHub
+write, and any GitHub write by a connection or `gh`.
+
+**The ticket record is not an earned write.** It is Wakil's own store (`tickets/<KEY>.json` under
+the organization's folder), written by the operator or by the agent in the window, and priced
+*allow* (`ticket_record_update`, `ticket_link`) like any other record of Wakil's. Linking a branch
+to a key changes nothing outside Wakil. No PM write was added: a Jira ticket is read, never
+written, from the Ticket view.
+
+*Reverse if:* an organization's automation reacts to a resolved thread (a bot that merges on zero
+open threads), which makes Resolve no longer undone by Unresolve, as Jira automations did to the
+transition (§7 q15).

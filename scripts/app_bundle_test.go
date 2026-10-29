@@ -35,7 +35,7 @@ import (
 // `wakil` is intentionally absent — it is the operator CLI, not an MCP
 // server, and nothing in the app spawns it (the same line
 // register-provider.sh draws; see providerServers).
-var bundledServers = []string{"wakil-ctx", "wakil-db", "wakil-git", "wakil-http", "wakil-pm", "wakil-recall", "wakil-files", "wakil-connect"}
+var bundledServers = []string{"wakil-ctx", "wakil-db", "wakil-git", "wakil-http", "wakil-pm", "wakil-recall", "wakil-files", "wakil-connect", "wakil-ticket"}
 
 // bundledBinaries is everything Contents/Resources must hold: the MCP servers,
 // and the operator CLI the window runs `provider credentials` through.

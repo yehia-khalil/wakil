@@ -1062,6 +1062,9 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_open", "editor_open_file", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
     // 3a-v-b: the conflict blocks in a conflicted file's tab.
     "editor_conflict_accept", "editor_conflict_next", "editor_conflict_previous", "editor_conflict_compare",
+    // Ticket view: the ticket reads and record, and the review threads, all agent-reachable.
+    "ticket_read", "ticket_refresh", "ticket_show", "ticket_in_flight", "ticket_link", "ticket_record_update",
+    "review_open", "review_step", "review_reply_draft", "review_reply_send", "review_resolve",
     // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
     "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_print", "browser_pull_requests_refresh", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_unpin", "browser_zoom",
     // 3c-ii: the agent's reach into the page; the five acts are mutations, revoke_site the operator's.
@@ -1093,6 +1096,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
     "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set", "ctx_git_account_test",
     "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+    "ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test",
     "ctx_set_project_agent_instructions",
     // Connections: the operator-only connection actions and the Jira token.
     "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",
@@ -1135,6 +1139,10 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_find", "mcp__wakil__editor_search", "mcp__wakil__files_search",
     "mcp__wakil__editor_open", "mcp__wakil__editor_open_file", "mcp__wakil__editor_new_scratch", "mcp__wakil__editor_focus_tab", "mcp__wakil__editor_close", "mcp__wakil__editor_goto", "mcp__wakil__editor_select", "mcp__wakil__editor_set_language", "mcp__wakil__editor_replace_range", "mcp__wakil__editor_reload", "mcp__wakil__editor_restore",
     "mcp__wakil__editor_conflict_accept", "mcp__wakil__editor_conflict_next", "mcp__wakil__editor_conflict_previous", "mcp__wakil__editor_conflict_compare",
+    // Ticket view: the reads and controls; ticket_link, ticket_record_update, review_reply_send and
+    // review_resolve are mutations, reached through the gate.
+    "mcp__wakil__ticket_read", "mcp__wakil__ticket_refresh", "mcp__wakil__ticket_show", "mcp__wakil__ticket_in_flight",
+    "mcp__wakil__review_open", "mcp__wakil__review_step", "mcp__wakil__review_reply_draft",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",
     // 3c-i: every browser action but browser_restore.
     "mcp__wakil__browser_back", "mcp__wakil__browser_bookmark", "mcp__wakil__browser_close_tab", "mcp__wakil__browser_copy_url", "mcp__wakil__browser_download_cancel", "mcp__wakil__browser_downloads_clear", "mcp__wakil__browser_find", "mcp__wakil__browser_find_close", "mcp__wakil__browser_find_step", "mcp__wakil__browser_focus_address", "mcp__wakil__browser_forward", "mcp__wakil__browser_group", "mcp__wakil__browser_move_tab", "mcp__wakil__browser_navigate", "mcp__wakil__browser_new_tab", "mcp__wakil__browser_open", "mcp__wakil__browser_pin", "mcp__wakil__browser_pull_requests_refresh", "mcp__wakil__browser_reload", "mcp__wakil__browser_reopen_tab", "mcp__wakil__browser_select_tab", "mcp__wakil__browser_stop", "mcp__wakil__browser_tab_column", "mcp__wakil__browser_unpin", "mcp__wakil__browser_zoom",

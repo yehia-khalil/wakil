@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-refresh-cancel.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "0c5f234669c976b86112fc8fa249a008f6c8cdf1"
+}

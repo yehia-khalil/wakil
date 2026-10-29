@@ -1,0 +1,30 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"pane":"editor-1","field":"ticket.branch","equals":"ini-142-login"}}
+{"expect":{"pane":"editor-1","field":"ticket.marked","equals":"INI-142"}}
+{"expect":{"pane":"editor-1","field":"ticket.prs[0].number","equals":"212"}}
+{"expect":{"pane":"editor-1","field":"ticket.prs[0].openThreads","equals":"2"}}
+{"expect":{"tree":"contains","text":"INI-142 Log in with a token In Progress · waiting on reviewer, you"}}
+{"expect":{"tree":"contains","text":"#212  ini-142-login → main      open · checks 1/2 · 1 failing"}}
+{"expect":{"tree":"contains","text":"✗ lint"}}
+{"expect":{"tree":"contains","text":"no Jira site configured for org \"e2e-fixture\" — set one with: wakil org set e2e-fixture --jira-base https://<site>.atlassian.net"}}
+{"dispatch":{"action":"ticket_read","params":{}}}
+{"dispatch":{"action":"ticket_read","params":{"key":"INI-142"}}}
+{"dispatch":{"action":"ticket_in_flight","params":{}}}
+{"do":{"click":"editor.ticket.refresh"}}
+{"expect":{"pane":"editor-1","field":"ticket.reading","equals":"false"}}
+{"dispatch":{"action":"ticket_refresh","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"ticket.prs[0].number","equals":"212"}}
+{"expect":{"tree":"contains","text":"waiting on reviewer, you"}}

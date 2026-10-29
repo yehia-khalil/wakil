@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-next-kept.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "395ca9b55145603a6b03818e72936354568e96d5"
+}

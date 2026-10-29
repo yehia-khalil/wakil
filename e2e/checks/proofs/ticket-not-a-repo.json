@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-not-a-repo.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "e952c5ce34481d18c20cf808ce6d3155fc6fff6d"
+}

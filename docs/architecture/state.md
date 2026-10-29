@@ -26,6 +26,8 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
 | The window's own memory (`railCollapsed`: the rail put away to its spine; absent means shown) | `~/.wakil/layouts/window.json` | Swift: `LayoutPersistence.saveWindowState`, from `WindowModel` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |
+| A ticket's record (next, decisions, not done, waiting on, verified, rulings; empty lists as `[]`) and its log (append-only, the old line written before each change) | `~/.wakil/orgs/<org>/tickets/<KEY>.json`, `<KEY>.log.jsonl` (`<KEY>.json.lock` beside each, taken per key) | Go: `ticketrecord.go` (`wakil-ticket` `ticket_record_write`, `ticket_branch`'s seen/branch/PR fields) |
+| Ticket links made in Wakil, keyed `<host>/<owner>/<repo>:<branch>` | `~/.wakil/orgs/<org>/tickets/links.json` | Go: `ticketlink.go` (`ticket_link`) |
 | Code-identifier cache | `~/.wakil/vocabulary/` | Swift: `CodeSource` |
 | Agent transcripts | `<provider configDir>/projects/…` | the `claude` CLI; read by Go `sessions.go`, `transcript.go` |
 
@@ -59,6 +61,8 @@ never written to `project.json`, only the ref.
   emptied when the last one closes or the organisation switches. Diff tabs are never saved; a
   saved Git pane loads as an editor pane on Changes (`layoutMigratingGitPanes`).
 
+- **The Ticket view's reads** (`EditorTicketStore`): one cache entry per (root, branch), one read in flight each; review reply drafts and sends in flight beside them. Never saved with the layout. `reset()` on an org switch empties all of it and drops reads in flight by generation; the window's cache is filled only by the window's own client.
+
 ## What an org switch resets
 
 `WindowModel.invalidateForOrgChange()` (`app/Sources/WakilKit/App/WindowModel.swift`) resets only
@@ -66,7 +70,7 @@ what belongs to the organisation itself: the vocabulary (`dropAll`), project and
 production flags (here and in the registry), settings and accounts, an in-flight sign-in (a mint in
 flight is left to finish), the provider id, `lookup` and roots, capacity, the palette, and the
 editor's pending requests and unsaved prompt (they name panes on the screen being left), and the
-window's git status and its `gitRoots` mirror (of the screen's roots). Then
+window's git status and its `gitRoots` mirror (of the screen's roots), and the ticket store (reads, drafts, sends) with the branch each root was last seen on (`ticketBranches`). Then
 `syncGitWatcher()` and `syncEditorWatcher()` follow the empty roots. `organization` is set by the
 caller, `setOrganization`.
 

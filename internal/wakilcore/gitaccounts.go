@@ -10,15 +10,18 @@ import (
 // GitAccount is one of an organisation's git accounts (3a-iii, Decision 44): at most one per host.
 // Method is ssh, token or signin; Provider is github, gitlab, bitbucket or other. KeyPath is the
 // private key an ssh account uses; Username is Bitbucket's, which its tokens need beside them.
+// APIAccess is an ssh GitHub account's optional API credential: "" (none), "signin" or "token".
+// It is kept at the same git-<host>-token ref a token account uses, and git still pushes over ssh.
 // The secrets — a token, a key's passphrase — are in the Keychain under git-<host>-token and
 // git-<host>-ssh-passphrase, never here.
 type GitAccount struct {
-	Host     string `json:"host"`
-	Provider string `json:"provider"`
-	Method   string `json:"method"`
-	User     string `json:"user,omitempty"`
-	KeyPath  string `json:"keyPath,omitempty"`
-	Username string `json:"username,omitempty"`
+	Host      string `json:"host"`
+	Provider  string `json:"provider"`
+	Method    string `json:"method"`
+	User      string `json:"user,omitempty"`
+	KeyPath   string `json:"keyPath,omitempty"`
+	Username  string `json:"username,omitempty"`
+	APIAccess string `json:"apiAccess,omitempty"`
 }
 
 func gitTokenRef(host string) string      { return "git-" + host + "-token" }
@@ -42,6 +45,15 @@ func AddGitAccount(org string, a GitAccount) error {
 	case "ssh", "token", "signin":
 	default:
 		return UserError("a git account's method is ssh, token or signin")
+	}
+	switch a.APIAccess {
+	case "":
+	case "signin", "token":
+		if a.Method != "ssh" || a.Provider != "github" {
+			return UserError("API access belongs to an ssh GitHub account")
+		}
+	default:
+		return UserError("a git account's API access is signin or token")
 	}
 	if _, err := OrgDirFor(org); err != nil {
 		return err

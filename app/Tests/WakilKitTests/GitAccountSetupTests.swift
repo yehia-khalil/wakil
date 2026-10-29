@@ -69,5 +69,32 @@ import Testing
         #expect(gitTestFailureText("ssh: connect to host x port 22: Operation timed out", provider: .other)
                 == "ssh: connect to host x port 22: Operation timed out")
     }
-}
 
+    @Test func apiAccessRowOnlyOnSSHGitHub() {
+        #expect(gitAPIAccessRow(SettingsGitAccount(host: "github.com", provider: "github", method: "ssh")) != nil)
+        #expect(gitAPIAccessRow(SettingsGitAccount(host: "github.com", provider: "github", method: "token")) == nil)
+        #expect(gitAPIAccessRow(SettingsGitAccount(host: "github.com", provider: "github", method: "signin")) == nil)
+        #expect(gitAPIAccessRow(SettingsGitAccount(host: "gitlab.com", provider: "gitlab", method: "ssh")) == nil)
+    }
+
+    @Test func apiAccessRowWording() {
+        func row(_ access: String) -> GitAPIAccessRow? {
+            gitAPIAccessRow(SettingsGitAccount(host: "github.com", provider: "github", method: "ssh", apiAccess: access))
+        }
+        #expect(row("") == GitAPIAccessRow(title: "API access", detail: "Not set — pull requests are not read", isSet: false))
+        #expect(row("signin") == GitAPIAccessRow(title: "API access", detail: "Signed in", isSet: true))
+        #expect(row("token") == GitAPIAccessRow(title: "API access", detail: "Access token", isSet: true))
+    }
+
+    @Test func theTreeCarriesAnAccountsAPIAccess() throws {
+        let json = #"{"id":"o","gitAccounts":[{"host":"github.com","provider":"github","method":"ssh","apiAccess":"token"},{"host":"gitlab.com"}]}"#
+        let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
+        #expect(org.gitAccounts.map(\.apiAccess) == ["token", ""])
+    }
+
+    @Test func onlyAGitHubSSHAccountGetsTheAPIAccessTip() {
+        #expect(gitSSHAPIAccessTip(provider: .github)?.contains("access token") == true)
+        #expect(gitSSHAPIAccessTip(provider: .gitlab) == nil)
+        #expect(gitSSHAPIAccessTip(provider: .other) == nil)
+    }
+}

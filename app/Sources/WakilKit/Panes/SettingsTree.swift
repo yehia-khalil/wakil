@@ -225,14 +225,18 @@ public struct SettingsGitAccount: Sendable, Equatable, Decodable {
     public var user: String
     public var keyPath: String
     public var username: String
+    /// An SSH GitHub account's optional API credential: "" (none), "signin" or "token".
+    public var apiAccess: String
 
-    public init(host: String, provider: String, method: String, user: String = "", keyPath: String = "", username: String = "") {
+    public init(host: String, provider: String, method: String, user: String = "", keyPath: String = "", username: String = "",
+                apiAccess: String = "") {
         self.host = host
         self.provider = provider
         self.method = method
         self.user = user
         self.keyPath = keyPath
         self.username = username
+        self.apiAccess = apiAccess
     }
 
     public init(from decoder: Decoder) throws {
@@ -243,9 +247,10 @@ public struct SettingsGitAccount: Sendable, Equatable, Decodable {
         user = try c.decodeIfPresent(String.self, forKey: .user) ?? ""
         keyPath = try c.decodeIfPresent(String.self, forKey: .keyPath) ?? ""
         username = try c.decodeIfPresent(String.self, forKey: .username) ?? ""
+        apiAccess = try c.decodeIfPresent(String.self, forKey: .apiAccess) ?? ""
     }
 
-    private enum CodingKeys: String, CodingKey { case host, provider, method, user, keyPath, username }
+    private enum CodingKeys: String, CodingKey { case host, provider, method, user, keyPath, username, apiAccess }
 }
 
 /// One value a connection asks for (a catalog kind's field): a secret one is drawn masked and

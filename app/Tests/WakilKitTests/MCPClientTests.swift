@@ -36,6 +36,7 @@ private func repoRoot() -> URL {
     // set_local_provider added by 3b-viii for a local model endpoint (Decision 42).
     // connection_* and jira_token_set added by Connections Task 2: the Settings pane's
     // connections and their browser sign-in.
+    // git_api_access_* added by the Ticket view: an ssh GitHub account's API access.
     // keyboard and set_keys added by keyboard Task 1: the keymap's read and its whole-map write.
     // The pin grows with the server, layer by layer. It is here because
     // the Swift side speaks to whatever binary `bin/` holds, and
@@ -47,7 +48,8 @@ private func repoRoot() -> URL {
                       "connection_secrets_set", "connection_signin_start", "connection_signin_wait",
                       "connection_signout", "connection_update", "create_environment",
                       "create_org", "create_project", "derive_config_dir", "editor_settings", "get_context", "get_session",
-                      "git_account_add", "git_account_remove", "git_account_test", "git_device_poll",
+                      "git_account_add", "git_account_remove", "git_account_test",
+                      "git_api_access_remove", "git_api_access_test", "git_api_access_token_set", "git_device_poll",
                       "git_device_start", "git_gh_import", "git_gh_logins", "git_host_suggestions",
                       "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set", "github_pull_requests", "jira_token_set", "keyboard",
                       "list_accounts", "list_environments", "list_machine_providers",

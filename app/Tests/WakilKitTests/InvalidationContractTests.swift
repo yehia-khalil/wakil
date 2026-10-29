@@ -34,6 +34,8 @@ private let orgDerived: Set<String> = [
     // 3a-v-b: the outgoing org's roots' stash clashes (R4, mirrored from the status, which resets) and the
     // operations whose prepared message already filled a box.
     "changesClashes", "changesFilledFrom",
+    // Ticket view: the branch each of the outgoing org's roots was on; `invalidateForOrgChange` empties it.
+    "ticketBranches",
     "project", "projectKey", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
@@ -122,6 +124,12 @@ private let orgDerived: Set<String> = [
     // 3b-ii PR 7: the trees' mirror of the file list — the outgoing project's listings. Emptied
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "editorFiles",
+    // Ticket view: the review boxes' threads, drafts and head texts — the outgoing org's reads.
+    // Emptied, with the panes' own copy (`resetEditorTicket`).
+    "editorReviews",
+    // Ticket view: what the Ticket views draw — the outgoing org's reads, In flight and records.
+    // Emptied, with the panes' own copy (`resetEditorTicket`).
+    "editorTicket",
     // 3b-iii PR 1: the window's mirror of the git status, the outgoing org's roots. Reset in the
     // same place as `gitStatus` (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitRoots",
@@ -417,6 +425,9 @@ private let orgDerivedBehindAReference: Set<String> = [
     // 3b-iii PR 1: one for the window's life (the wiring's), its CONTENTS the status of the screen's
     // roots. `invalidateForOrgChange` resets it (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitStatus",
+    // Ticket view: one store for the window's life (the wiring's), its CONTENTS the outgoing org's
+    // reads, drafts and flights. `invalidateForOrgChange` resets it (EditorTicketTests.aReadFromTheOldOrgIsDropped).
+    "ticket",
     // 2e (#202). `providerLoginSession` is exactly the shape this third
     // bucket was created for: the reference is stable — every login goes
     // through the one session this window owns — while its CONTENTS are

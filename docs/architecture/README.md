@@ -30,7 +30,7 @@ flowchart LR
     Reg --> Client["MCPClient (one per binary)"]
     Sock["MCPSocketServer"] --> Reg
   end
-  Client -->|"MCP over stdio"| Bins["wakil-ctx, wakil-db, wakil-http, wakil-git"]
+  Client -->|"MCP over stdio"| Bins["wakil-ctx, wakil-db, wakil-http, wakil-git, wakil-ticket"]
   WM --> Harness["ClaudeCodeCLIHarness"]
   Harness -->|"spawns"| Claude["claude CLI"]
   Claude -->|"stdio"| Shim["Wakil --mcp-shim"]
@@ -46,8 +46,8 @@ flowchart LR
 - **`ActionRegistry.dispatch`** is the single path for every state change, whether a control, the
   agent, or a `--dispatch` script asked. It asks `writeGate` first and journals every outcome.
 - **The Go binaries** (`cmd/`, `internal/`) are headless capabilities behind MCP. The window starts
-  four of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
-  (`agentFacingServers`). `wakil-git` is started by both.
+  five of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
+  (`agentFacingServers`). `wakil-git` is started by both. `wakil-ticket` is window-owned only: not in `agentFacingServers`, so the agent reaches it through registry actions.
 - **`wakil-connect`** is one process per connection of the launching place's organization, started by the agent's
   `claude` process (`AgentConnectionsBox` builds its config). It fronts the organization's own MCP
   server, injects the credentials, and gates every call. See `go.md`.

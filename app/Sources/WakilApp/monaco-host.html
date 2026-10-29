@@ -30,6 +30,42 @@
 .wakil-conflict-row{pointer-events:auto;display:flex;align-items:center;gap:6px;padding:0 8px;color:rgba(232,236,246,.38);font:11px Menlo,monospace}
 .wakil-conflict-row button{all:unset;cursor:pointer;white-space:nowrap;color:rgba(232,236,246,.72)}
 .wakil-conflict-row button:hover{color:#e8ecf6}
+/* Ticket view (design A, cards with state): a review thread is a quiet card under its line, laid
+   over a view zone as tall as the card. Its left edge carries §5's meaning only: amber while it waits
+   on you, green once resolved (and the card dims); violet hairlines are where the keyboard is. */
+.wakil-review{pointer-events:auto;box-sizing:border-box;padding:3px 18px 6px 4px;color:#e8ecf6;font:12.5px -apple-system,BlinkMacSystemFont,sans-serif;outline:none;overflow:hidden}
+.wakil-review ::selection{background:rgba(124,92,255,.35)}
+.wakil-review-card{background:rgba(232,236,246,.035);border:1px solid rgba(232,236,246,.08);border-left:2px solid rgba(232,236,246,.16);border-radius:6px;padding:8px 10px}
+.wakil-review-waiting .wakil-review-card{border-left-color:#e8b45a}
+.wakil-review-resolved .wakil-review-card{border-left-color:#8be0c8;opacity:.65}
+.wakil-review:focus .wakil-review-card,.wakil-review:focus-within .wakil-review-card{background:rgba(232,236,246,.055);border-top-color:rgba(124,92,255,.45);border-right-color:rgba(124,92,255,.45);border-bottom-color:rgba(124,92,255,.45)}
+.wakil-review-resolved:focus .wakil-review-card,.wakil-review-resolved:focus-within .wakil-review-card{opacity:.85}
+.wakil-review-head{display:flex;gap:7px;align-items:center;white-space:nowrap;overflow:hidden;color:rgba(232,236,246,.45);font-size:11px}
+.wakil-review-avatar{flex:none;width:16px;height:16px;border-radius:50%;background:#2a2f44;color:#e8ecf6;font:600 9px -apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center}
+.wakil-review-author{color:#e8ecf6;font-weight:600}
+.wakil-review-pos{margin-left:auto;display:flex;align-items:center;gap:6px;font:10.5px Menlo,monospace;font-variant-numeric:tabular-nums}
+.wakil-review-note{color:#e8b45a}
+.wakil-review-text{white-space:pre-wrap;word-break:break-word;margin:5px 0 7px 23px;line-height:1.45}
+.wakil-review-reply{margin:2px 0 6px 23px;padding-left:9px;border-left:1px solid rgba(232,236,246,.1)}
+.wakil-review-reply .wakil-review-text{margin-left:0;margin-bottom:4px}
+.wakil-review-actions{display:flex;align-items:center;gap:6px;margin:0 0 0 23px;white-space:nowrap;overflow:hidden;color:rgba(232,236,246,.45);font-size:11px}
+.wakil-review-actions + .wakil-review-actions{margin-top:6px}
+.wakil-review > .wakil-review-card > .wakil-review-note{margin:0 0 6px 23px;white-space:pre-wrap;word-break:break-word}
+.wakil-review button{all:unset;box-sizing:border-box;cursor:pointer;white-space:nowrap;font-size:11px;line-height:16px;padding:1px 9px;border-radius:5px;border:1px solid rgba(232,236,246,.16);color:#e8ecf6}
+.wakil-review button:hover{background:rgba(232,236,246,.06)}
+.wakil-review button.wakil-review-primary{border-color:rgba(124,92,255,.6);color:#cfc3ff}
+.wakil-review button.wakil-review-primary:hover{background:rgba(124,92,255,.12)}
+.wakil-review button.wakil-review-fold{padding:0;border:0;color:rgba(232,236,246,.62)}
+.wakil-review button.wakil-review-fold:hover{background:none;color:#e8ecf6}
+.wakil-review button.wakil-review-kbd{font:10px Menlo,monospace;line-height:14px;padding:0 4px;border-radius:3px;border-color:rgba(232,236,246,.2);color:rgba(232,236,246,.6)}
+.wakil-review button:focus-visible{outline:1px solid #7c5cff;outline-offset:1px}
+.wakil-review button[disabled]{cursor:default;color:rgba(232,236,246,.38);border-color:rgba(232,236,246,.08);background:none}
+.wakil-review textarea{display:block;box-sizing:border-box;width:calc(100% - 23px);min-height:54px;margin:2px 0 7px 23px;padding:6px 8px;resize:vertical;background:#0b0d14;color:#e8ecf6;caret-color:#9e82ff;border:1px solid rgba(232,236,246,.12);border-radius:5px;font:12.5px/1.45 -apple-system,BlinkMacSystemFont,sans-serif;outline:none}
+.wakil-review textarea::placeholder{color:rgba(232,236,246,.38)}
+.wakil-review textarea:focus{border-color:rgba(124,92,255,.6)}
+/* The line a waiting thread is on: a faint amber wash, and an amber dot in the gutter. */
+.wakil-review-line{background:rgba(232,180,90,.07)}
+.wakil-review-gutter::before{content:'';position:absolute;top:50%;right:3px;width:6px;height:6px;margin-top:-3px;border-radius:50%;background:#e8b45a}
 </style></head>
 <body><div id="d"></div>
 <script>
@@ -178,7 +214,7 @@
     // tab's (line, column, top). `diffKey` is null across the swap, so the fresh models' reset to 1:1
     // is reported under neither key; then one report says where the new key's view is.
     window.wakilShowDiff = function (key, original, modified, language, line, column, top) {
-      ed.changeViewZones(function (acc) { dropPeek(acc); dropConflictRows(acc); });
+      ed.changeViewZones(function (acc) { dropPeek(acc); dropConflictRows(acc); dropReviewBoxes(acc, true); });
       const same = key === diffKey;
       const at = same ? dme.getPosition() : { lineNumber: line, column: column };
       const scroll = same ? (diffScroll !== null ? diffScroll : dme.getScrollTop()) : top;
@@ -206,6 +242,7 @@
     window.wakilCaptureKeys = function (keys) { captured = keys; };
     window.addEventListener('keydown', function (e) {
       if (!captured.length || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (inReview(e.target)) return;   // a review box's field types its own arrows
       const key = { ArrowUp: 'up', ArrowDown: 'down', Escape: 'escape' }[e.key];
       if (!key || captured.indexOf(key) < 0) return;
       e.preventDefault();
@@ -351,7 +388,7 @@
       if (p && key === current) ed.revealLinesInCenterIfOutsideViewport(Math.max(p.afterLine, 1), p.afterLine + 1 + p.old.length + p.new.length);
     };
     window.wakilShowModel = function (key, text, language, readOnly) {
-      ed.changeViewZones(function (acc) { dropPeek(acc); dropConflictRows(acc); });
+      ed.changeViewZones(function (acc) { dropPeek(acc); dropConflictRows(acc); dropReviewBoxes(acc, true); });
       showCode();
       const created = !models[key];
       if (created) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
@@ -359,7 +396,7 @@
       conflictCaret = null;
       ed.setModel(models[key]);
       // Its tints stayed on the model; its rows (editor-level, as view zones are) come back with it.
-      ed.changeViewZones(function (acc) { drawConflictRows(acc, key); });
+      ed.changeViewZones(function (acc) { drawConflictRows(acc, key); drawReviewBoxes(acc, key); });
       // 3b-vii: a log's bottom is its last line at the bottom edge, as in a terminal, so opening at
       // the bottom and following show the newest entries, not the blank space past them.
       ed.updateOptions({ readOnly: readOnly, scrollBeyondLastLine: models[key].getLanguageId() !== 'log' });
@@ -447,6 +484,7 @@
       if (key !== current) return;
       if (sel) ed.setSelection(new monaco.Range(sel[0], sel[1], sel[2], sel[3])); else ed.setPosition({ lineNumber: line, column: column });
       ed.revealLineInCenterIfOutsideViewport(line);
+      focusStepBox();
     };
     window.wakilSetScrollTop = function (key, top) { if (key === current) ed.setScrollTop(top); };
     window.wakilSetBasis = function (key, serial) { basis[key] = serial; };
@@ -594,6 +632,368 @@
       conflicts[key] = { ids: m.deltaDecorations((conflicts[key] || {}).ids || [], list), blocks: shown };
       if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawConflictRows(acc, key); });
     };
+    // Ticket view: review threads drawn in the file. WakilKit places each box under its line (the
+    // diff from the PR's head commit to the buffer) and pushes them per model; the page lays each
+    // over a view zone as tall as the box, as the conflict rows are — content in a zone gets no
+    // clicks. Every text in a box was written by other people and is set with textContent. A
+    // control only posts {type:'review'}; what it did comes back from the store as new boxes.
+    // ⌥↓ / ⌥↑ step threads only from a box: in the text they stay Monaco's Move Line Down / Up.
+    const reviews = {};        // key -> boxes
+    let reviewRows = [];       // the shown key's: [{ key, thread, line, box, zone, zoneId, widget, node, field, ro }]
+    const reviewOpen = {};     // thread -> true: Reply pressed, the draft field shown
+    const reviewLive = {};     // thread -> the draft field's text as typed, until the store has it
+    const reviewUnfolded = {}; // thread -> true: its replies shown
+    const reviewWas = {};      // thread -> its box last handed in
+    let reviewDrawing = false; // a redraw takes the focused field away: that blur is not the operator's
+    let reviewFocusField = null;   // thread whose draft field takes the keyboard when drawn (Reply, Keep)
+    let reviewFocusKeep = null;    // thread whose "Discard this reply?" takes the keyboard on Keep when drawn
+    const reviewAsking = {};   // thread -> true: Discard pressed on a typed reply, asked in place
+    const reviewDecos = {};    // key -> the waiting lines' wash and gutter dot (decoration ids on its model)
+    // ⌥↓ from a box: the box of the thread stepped to takes the keyboard by its id, whenever it is
+    // drawn (wakilFocusReview names it once the step ran). Until then the text is not focused, so a
+    // second ⌥↓ is never Monaco's Move Line Down; a press in the text, or 10 s, ends the wait.
+    let reviewStepping = false, reviewFocusThread = null, reviewFocusKey = null, reviewWaitTimer = null;
+    function inReview(el) { return !!(el && el.closest && el.closest('.wakil-review')); }
+    function reviewPost(key, thread, op, extra) {
+      const m = { type: 'review', key: key, thread: thread, op: op };
+      Object.keys(extra || {}).forEach(function (k) { m[k] = extra[k]; });
+      post(m);
+    }
+    function reviewEl(tag, className, text) {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (text !== undefined) el.textContent = text;
+      return el;
+    }
+    function dropReviewBoxes(acc, leaving) {
+      reviewDrawing = true;
+      reviewRows.forEach(function (r) {
+        // Leaving the file with a field typed in and not yet blurred: the store keeps it (Rule 2).
+        const live = reviewLive[r.thread];
+        if (leaving && r.field && live !== undefined && live !== (r.box.draft || '')) {
+          reviewPost(r.key, r.thread, 'draft', { text: live });
+        }
+        if (r.ro) r.ro.disconnect();
+        acc.removeZone(r.zoneId);
+        ed.removeOverlayWidget(r.widget);
+      });
+      reviewRows = [];
+      reviewDrawing = false;
+    }
+    function placeReviewBoxes() {
+      const l = ed.getLayoutInfo();
+      reviewRows.forEach(function (r) {
+        const n = r.node;
+        n.style.left = l.contentLeft + 'px';
+        n.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
+        // A pane too narrow for the full labels takes the short ones, as the conflict row does.
+        n.querySelectorAll('.wakil-review-actions').forEach(function (row) {
+          const labels = row.querySelectorAll('[data-full]');
+          labels.forEach(function (el) { el.textContent = el.dataset.full; });
+          if (row.scrollWidth > row.clientWidth) labels.forEach(function (el) { el.textContent = el.dataset.short; });
+        });
+      });
+    }
+    ed.onDidLayoutChange(placeReviewBoxes);
+    function redrawReviews(key) {
+      if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawReviewBoxes(acc, key); });
+    }
+    // Ends the wait. `refocus`: no box took the keyboard (the step did not run, its box never drew),
+    // so the text gets it back — unless something on the page already holds it.
+    function endReviewWait(refocus) {
+      reviewStepping = false; reviewFocusThread = null; reviewFocusKey = null;
+      if (reviewWaitTimer !== null) { clearTimeout(reviewWaitTimer); reviewWaitTimer = null; }
+      if (!refocus || diffKey || !current) return;
+      // Only while the operator is still on this page: a click in the Ticket column or another pane
+      // took the native focus away, and the text must not pull it back.
+      const a = document.activeElement;
+      if (document.hasFocus() && (!a || a === document.body || !document.contains(a))) ed.focus();
+    }
+    // The page losing the focus ends a step's wait where the operator went: nothing is refocused.
+    window.addEventListener('blur', function () { if (reviewWaiting()) endReviewWait(false); });
+    function reviewWaitFor(ms) {
+      if (reviewWaitTimer !== null) clearTimeout(reviewWaitTimer);
+      reviewWaitTimer = setTimeout(function () { endReviewWait(true); }, ms);
+    }
+    function reviewWaiting() { return reviewStepping || reviewFocusThread !== null; }
+    function reviewStep(key, b, delta) {
+      endReviewWait(false);
+      reviewStepping = true;
+      reviewWaitFor(10000);
+      reviewPost(key, b.thread, 'step', { delta: delta });
+    }
+    // The step ran and opened `thread` in the file tab `key`; null: it did not run.
+    window.wakilFocusReview = function (thread, key) {
+      if (!thread) { endReviewWait(true); return; }
+      reviewStepping = false;
+      reviewFocusThread = thread;
+      reviewFocusKey = key || null;
+      focusStepBox();
+    };
+    // The stepped-to thread's box, once drawn, takes the keyboard. Its file drawn without it (its
+    // boxes may still be on their way, placed) shortens the wait to a second, then the text has it.
+    function focusStepBox() {
+      if (reviewFocusThread === null) return;
+      const r = reviewRows.find(function (x) { return x.thread === reviewFocusThread; });
+      if (r) {
+        endReviewWait(false);
+        r.node.focus({ preventScroll: true });
+        return;
+      }
+      if (reviewFocusKey !== null && reviewFocusKey === current && reviews[current] !== undefined) reviewWaitFor(1000);
+    }
+    ed.onMouseDown(function () { endReviewWait(false); });
+    // A label with its full and short forms (dataset.full / dataset.short), the full one read aloud.
+    function reviewLabel(tag, full, short) {
+      const el = reviewEl(tag, '', full);
+      el.dataset.full = full; el.dataset.short = short;
+      el.setAttribute('aria-label', full); el.title = full;
+      return el;
+    }
+    function reviewButton(node, full, short, run) {
+      const el = reviewLabel('button', full, short);
+      // mousedown, the default prevented: a press never moves Monaco's cursor or a field's caret.
+      el.addEventListener('mousedown', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        if (el.disabled) return;
+        if (!node.contains(document.activeElement)) node.focus({ preventScroll: true });
+        run(el);
+      });
+      // Return and Space press a focused control too (Keep arrives focused).
+      el.addEventListener('keydown', function (e) {
+        if ((e.key !== 'Enter' && e.key !== ' ') || e.metaKey || e.altKey || e.ctrlKey) return;
+        e.preventDefault(); e.stopPropagation();
+        if (!el.disabled) run(el);
+      });
+      return el;
+    }
+    function reviewHead(author, when) {
+      const head = reviewEl('div', 'wakil-review-head');
+      head.appendChild(reviewEl('span', 'wakil-review-avatar', (author || '?').charAt(0)));
+      head.appendChild(reviewEl('span', 'wakil-review-author', author));
+      if (when) head.appendChild(reviewEl('span', '', when));
+      return head;
+    }
+    function reviewNode(key, b) {
+      const node = reviewEl('div', 'wakil-review');
+      node.tabIndex = -1;
+      node.dataset.thread = b.thread;
+      node.setAttribute('role', 'group');
+      node.setAttribute('aria-label', 'Review thread by ' + b.author);
+      node.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      node.addEventListener('keydown', function (e) {
+        if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+          e.preventDefault(); e.stopPropagation();
+          reviewStep(key, b, e.key === 'ArrowDown' ? 1 : -1);
+          return;
+        }
+        // Every other key stays in the box: Monaco's own keys do not fire here.
+        e.stopPropagation();
+        if (e.key === 'Escape') { e.preventDefault(); ed.focus(); }
+      });
+      ['keyup', 'keypress'].forEach(function (t) { node.addEventListener(t, function (e) { e.stopPropagation(); }); });
+      const card = reviewEl('div', 'wakil-review-card');
+      node.appendChild(card);
+      if (b.resolved) {
+        node.classList.add('wakil-review-resolved');
+        card.appendChild(reviewHead(b.author, 'resolved by ' + (b.resolvedBy || 'someone')));
+        card.appendChild(reviewEl('div', 'wakil-review-text', b.text));
+        const row = reviewEl('div', 'wakil-review-actions');
+        row.appendChild(reviewButton(node, 'Unresolve', 'Unresolve', function (el) {
+          el.disabled = true;
+          reviewPost(key, b.thread, 'unresolve');
+        }));
+        card.appendChild(row);
+        return node;
+      }
+      if (b.waiting) node.classList.add('wakil-review-waiting');
+      const head = reviewHead(b.author, b.time);
+      if (b.note) head.appendChild(reviewEl('span', 'wakil-review-note', b.note));
+      if (b.position) {
+        // "1 of 2" and the ⌥↓ chip, right-aligned; the chip steps as ⌥↓ does.
+        const pos = reviewEl('span', 'wakil-review-pos');
+        pos.appendChild(reviewEl('span', '', b.position));
+        const next = reviewButton(node, '⌥↓', '⌥↓', function () { reviewStep(key, b, 1); });
+        next.className = 'wakil-review-kbd';
+        next.setAttribute('aria-label', 'Next thread'); next.title = 'Next thread (⌥↓)';
+        pos.appendChild(next);
+        head.appendChild(pos);
+      }
+      card.appendChild(head);
+      card.appendChild(reviewEl('div', 'wakil-review-text', b.text));
+      if (b.replies.length) {
+        const n = b.replies.length, open = !!reviewUnfolded[b.thread];
+        const word = n + (n === 1 ? ' reply ' : ' replies ') + (open ? '▾' : '▸');
+        const fold = reviewEl('div', 'wakil-review-actions');
+        const foldButton = reviewButton(node, word, word, function () {
+          reviewUnfolded[b.thread] = !open;
+          redrawReviews(key);
+        });
+        foldButton.className = 'wakil-review-fold';
+        fold.appendChild(foldButton);
+        fold.style.marginBottom = '6px';
+        card.appendChild(fold);
+        if (open) b.replies.forEach(function (c) {
+          const r = reviewEl('div', 'wakil-review-reply');
+          r.appendChild(reviewHead(c.author, c.createdAt));
+          r.appendChild(reviewEl('div', 'wakil-review-text', c.body));
+          card.appendChild(r);
+        });
+      }
+      if (b.answer) card.appendChild(reviewEl('div', 'wakil-review-note', b.answer));
+      const drafting = reviewOpen[b.thread] || b.draft != null || reviewLive[b.thread] !== undefined;
+      let field = null;
+      if (drafting) {
+        field = document.createElement('textarea');
+        field.value = reviewLive[b.thread] !== undefined ? reviewLive[b.thread] : (b.draft || '');
+        field.setAttribute('aria-label', 'Reply to ' + b.author);
+        field.addEventListener('input', function () { reviewLive[b.thread] = field.value; });
+        // Kept on blur (Rule 2); ⌘↩ sends (the field takes newlines).
+        field.addEventListener('blur', function () {
+          if (reviewDrawing || field.value === (b.draft || '')) return;
+          reviewPost(key, b.thread, 'draft', { text: field.value });
+        });
+        field.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); e.stopPropagation(); send(); }
+        });
+        card.appendChild(field);
+        const row = reviewEl('div', 'wakil-review-actions');
+        function discardNow() {
+          delete reviewOpen[b.thread]; delete reviewLive[b.thread]; delete reviewAsking[b.thread];
+          reviewPost(key, b.thread, 'discard');
+          redrawReviews(key);
+        }
+        if (reviewAsking[b.thread] && !b.sending) {
+          // A typed reply is not thrown away unasked: Discard · Keep, the keyboard on Keep.
+          row.appendChild(reviewEl('span', '', 'Discard this reply?'));
+          row.appendChild(reviewButton(node, 'Discard', 'Discard', discardNow));
+          const keep = reviewButton(node, 'Keep', 'Keep', function () {
+            delete reviewAsking[b.thread];
+            reviewFocusField = b.thread;
+            redrawReviews(key);
+          });
+          keep.className = 'wakil-review-primary';
+          row.appendChild(keep);
+        } else {
+          const sendButton = reviewButton(node, b.sending ? 'Sending…' : 'Send', b.sending ? 'Sending…' : 'Send', send);
+          sendButton.className = 'wakil-review-primary';
+          sendButton.disabled = !!b.sending;
+          row.appendChild(sendButton);
+          const discard = reviewButton(node, 'Discard', 'Discard', function () {
+            const typed = field ? field.value : '';
+            if (!typed.trim()) { discardNow(); return; }   // an empty draft closes without asking
+            reviewLive[b.thread] = typed;
+            reviewAsking[b.thread] = true;
+            reviewFocusKeep = b.thread;
+            redrawReviews(key);
+          });
+          discard.disabled = !!b.sending;
+          row.appendChild(discard);
+        }
+        card.appendChild(row);
+      }
+      function send() {
+        if (b.sending || !field || !field.value.trim()) return;
+        reviewLive[b.thread] = field.value;
+        reviewPost(key, b.thread, 'send', { text: field.value });
+      }
+      const row = reviewEl('div', 'wakil-review-actions');
+      if (!drafting) {
+        const reply = reviewButton(node, 'Reply', 'Reply', function () {
+          reviewOpen[b.thread] = true;
+          reviewFocusField = b.thread;
+          redrawReviews(key);
+        });
+        reply.className = 'wakil-review-primary';
+        row.appendChild(reply);
+      }
+      row.appendChild(reviewButton(node, 'Resolve', 'Resolve', function (el) {
+        el.disabled = true;
+        reviewPost(key, b.thread, 'resolve');
+      }));
+      card.appendChild(row);
+      return node;
+    }
+    // The waiting threads' lines on the key's model: a faint amber wash and a gutter dot. On the
+    // model, as the conflict tints are, so they come back with it.
+    function decorateReviews(key) {
+      const m = models[key];
+      if (!m) return;
+      const lines = m.getLineCount();
+      const list = (reviews[key] || []).filter(function (b) { return b.waiting && !b.resolved && b.line <= lines; })
+        .map(function (b) {
+          return { range: new monaco.Range(b.line, 1, b.line, 1),
+                   options: { isWholeLine: true, className: 'wakil-review-line', linesDecorationsClassName: 'wakil-review-gutter' } };
+        });
+      reviewDecos[key] = m.deltaDecorations(reviewDecos[key] || [], list);
+    }
+    function drawReviewBoxes(acc, key) {
+      // The field or box that has the keyboard keeps it, and its caret, across a redraw.
+      const a = document.activeElement;
+      const keep = inReview(a) ? { thread: a.closest('.wakil-review').dataset.thread, field: a.tagName === 'TEXTAREA',
+                                   start: a.selectionStart, end: a.selectionEnd } : null;
+      dropReviewBoxes(acc, false);
+      decorateReviews(key);
+      const boxes = reviews[key];
+      if (!boxes || key !== current || diffKey || !models[key]) return;
+      const lines = models[key].getLineCount(), l = ed.getLayoutInfo();
+      boxes.forEach(function (b, i) {
+        if (b.line > lines) return;   // placed against text the page has since moved on from
+        const node = reviewNode(key, b);
+        node.style.position = 'absolute';
+        node.style.left = l.contentLeft + 'px';
+        node.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
+        const widget = { getId: function () { return 'wakil.review.' + i; }, getDomNode: function () { return node; },
+                         getPosition: function () { return null; } };
+        ed.addOverlayWidget(widget);
+        const zone = { afterLineNumber: b.line, heightInPx: Math.max(node.offsetHeight, 20),
+                       domNode: document.createElement('div'),
+                       onDomNodeTop: function (top) { node.style.top = top + 'px'; } };
+        const r = { key: key, thread: b.thread, line: b.line, box: b, zone: zone, zoneId: acc.addZone(zone),
+                    widget: widget, node: node, field: node.querySelector('textarea'), ro: null };
+        // The zone is as tall as the box: replies unfolded, a draft field grown, a narrower pane.
+        r.ro = new ResizeObserver(function () {
+          const h = Math.max(node.offsetHeight, 20);
+          if (h === zone.heightInPx || reviewRows.indexOf(r) < 0) return;
+          zone.heightInPx = h;
+          ed.changeViewZones(function (c) { c.layoutZone(r.zoneId); });
+        });
+        r.ro.observe(node);
+        reviewRows.push(r);
+      });
+      placeReviewBoxes();
+      const want = reviewFocusField, ask = reviewFocusKeep;
+      reviewFocusField = null; reviewFocusKeep = null;
+      const kept = keep && reviewRows.find(function (x) { return x.thread === keep.thread; });
+      const asked = want && reviewRows.find(function (x) { return x.thread === want; });
+      const asking = ask && reviewRows.find(function (x) { return x.thread === ask; });
+      const keepButton = asking && Array.from(asking.node.querySelectorAll('button')).find(function (el) { return el.dataset.full === 'Keep'; });
+      if (keepButton) {
+        keepButton.focus({ preventScroll: true });
+      } else if (asked && asked.field) {
+        asked.field.focus({ preventScroll: true });   // Reply's field arrives focused (Rule 3)
+      } else if (kept) {
+        if (keep.field && kept.field) {
+          kept.field.focus({ preventScroll: true });
+          try { kept.field.setSelectionRange(keep.start, keep.end); } catch (e) {}
+        } else {
+          kept.node.focus({ preventScroll: true });
+        }
+      } else {
+        focusStepBox();
+      }
+    }
+    window.wakilSetReviews = function (key, boxes) {
+      boxes.forEach(function (b) {
+        // A Send that ended with the store holding no draft was posted: the field closes.
+        const was = reviewWas[b.thread];
+        if (was && was.sending && !b.sending && b.draft == null) { delete reviewLive[b.thread]; delete reviewOpen[b.thread]; }
+        reviewWas[b.thread] = b;
+      });
+      reviews[key] = boxes;
+      decorateReviews(key);
+      redrawReviews(key);
+    };
     // 3b-viii: ghost-text. Swift owns the debounce, the model and the clean-up; the page asks
     // and draws. A resolve for an id that is no longer pending is ignored, so a stale reply never
     // lands over newer typing. Tab accepts, ⌘→ a word, Esc dismisses — Monaco's own keys; an
@@ -655,17 +1055,21 @@
       post({ type: 'mark', key: current, line: e.target.position.lineNumber });
     });
     window.wakilDispose = function (key) {
-      if (current === key) ed.changeViewZones(dropConflictRows);
+      if (current === key) ed.changeViewZones(function (acc) { dropConflictRows(acc); dropReviewBoxes(acc, true); });
       if (models[key]) { models[key].dispose(); delete models[key]; }
-      delete basis[key]; delete marks[key]; delete blames[key]; delete conflicts[key];
+      delete basis[key]; delete marks[key]; delete blames[key]; delete conflicts[key]; delete reviews[key]; delete reviewDecos[key];
       if (current === key) current = null;
     };
     // A renamed tab (3b-iv R2): its model, undo history and marks move to the new key.
     window.wakilRekey = function (from, to) {
-      [models, basis, marks, blames, conflicts].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
+      [models, basis, marks, blames, conflicts, reviews, reviewDecos].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
       if (current === from) current = to;
     };
-    window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };
+    window.wakilFocus = function () {
+      if (diffKey) { dme.focus(); return; }
+      if (reviewWaiting()) return;   // a step from a box keeps the keyboard off the text (see reviewStepping)
+      ed.focus();
+    };
     // Monaco's find bar (3b-ii). Its state — query, switches, count, open — goes back to the app on
     // every change, as the cursor's does: the pane's find record and read_pane's `find` read it.
     const findCtl = ed.getContribution('editor.contrib.findController');
@@ -699,6 +1103,7 @@
     // no menu command uses ⇧ with them today, and one that does needs its own entry here.
     window.addEventListener('keydown', function (e) {
       if (!e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === 'Enter' && inReview(e.target)) return;   // ⌘↩ sends a review reply from its field
       const plain = ['KeyS', 'KeyT', 'KeyW', 'KeyP', 'KeyK', 'KeyB', 'Enter'].indexOf(e.code) >= 0 && !e.shiftKey;
       const searchFiles = e.code === 'KeyF' && e.shiftKey;
       const changes = e.code === 'KeyG' && e.shiftKey;   // ⌘⇧G is the window's Changes view (3b-iii)

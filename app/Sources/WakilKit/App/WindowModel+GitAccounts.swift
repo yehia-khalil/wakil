@@ -75,6 +75,27 @@ extension WindowModel {
         await gitAccountCall("ctx_git_token_set", ["host": .string(host), "token": .string(token)]).1
     }
 
+    /// An SSH GitHub account's API access by access token; Settings is read again after.
+    public func setGitAPIAccessToken(host: String, token: String) async -> String? {
+        let (_, error) = await gitAccountCall("ctx_git_api_access_token_set", ["host": .string(host), "token": .string(token)])
+        await refreshSettings()
+        return error
+    }
+
+    public func removeGitAPIAccess(host: String) async -> String? {
+        let (_, error) = await gitAccountCall("ctx_git_api_access_remove", ["host": .string(host)])
+        await refreshSettings()
+        return error
+    }
+
+    /// Asks GitHub who the API access belongs to. The account's own `user` is the SSH login's, so
+    /// nothing is recorded.
+    public func testGitAPIAccess(host: String) async -> (user: String?, error: String?) {
+        let (reply, error) = await gitAccountCall("ctx_git_api_access_test", ["host": .string(host)])
+        if let error { return (nil, error) }
+        return (Self.field(reply, "user") ?? "", nil)
+    }
+
     public func setGitKeyPassphrase(host: String, passphrase: String) async -> String? {
         await gitAccountCall("ctx_git_key_passphrase_set", ["host": .string(host), "passphrase": .string(passphrase)]).1
     }
@@ -99,9 +120,11 @@ extension WindowModel {
         return (Self.field(reply, "userCode"), Self.field(reply, "verificationUri"), Self.field(reply, "deviceCode"), max(interval, 1), error)
     }
 
-    public func gitDevicePoll(provider: GitProvider, host: String, deviceCode: String) async -> (pending: Bool, error: String?) {
-        let (reply, error) = await gitAccountCall("ctx_git_device_poll", ["provider": .string(provider.rawValue), "host": .string(host),
-                                                                         "deviceCode": .string(deviceCode)])
+    /// `apiAccess` finishes the Sign in as an SSH GitHub account's API access: the account keeps SSH.
+    public func gitDevicePoll(provider: GitProvider, host: String, deviceCode: String, apiAccess: Bool = false) async -> (pending: Bool, error: String?) {
+        var p: [String: JSONValue] = ["provider": .string(provider.rawValue), "host": .string(host), "deviceCode": .string(deviceCode)]
+        if apiAccess { p["apiAccess"] = .bool(true) }
+        let (reply, error) = await gitAccountCall("ctx_git_device_poll", p)
         if let error { return (false, error) }
         if case .object(let o)? = reply, o["done"] == .bool(true) { await refreshSettings() }
         if case .object(let o)? = reply { return (o["pending"] == .bool(true), nil) }

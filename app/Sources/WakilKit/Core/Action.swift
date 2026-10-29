@@ -227,6 +227,14 @@ public struct Action: Sendable {
     /// the first caller.
     public var secretParams: Set<String> = []
 
+    /// What the confirmation plane says this write will do, worked out by the action itself before
+    /// anything parks — for a write whose place the params cannot be trusted to name (the Ticket
+    /// view's reply and resolve ask GitHub where the thread is). It runs with the caller's origin
+    /// and caller bound, as a handler does, and a throw refuses the write before the plane.
+    /// Nil for almost every action, whose plane text is `confirmationDescription` or its own
+    /// `statement` (`ActionRegistry.planeStatement`).
+    public var describe: (@Sendable (JSONValue) async throws -> String)? = nil
+
     public init(
         name: String,
         description: String,
@@ -238,6 +246,7 @@ public struct Action: Sendable {
         price: (production: GateDecision, otherwise: GateDecision) = (.block, .gate),
         agentPrice: GateDecision? = nil,
         secretParams: Set<String> = [],
+        describe: (@Sendable (JSONValue) async throws -> String)? = nil,
         callPrice: (@Sendable (_ params: JSONValue, _ caller: DispatchCaller,
                                _ origin: ActionOrigin) async -> GateDecision)? = nil,
         proposal: (@Sendable (_ params: JSONValue) async -> ActionProposal?)? = nil
@@ -252,6 +261,7 @@ public struct Action: Sendable {
         self.price = price
         self.agentPrice = agentPrice
         self.secretParams = secretParams
+        self.describe = describe
         self.callPrice = callPrice
         self.proposal = proposal
     }

@@ -441,7 +441,13 @@ private let readPaneToolListEntry = JSONValue.object([
         + "moves it, editor_peek_close closes it). A tab's "
         + "preview is true while it is a preview tab, one a click replaces. column is the "
         + "side column — shown, view (which view it holds), width, and open, the folders "
-        + "expanded in the tree — or null. find is the active tab's find — query and its "
+        + "expanded in the tree; ticket_shown, the ticket picked from In flight — or null. "
+        + "ticket is the Ticket view's state for the root the pane follows (its front file's "
+        + "root, else the project's first) — root, branch, tickets (keys), marked (the one "
+        + "the branch is for), prs (number, state, openThreads), drafts (the review threads "
+        + "with a reply draft; never the draft's text), reading while a read runs, and error, "
+        + "the last read's failure whole — or null with no root. "
+        + "find is the active tab's find — query and its "
         + "switches case, word and regex, count of matches (null until counted) and "
         + "shown — or null when no find is open. search is the project search — query and "
         + "its switches case, word and regex; in_flight while it runs; truncated when it "
@@ -803,11 +809,29 @@ private func parkForConfirmation(
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32603, message: pageChangedRefusal(action: name)))
     }
-    let ownStatement = own == nil && isMutation ? stringArgument(arguments, "statement") : nil
-    let statement = own?.statement ?? ownStatement
-        ?? (isMutation ? (confirmationDescription(action: name, params: arguments) ?? "")
-            : (confirmationDescription(action: name, params: arguments)
-                ?? describeProposal(action: name, arguments: arguments)))
+    // An action that has its own sentence keeps it even when the arguments carry a `statement` too:
+    // the Ticket view's reply is described from its body, so a stray `statement` cannot put other
+    // words on the plane than the ones posted.
+    // A mutation's words come from `ActionRegistry.planeStatement`, the window's order too: the
+    // action's own description first, a caller's `statement` only when there is none.
+    var ownStatement: String?
+    let statement: String
+    if let own {
+        statement = own.statement
+    } else if isMutation {
+        let words: (text: String, own: Bool)?
+        do {
+            words = try await surface.registry.planeStatement(
+                name: name, params: arguments, origin: .agent, caller: parker)
+        } catch {
+            return JSONRPCMessage(id: id, error: JSONRPCError(code: -32602, message: "\(error)"))
+        }
+        statement = words?.text ?? ""
+        ownStatement = words?.own == true ? words?.text : nil
+    } else {
+        statement = confirmationDescription(action: name, params: arguments)
+            ?? describeProposal(action: name, arguments: arguments)
+    }
     guard !statement.isEmpty else {
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32602,

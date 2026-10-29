@@ -25,8 +25,8 @@ app (or the `claude` CLI) starts them as child processes and calls their tools.
 
 Who launches what:
 
-- **The window** starts four servers per assembly in `WakilWiring.build`
-  (`app/Sources/WakilKit/App/AppWiring.swift`): `wakil-ctx`, `wakil-db`, `wakil-http`, `wakil-git`
+- **The window** starts five servers per assembly in `WakilWiring.build`
+  (`app/Sources/WakilKit/App/AppWiring.swift`): `wakil-ctx`, `wakil-db`, `wakil-http`, `wakil-git`, `wakil-ticket`
   (`wakilOwnedClients`). Their environment is `childProcessEnvironment`: `HOME`, `PATH`,
   `WAKIL_IN_WINDOW=1`, and `WAKIL_ORG`, `WAKIL_PROVIDER`, `WAKIL_KEYCHAIN` when set. They are
   restarted in place on an org switch (`WakilWiring.switchOrg`).
@@ -143,6 +143,25 @@ Jira, scoped to the active project's Jira project key (`cmd/wakil-pm/main.go`). 
 (`agentFacingServers`).
 
 Tools: `my_issues`, `search_issues`, `get_issue`.
+
+### wakil-ticket
+
+The Ticket view's capability (`cmd/wakil-ticket/main.go` registers, `branch.go` assembles).
+**Window-owned** (`wakilOwnedClients`, pinned per place), never in `agentFacingServers`: the agent
+reaches it only through registry actions. Logic in `internal/wakilcore`: `ticketrecord.go` (the
+record and its log), `ticketlink.go` (keys, links, long-lived branches), `githubreview.go` (GitHub's
+GraphQL API with the organization's git account for the remote's host, never `gh`).
+
+Tools: `ticket_branch` (one root's branch: tickets with their sources and records, PRs with threads
+and checks, the stack one step each way, and each unread source whole in `partial`),
+`ticket_in_flight` (the organization's tickets in flight and Waiting on you, each with its state in
+words), `ticket_record`, `ticket_record_write`, `ticket_link`, `review_reply`, `review_resolve` and
+`review_thread` (a thread described from GitHub by its id, so a reply's or resolve's words on the plane
+are GitHub's answer).
+
+**The four writes refuse unless `WAKIL_IN_WINDOW` is exactly `1`** (`InWakilWindow`), as
+`wakil-http`'s `send` does. A read's GitHub and Jira calls share one 15 s budget (Swift cancels at 20 s); one source failing
+leaves the others shown.
 
 ### wakil-recall
 
