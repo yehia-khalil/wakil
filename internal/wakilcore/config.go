@@ -20,11 +20,15 @@ type Project struct {
 	Editor *EditorProjectSettings `json:"editor,omitempty"`
 	// Agent is the project's agent instructions (3a-iii-b), after the organisation's.
 	Agent *ProjectAgentInstructions `json:"agent,omitempty"`
+	// Recipes is how the project's repos run (workspaces piece 2), by name; a root names one.
+	Recipes map[string]Recipe `json:"recipes,omitempty"`
 }
 
 type Root struct {
 	Path string `json:"path"`
 	Role string `json:"role,omitempty"`
+	// RepoRun is the root's recipe, overrides and doesntRun (workspaces piece 2), inline.
+	RepoRun
 }
 
 type Scopes struct {
