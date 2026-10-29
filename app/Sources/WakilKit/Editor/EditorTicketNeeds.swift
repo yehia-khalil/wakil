@@ -70,6 +70,9 @@ public struct TicketNeedsRow: Sendable, Equatable, Identifiable {
     public let activity: String
     /// False when no project of the organisation holds any of its rows' repositories.
     public let openable: Bool
+    /// A live handed conversation of this ticket finished its turn (done, or idle once seen): the
+    /// Landing says "agent finished" when nothing more urgent holds (`landingTicketState`).
+    public var agentFinished: Bool = false
 }
 
 /// A row's `activity` as a time; nil when it is not one.
@@ -103,9 +106,11 @@ public func ticketNeedsRows(_ s: InFlightState, handoffs: [String: TicketHandOff
             }
         }
         let activity = rs.map(\.activity).max { (ticketActivityDate($0) ?? .distantPast) < (ticketActivityDate($1) ?? .distantPast) } ?? ""
+        let finished = rs.contains { r in r.handoffs.contains { [.done, .idle].contains(handoffs[$0.conversation]) } }
         return TicketNeedsRow(id: id, key: rs.first?.key.isEmpty == false ? rs.first?.key : nil,
                               title: rs.first { !$0.title.isEmpty }?.title ?? "", urgent: ticketUrgent(reasons, rows: rs),
-                              rows: rs, activity: activity, openable: rs.contains { !$0.root.isEmpty })
+                              rows: rs, activity: activity, openable: rs.contains { !$0.root.isEmpty },
+                              agentFinished: finished)
     }
     return rows.sorted { a, b in
         if a.urgent.tier != b.urgent.tier { return a.urgent.tier < b.urgent.tier }
@@ -119,6 +124,14 @@ public func ticketNeedsRows(_ s: InFlightState, handoffs: [String: TicketHandOff
 /// `All 7 in ⌘P` when there are more (it opens ⌘P with `#` typed); nil at five or fewer.
 public func landingTicketRows(_ rows: [TicketNeedsRow]) -> (shown: [TicketNeedsRow], allLine: String?) {
     (Array(rows.prefix(5)), rows.count > 5 ? "All \(rows.count) in ⌘P" : nil)
+}
+
+/// A Landing ticket row's state line (walk 2026-10-29): the row's most urgent state, except that a
+/// handed agent that finished, with no reason of tiers 1–7 holding, reads "agent finished" in place
+/// of the PR's "open" or "local branch". The row never names the conversation: Running lists that.
+public func landingTicketState(_ row: TicketNeedsRow) -> TicketUrgent {
+    guard row.agentFinished, row.urgent.tier >= 8 else { return row.urgent }
+    return TicketUrgent(tier: row.urgent.tier, words: "agent finished")
 }
 
 /// A row's name where its key goes: the key, else `#215 · api` (`ticketRowName`).

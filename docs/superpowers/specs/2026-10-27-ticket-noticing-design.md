@@ -553,6 +553,18 @@ back on GitHub; production red on a handed chip; narrow widths.
   the Ticket view's links open in Wakil's browser (⌥-click: the system's); a ticket waiting on the
   operator is listed once.
 
+### Decided by the operator (2026-10-29, walk)
+
+- **The Landing says each thing once.** Tickets in flight is its own block, tickets only (key, title,
+  the most urgent state; a handed agent that finished reads "agent finished" when nothing more urgent
+  holds); a handed ticket's conversation is Running's row alone. *Continue · newest first* is its own
+  titled block under it.
+- **The record folds finished hand-offs.** Live ones (working, waiting, failed) show; the rest fold into
+  one line, "N earlier · show", which expands.
+- **A done conversation opens readable.** A canvas brought back by a switch, or read off disk, has its
+  maximized panes fill the window's canvas; the thought thread at rest sits below the panes, not over
+  them (design language §9, amended).
+
 ## Open questions
 
 1. Open question 15 (PM transition reversibility) is untouched; it applies to piece 5's Move.

@@ -25,11 +25,14 @@ import SwiftUI
 /// conversation is in one list only, so a past session resumed leaves Continue.
 /// With nothing live the column is not drawn, and the two columns stand as before.
 ///
-/// **Tickets in flight, atop the Continue column** (ticket noticing): the organisation's tickets
-/// and keyless PRs in flight, most urgent first (`WindowModel.ticketNeedsRows`), five at most and
-/// then `All 7 in ⌘P  #`, each with its most urgent state in words — amber when it waits on the
-/// operator. A row runs `ticket_open` (`openTicket`), which opens or focuses the editor on Ticket;
-/// the branch never switches (Rule 6). With nothing in flight the section is not drawn; a source
+/// **Tickets in flight, its own block atop the Continue column** (ticket noticing): the
+/// organisation's tickets and keyless PRs in flight, most urgent first (`WindowModel.ticketNeedsRows`),
+/// five at most and then `All 7 in ⌘P  #`, each with its most urgent state in words — amber when it
+/// waits on the operator; a handed agent that finished reads "agent finished" (`landingTicketState`).
+/// **Tickets only** (walk 2026-10-29, §1 nothing twice): a handed ticket's conversation is Running's
+/// row, never this block's, and *Continue · newest first* is its own titled block under it, not
+/// inside it. A row runs `ticket_open` (`openTicket`), which opens or focuses the editor on Ticket;
+/// the branch never switches (Rule 6). With nothing in flight the block is not drawn; a source
 /// that could not be read is said under the rows, whole (Rule 8).
 ///
 /// **Invariant 2.** Every control dispatches through `WindowModel` — a Running
@@ -88,10 +91,10 @@ struct Landing: View {
                     threeColumns(running, widths: (248, 320, 248), spacing: 36)
                 }
             } else if hasProject {
-                twoColumns(continueLabel, { continueColumn }, "Open", { openRows })
+                twoColumns({ continueColumn(width: $0) }, "Open", { openRows })
             } else {
                 // The empty workspace's one job is to get you a project.
-                twoColumns("Projects", { projectRows }, continueLabel, { continueColumn })
+                twoColumns("Projects", { projectRows }, { continueColumn(width: $0) })
             }
             Spacer(minLength: 0)
         }
@@ -123,7 +126,7 @@ struct Landing: View {
     ) -> some View {
         HStack(alignment: .top, spacing: spacing) {
             column("Running", width: widths.0) { runningRows(running) }
-            column(continueLabel, width: widths.1) { continueColumn }
+            continueColumn(width: widths.1)
             column("Open", width: widths.2) { openRows }
         }
     }
@@ -131,13 +134,28 @@ struct Landing: View {
     /// Two columns take 1048pt at the artboard's widths, wider than the ~920 a 1000pt window
     /// leaves the Landing (#57), so a narrower window takes them narrower, as `threeColumns` does.
     private func twoColumns<First: View, Second: View>(
-        _ firstLabel: String, _ first: @escaping () -> First,
-        _ secondLabel: String, _ second: @escaping () -> Second
+        _ first: @escaping (CGFloat) -> First, _ secondLabel: String, _ second: @escaping () -> Second
+    ) -> some View {
+        let pair = { (widths: (CGFloat, CGFloat), spacing: CGFloat) in
+            HStack(alignment: .top, spacing: spacing) {
+                first(widths.0)
+                column(secondLabel, width: widths.1) { second() }
+            }
+        }
+        return ViewThatFits(in: .horizontal) {
+            pair((620, 380), 48)
+            pair((500, 340), 36)
+        }
+    }
+
+    /// The empty workspace's pair: Projects, then the Continue column.
+    private func twoColumns<First: View, Second: View>(
+        _ firstLabel: String, _ first: @escaping () -> First, _ second: @escaping (CGFloat) -> Second
     ) -> some View {
         let pair = { (widths: (CGFloat, CGFloat), spacing: CGFloat) in
             HStack(alignment: .top, spacing: spacing) {
                 column(firstLabel, width: widths.0) { first() }
-                column(secondLabel, width: widths.1) { second() }
+                second(widths.1)
             }
         }
         return ViewThatFits(in: .horizontal) {
@@ -163,7 +181,8 @@ struct Landing: View {
     private static let columnMaxHeight: CGFloat = 460
 
     private func column<Content: View>(
-        _ label: String, width: CGFloat, @ViewBuilder content: () -> Content
+        _ label: String, width: CGFloat, maxHeight: CGFloat = Landing.columnMaxHeight,
+        @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(label.uppercased())
@@ -181,7 +200,7 @@ struct Landing: View {
                     .frame(width: width, alignment: .leading)
             }
             .frame(width: width)
-            .frame(maxHeight: Self.columnMaxHeight)
+            .frame(maxHeight: maxHeight)
             // `.fixedSize` on the vertical axis only: the ScrollView is
             // greedy by nature and would otherwise take the whole cap even
             // for two rows.
@@ -232,27 +251,36 @@ struct Landing: View {
     /// The tickets in flight, most urgent first; read in `body`, so a new read redraws them.
     private var tickets: [TicketNeedsRow] { model.ticketNeedsRows }
 
-    /// The Continue column's label: Tickets in flight heads it while any are, Continue below them.
-    private var continueLabel: String { tickets.isEmpty ? "Continue · newest first" : "Tickets in flight" }
+    private static let continueLabel = "Continue · newest first"
 
-    /// The Continue column: Tickets in flight above *Continue · newest first* in one slab, so the
-    /// column keeps its one height cap.
+    /// The Continue column: **Tickets in flight** and **Continue · newest first** as two titled
+    /// blocks, one under the other (walk 2026-10-29) — each its own slab, the pair within the one
+    /// column's height cap: Continue scrolls in what the tickets leave.
     @ViewBuilder
-    private var continueColumn: some View {
+    private func continueColumn(width: CGFloat) -> some View {
         let tickets = tickets
         if tickets.isEmpty {
-            continueRows
+            column(Self.continueLabel, width: width) { continueRows }
         } else {
-            ticketRows(tickets)
-            Text("Continue · newest first".uppercased())
-                .font(.system(size: 9, weight: .medium))
-                .tracking(1.7)
-                .foregroundStyle(coolWhite.opacity(0.52))
-                .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 4)
-            continueRows
+            VStack(alignment: .leading, spacing: Self.blockGap) {
+                column("Tickets in flight", width: width, maxHeight: .infinity) { ticketRows(tickets) }
+                column(Self.continueLabel, width: width, maxHeight: continueCap(tickets)) { continueRows }
+            }
         }
+    }
+
+    /// The gap between the column's two blocks.
+    private static let blockGap: CGFloat = 22
+
+    /// What the Continue block may take under the tickets: the column's cap less the tickets block
+    /// as drawn — its label (~37 with its spacing), its slab's padding (16), each row (~37), the
+    /// `All N in ⌘P` line (~36) and each unread-source line (~26) — the gap, and Continue's own label.
+    /// Never under two rows' worth, so Continue is always there to scroll.
+    private func continueCap(_ tickets: [TicketNeedsRow]) -> CGFloat {
+        let landing = landingTicketRows(tickets)
+        let partial = ticketPartialLine(model.ticketNeeds?.partial ?? []).count
+        let block = 37 + 16 + CGFloat(landing.shown.count) * 37 + (landing.allLine == nil ? 0 : 36) + CGFloat(partial) * 26
+        return max(130, Self.columnMaxHeight - block - Self.blockGap - 37)
     }
 
     @ViewBuilder
@@ -298,6 +326,7 @@ struct Landing: View {
     private func ticketRow(_ row: TicketNeedsRow, index: Int) -> some View {
         let hoverKey = "ticket:\(row.id)"
         let open = { Task { await model.openTicket(ticketOpenParams(row)) } }
+        let state = landingTicketState(row)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             // §6: identifiers are monospace, always.
             Text(ticketNeedsRowName(row))
@@ -311,9 +340,9 @@ struct Landing: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
-            Text(row.urgent.words)
+            Text(state.words)
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(row.urgent.needsYou ? Color(TerminalPalette.amber) : coolWhite.opacity(0.50))
+                .foregroundStyle(state.needsYou ? Color(TerminalPalette.amber) : coolWhite.opacity(0.50))
                 .lineLimit(1)
                 .truncationMode(.head)
         }
@@ -331,7 +360,7 @@ struct Landing: View {
         .accessibilityAction(.default) { _ = open() }
         // Ordinal, as a Running row's: a check cannot know the order's keys ahead.
         .accessibilityIdentifier("landing.tickets.\(index)")
-        .accessibilityValue(row.urgent.needsYou ? "needs you" : "")
+        .accessibilityValue(state.needsYou ? "needs you" : "")
     }
 
     // MARK: - Continue

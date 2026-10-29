@@ -197,4 +197,22 @@ private func row(key: String = "INI-142", pr: Int = 0, threads: [String] = [], f
         #expect(ticketElsewhere(row(key: "INI-142"), roots: ["/p/api", "/p/web"]) == nil)
         #expect(ticketElsewhere(nil, roots: ["/p/api"]) == nil)
     }
+
+    /// Walk 2026-10-29: a Landing ticket row says its state, never its conversation (that is Running's).
+    /// Its words are the most urgent state; a handed agent that finished, with nothing more urgent,
+    /// reads "agent finished" rather than the PR's "open".
+    @Test func landingStateSaysTheAgentFinished() {
+        let r = row(pr: 209, conversations: ["c2"])
+        func state(_ live: [String: TicketHandOffLive], drafts: Int = 0) -> TicketUrgent {
+            landingTicketState(ticketNeedsRows(InFlightState(inFlight: [r]), handoffs: live, drafts: [:])[0])
+        }
+        #expect(state([:]) == TicketUrgent(tier: 8, words: "#209 · open"))
+        #expect(state(["c2": .working]) == TicketUrgent(tier: 7, words: "agent working"))
+        #expect(state(["c2": .done]) == TicketUrgent(tier: 8, words: "agent finished"))
+        #expect(state(["c2": .idle]) == TicketUrgent(tier: 8, words: "agent finished"))
+        // Something more urgent still wins: a waiting thread is the operator's.
+        let waiting = row(pr: 209, threads: ["T1"], conversations: ["c2"])
+        let rows = ticketNeedsRows(InFlightState(waitingOnYou: [waiting], count: 1), handoffs: ["c2": .done], drafts: [:])
+        #expect(landingTicketState(rows[0]).words == "#209 · 1 comment")
+    }
 }
