@@ -174,3 +174,307 @@ sub-phase you are about to design.
 - The agent's own shell pushes with the Mac's git and ssh, not the organisation's account.
 
 **3b-iii** — diff tabs are not saved, so a migrated pane has none after a relaunch (R7); files past 10,000 lines show no change marks or peek (B1).
+
+---
+
+## Owed by the acceptance runbooks (deleted 2026-10-29)
+
+Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before the runbooks were deleted from the branch (git keeps them). Grouped by sub-phase; `(security)` marks a security gap.
+
+**365-terminal-input-editing**
+
+- **365** bash 4+ path of selection editing ships untested: no Homebrew bash on this Mac, `homebrewBashReplacesTheSelectedWord` skips.
+- **365** zsh-vi-mode and plugins that rebuild keymaps late: selection edits silently stop; no such plugin ever tried.
+- **365** deferred review minors: widget read loop has no timeout; ⌘C over CJK adds a space per wide character; very fast keys can arrive out of order.
+- **365** drag on the live region may not focus the pane (review flag); no e2e check reaches drag or double-click selection, walk-only.
+
+**background-agents**
+
+- **background-agents** walk 2, 3, 4, 7 never walked (Reduce Motion dot, production-red segment, amber `— waiting` chip, `+N more` popover); the runbook was never marked walked.
+- **background-agents** no check for the red `— failed` chip, for an agent's own `ctx_set_*` being refused ("place is pinned"), or for one journal line tying session and place.
+- **background-agents** `project-root-note` intermittent: switch to `e2e-project` still "working" after 3 s, twice in three runs.
+- **background-agents** `3b-v-click-focuses-pane` red: click lands under the 220 pt Rail, so the Rail takes focus and "q" goes nowhere; fails at merge-base too.
+- **background-agents** `3b-ii-b-replace-cancel` intermittent: regex search over the 200 MiB haystack lands just past the 3 s settle; time it before it leaves quarantine.
+- **background-agents** Landing at 1000 wide overflows: content wider than the window, chip at x 777–1048 and capacity indicator at 894–1040 (`bg-agent-chip-over-landing` red).
+
+**conversation-layouts**
+
+- **conversation-layouts** no reclamation: layout files for conversations gone from `list_sessions` are never dropped, so `~/.wakil/layouts` only grows.
+- **conversation-layouts** two windows on one conversation writing one layout file was never reasoned about.
+
+**palette**
+
+- **palette** IME candidate windows (Japanese, Chinese) never walked: ↑ ↓ Return Esc belonging to the input method during marked text is unverified beyond the dead-key ´.
+- **palette** Send and Fill from cURL not walked from the palette; Send needs a server, the walk's API entry points nowhere.
+
+**phase-1**
+
+- **phase-1** one config dir serves one org: Invariant 4's second half (one provider, several orgs) does not hold for `claude-code`; per-org server names not built; guard is add-time only, no retro-scan.
+- **phase-1** `get_issue` returns no comments (disclosed in its tool description); `recall` has no recency ordering and snippets carry status, not an excerpt.
+- **phase-1** nothing has ever run against a `codex` or `local` provider; they register but have no session adapter.
+
+**phase-2a**
+
+- **2a** `initech` and `umbrella` never tried against `--mcp-config` and `--strict-mcp-config`; managed settings on team and enterprise plans could override them.
+
+**phase-2b-i**
+
+- **2b-i** 120fps on ProMotion never observed (this Mac reports 60 Hz); only the frame-cost proxy exists. Project switch under 400 ms never measured.
+- **2b-i** `Pane.busy` publishing before the dispatch is awaited is untested; `WindowModel` has no test target to reach it.
+
+**phase-2b-ii**
+
+- **2b-ii** Project-switch timing (spec target ~400ms to interactive) was never measured; needs a second registered project on this machine.
+- **2b-ii** Overlapping agent turns: `turnInFlight` is a Bool, so a second turn's result or throwing send can clear the flag while the first runs; a counter is needed.
+- **2b-ii** Where a developer sees dropped raw stream events when debugging a stalled session was never verified; spec's "harness still logs them" claim unsubstantiated.
+- **2b-ii** 120fps on ProMotion is unfalsifiable here (both displays report 60Hz); only GPU frame cost against the 8.33ms budget was taken.
+- **2b-ii** Void, production tint and thought-thread legibility were walked once only; VoiceOver over the hand-built grid and 500-row grid cost never measured.
+- **2b-ii** Uniform structs for `VoidUniforms` agree between Swift and Metal only by inspection; a `static_assert` or checked shared layout would pin them.
+- **2b-ii** Void pauses on `NSWindow.occlusionState` with no periodic reconciliation; a missed resume notification would leave it frozen. `VoidView` still `fatalError`s with no Metal device.
+- **2b-ii** Cursor parallax writes `@State` on `WakilWindow`, re-evaluating the whole body per pointer event; unmeasured, fix is moving `cursor` into a child view.
+
+**phase-2b-iii**
+
+- **2b-iii** `readOnly` on the database record is inert (carried, never consulted); only `writeRef` decides write authority. `writeRef` equal to `ref` is not refused.
+- **2b-iii** A caller that gives up first still gets the write: the MCP connection reads frames serially, so a cancel (or another tool's permission question) queues behind a 120s park.
+- **2b-iii** `ConfirmationBroker.request` uses `withCheckedContinuation`, so a cancelled caller holds the single-flight slot for the full 120s timeout.
+- **2b-iii** Confirmation plane is not modal enough: dim covers only the canvas, context row and composer stay clickable, and a tall thought thread draws over the plane.
+- **2b-iii** Mongo mutation not built; DDL (CREATE, DROP, ALTER, TRUNCATE, GRANT, LOAD DATA) refused with no per-adapter justification written.
+- **2b-iii** The confirmation token is the literal word `confirm`; database or environment name was considered and deferred.
+- **2b-iii** Confirmation is single-flight only: a second gated dispatch while one is parked is refused with -32005; no queue and no awaiting-confirmation room state.
+- **2b-iii** Signing still needs a Developer ID Application certificate this machine lacks (also owed under 2b-vii in parked.md).
+
+**phase-2b-iv**
+
+- **2b-iv** The `make captures` GPU timing line (8.33ms budget) was never captured off the terminal; no number recorded, only the probe's older ~1.1ms.
+- **2b-iv** Runbook H1/H2 commands are wrong as written: need `make build` first and `--exclude-dir=.build` on the deleted-layer grep.
+
+**phase-2b-viii**
+
+- **2b-viii** `autoResumeAfterSwitch` still filters on `cwd == rootPath` by exact match; #53 ruled it deleted, but sessions in subdirectories or non-first roots are discarded. Spurious fresh-session note.
+- **2b-viii** `ActionRegistry.dispatch` and MCP `tools/call` never consult `operatorOnlyActions`; operator-only guarantee rests on the CLI allow-list and `approve_tool_use` alone. Hardening not done.
+
+**phase-2c-i**
+
+- **2c-i** `pane_move`, `pane_resize` and `pane_set_column_width` accept NaN and infinity; the store mutates, then the journal encode fails and the dispatch is absent from the audit log.
+- **2c-i** `LayoutStore.setColumnWidth` enforces no minimum width; only the pointer path floors at `paneColumnMinimumWidth`, so an agent can set width 5.
+- **2c-i** `pane_select_cell` and `pane_select_rows` accept a row index beyond the row count, so `read_pane` can report an anchor on a row that does not exist.
+- **2c-i** The refresh pump subscribes asynchronously after `init`, so a dispatch racing window construction is missed with no catch-up.
+- **2c-i** Check 13's positive half (a bool-typed column drawing a chip) was unexercisable against an empty Mongo database; pinned only at unit level.
+
+**phase-2c-ii**
+
+- **2c-ii** `SHOW TABLES` drill against MySQL was never seen on screen; check 8 was accepted on code and tests only.
+- **2c-ii** Production mutation block (check A2) never exercised at the window: the one production DB has no `writeRef`, so `writeGate` was never reached; unit tests only.
+- **2c-ii** `schemaPaneContents` supplies `key: false` only when absent, so a future driver's non-boolean `key` would pass into a BOOLEAN column; latent.
+- **2c-ii** `DBPane.pageControls()` duplicates `rowRangeDescription`'s visibility guard by hand; nothing enforces they keep agreeing.
+
+**phase-2c-ii-b**
+
+- **2c-ii-b** The full `make test-live` run was never re-run end to end after the MySQL escaping fixes (Docker engines down); only two live tests re-run green.
+- **2c-ii-b** The pane title is now redundant (`EVENTS` above `events · select ...`); deleting it from pane chrome and keeping it for the rail is an unmade design call.
+- **2c-ii-b** Per-reason read-only footer labels (spec 9.3) deliberately unbuilt on operator evidence; revisit only if operators report confusion.
+
+**phase-2c-iii**
+
+- **2c-iii** Sixteen of twenty-six checks never walked (only ten were): violet-only-in-proposal, mirror never lit, hatch texture, ⌘F counting in blocks, resize cadence under live drag, scrollback bound, Propose rerun, backfill label, probe drawing measurements.
+- **2c-iii** Search across the 200-block-capped history does not tell the operator it did not reach further back; unestablished, never walked.
+
+**phase-2c-iv**
+
+- **2c-iv** No check has ever drawn a real reply: fixture hosts are `.invalid`, so the Body/Headers table and a successful response render only on the hand walk.
+- **2c-iv** "Also look at" list (split proportions with a 200 KB reply, IME after a chip, undo after unbind, Recent shared across panes, title follows entry) was never ticked; look-only items.
+
+**phase-2d-i**
+
+- **2d-i** A session title can show part of the identifier note when the first message is 112–199 characters long; parked in PR #347, no fix found on main.
+- **2d-i** `list_columns` is exercised against SQLite only; the MySQL and Mongo paths skip without live databases.
+
+**phase-2d-ii**
+
+- **2d-ii** Two post-walk fixes were not re-walked: the bar learning its window (`fa1c47d`) and the first-use microphone-permission notice (`5b2e4f2`).
+- **2d-ii** `ThoughtThread.swift` is not under the control gate: its label column has a pointer-only second toggle. Open design call: drop the tap or name it.
+- **2d-ii** No check for speech landing in the composer while the settings pane has focus (walk 14); ordinary work, not a harness limit.
+- **2d-ii** ⇧Return breaking a line without sending in the agent composer has no check; accessibility-dump multi-line value format unmeasured.
+
+**phase-2e**
+
+- **2e** Checks 3, 4 and 7 each left a real one-year credential at Anthropic; the operator owes revoking the ones not kept, and `wakil org rm <org> --force` for scratch orgs.
+
+**phase-2e-ii**
+
+- **2e-ii** Whole 15-row walk never walked (Walked column empty): folder picker, Trash Put Back, agent-pin refusal with a live agent, voice refusal, rename-on-leave refusal in the status line.
+- **2e-ii** Renaming a project drops any `project.json` key the build does not know (`SaveProject` writes only known keys); a hand-edited file loses it.
+- **2e-ii** A removed environment's Trash copy is its only undo; once the Trash is emptied nothing restores it.
+
+**phase-2e-iii**
+
+- **2e-iii** Whole 11-row walk never walked: real-Keychain token store, replace, clear, send of the stored token to a real host, agent and voice refusal, database rename.
+- **2e-iii** Removing an API entry keeps its Keychain item; it must be deleted by hand with `security delete-generic-password`.
+- **2e-iii** A hand-edited file with two API entries of one name: edit and removal act on the first, the later one only carries a note.
+
+**phase-2e-iv**
+
+- **2e-iv** Whole 7-row walk never walked; row 5 (a real MySQL connection built from the file's parts plus the kept password) needs a local server and has never run.
+- **2e-iv** Removing a database keeps its Keychain item; it must be deleted by hand.
+- **2e-iv** A legacy one-string database record is not split for the operator; Edit asks for the parts once. A changed user requires retyping the password.
+
+**phase-3a-i**
+
+- **3a-i** Journal noise: a watcher refresh is journalled as `ui`, so a busy repo writes entries the operator did not act on. Never measured or filtered.
+- **3a-i** A pruned linked worktree as a project root is untested; after `git worktree prune` its `.git` file points nowhere.
+
+**phase-3a-ii**
+
+- **3a-ii** Signing never walked: a repository with `commit.gpgsign` and a pinentry prompt was not seen; walk repositories do not sign.
+
+**phase-3a-ii-b**
+
+- **3a-ii-b** With several cursors the Stage/Unstage button's enabled state follows only the main cursor, while the press stages every selection.
+- **3a-ii-b** New files are named in the drafted commit message without their contents or line counts.
+- **3a-ii-b** The draft's ⌘Z has no redo, and can outlive an org switch, restoring the old org's text.
+- **3a-ii-b** The Stage/Unstage strip hides while the diff refreshes after each write instead of greying out.
+- **3a-ii-b** Draft counts (`path +a -d`) are skewed by content lines that start with `--` or `++`.
+- **3a-ii-b** Each repaint re-diffs the tab for the strip's enabled state; near 10,000 lines that is slow.
+
+**phase-3a-v-a**
+
+- **3a-v-a** Whole runbook never walked: all ten rows (Timeline, Load more, inline blame, Open Changes, Inline blame setting, agent blame question) have an empty Walked column.
+- **3a-v-a** A rename commit ending a Timeline page opens without its old name (empty left side) until the next page loads.
+- **3a-v-a** The blame hover shows the commit subject, not its body; body only in the row tooltip and the commit's tab.
+- **3a-v-a** VoiceOver "scroll to bottom" on a long lazy list (Timeline, Search results) traps in SwiftUI and quits Wakil.
+
+**phase-3a-v-b**
+
+- **3a-v-b** Whole runbook never walked: all ten rows (merge, rebase, stash clash, Accept Current/Incoming/Both, Undo Apply, agent resolves) have an empty Walked column.
+- **3a-v-b** Branch picker shows no spinner and Escape cannot cancel while a merge or rebase it started runs (Rules 4/5).
+- **3a-v-b** Amend Last Commit stays enabled in the menu while conflicts remain.
+- **3a-v-b** The Compare tab is not refreshed when the conflict changes; close and reopen it.
+- **3a-v-b** An Accept moves the cursor to its block even when the cursor was elsewhere in the file.
+- **3a-v-b** After a relaunch, or for a clash made in a terminal, there is no Undo Apply; resolve by hand.
+- **3a-v-b** Undo Apply is offered only when the stash's files had no changes of your own before the apply.
+- **3a-v-b** If the branch renamed a file the stash edits, Undo Apply leaves that file as git left it.
+- **3a-v-b** Not built: three-way Merge Editor, Source Control Graph, starting a cherry-pick or revert, interactive rebase, `merge --squash`.
+
+**phase-3b-i**
+
+- **3b-i** Real Arabic input sources' own shortcuts walked on one layout switch only; other layouts and input methods untested. Cover also cannot press ⌘K/⌘P/⌘T under Arabic (harness sends US codes).
+- **3b-i** Dirty tabs in another project or conversation: ⌘Q and org switch offer only Don't Save and Cancel; saving needs switching to that scope.
+- **3b-i** Cover could not reach: saving tick and second ⌘S during a save, Cancel on a save, red close button, minimised-window ⌘Q, relaunch restore, highlighting, Compare that cannot read a file.
+
+**phase-3b-ii**
+
+- **3b-ii** Whole runbook never walked ("Not yet walked"): tree, search, find, replace, live update, relaunch restore rows.
+- **3b-ii** The tree's selection is view-local, so `read_pane` does not report the highlighted row; only the walk sees it.
+- **3b-ii** The 2,000-match note and 50,000-file note are walk-only and unseeded; caps pinned by Go and WakilKit tests only.
+- **3b-ii** Cover could not reach: loading/busy ticks, a listing error, keyboard navigation and focus timing (↑↓ ←→ type-ahead, ⌘B), live update from a dispatched terminal command (#401).
+
+**phase-3b-ii-b**
+
+- **3b-ii-b** Operator walk (rows 1-9: replace preview, Replace All, undo, reveal, tab drag, middle-click, agent) never ticked; runbook says "Not yet walked".
+- **3b-ii-b** Walk-only visuals never looked at: strike-through, violet preview, drop line, selected revealed row, disabled reveal tooltip, Replace field taking the keyboard.
+- **3b-ii-b** Preview covers only 2,000 shown lines; Replace All past them unexercised (no fixture reaches it). Middle-click close and saved tab order after relaunch are walk-only.
+- **3b-ii-b** `3b-ii-b-replace-cancel` over the 200 MiB haystack was intermittent (step 15 just past the 3 s settle); worth timing before it leaves quarantine.
+
+**phase-3b-iii**
+
+- **3b-iii** Nothing pins that choosing a changed file from ⌘P on a fresh session enters the conversation (`paletteOpensAPane` gained `editor_changes_select`).
+- **3b-iii** Proof for `palette-open-kinds.jsonl` was stale after its edit and needed re-proving; not confirmed re-proved.
+
+**phase-3b-iv**
+
+- **3b-iv** Keystrokes doubled once after an agent renamed the open file (`ghi` read back `ghighi`, one act, run 20261017-154716); no cause proven.
+- **3b-iv** macOS 14 Move to Trash error message (needs `/usr/bin/trash`, macOS 15) never seen; walk Mac is on 15.
+- **3b-iv** `3b-v-click-focuses-pane` red and quarantined on main: click lands under the Rail, so `editor-2` is never focused.
+
+**phase-3b-iv-b**
+
+- **3b-iv-b** Whole icon walk (rows 1-10: glyphs, grey-white colour, no clipping, tabs, Changes, size) never ticked; no check can see the icons.
+- **3b-iv-b** Font failing to load (no icons, tree file names shift 10 pt left) never exercised.
+
+**phase-3b-ix**
+
+- **3b-ix** Whole fast-path walk (rows 1-20, local llama-server and Claude path) never ticked; runbook says "Nothing here is walked yet".
+- **3b-ix** `term_open`'s `path` kept only when it is a project root; otherwise the terminal opens where it would with no path.
+- **3b-ix** A delete is caught only by its first word; "Please get rid of the drafts" still reaches the model.
+- **3b-ix** File scope is the top 20 project files; a file outside the top 20 for every word sends the line to the agent.
+- **3b-ix** Real Claude path costs quota and is hand-walked only; timing figures (0.1 s local, 1-2.5 s Claude) measured on one machine.
+
+**phase-3b-v**
+
+- **3b-v** A heavy-folder change made outside the Settings pane (hand-edited project.json, another window) re-lists nothing until next disk wake or project switch.
+- **3b-v** Open search results are marked changed after a heavy-folder save, not re-run.
+- **3b-v** The unsaved prompt's Save takes no save slot, so it can overlap a save in flight; Don't Save cannot stop a write already started.
+- **3b-v** Git's diff web view still keeps the keyboard when the Git pane loses focus.
+- **3b-v** A hand-set indentation (Monaco Change Indentation) is re-detected on any editor option change and lands on the project's values (Monaco 0.52.2).
+- **3b-v** Cover could not reach: agent's write refusal (rows 10, 17), refusal texts, the two steppers, resign-active autosave, Compare releasing the keyboard, what Monaco draws.
+- **3b-v** Cover could not reach: dimmed heavy/ignored rows, Rule 5 during an in-flight heavy-folder write, emptying a row or draft shifting on removal (Rule 6).
+- **3b-v** `3b-v-editor-indent-scratch.jsonl` went red once in a full run (step 29), passed 2 of 2 alone.
+
+**phase-3b-vii**
+
+- **3b-vii** Walk rows 1-10 never ticked: log colours, folding, follow-stops-when-scrolled-up, open trace across appends, `> laravel.log` then append.
+- **3b-vii** A log emptied and rewritten past its old length before the editor re-reads it shows a wrong splice until next shrink or reopen (accepted cost).
+- **3b-vii** More than 2 MB written between two reads, and a binary chunk, are unit-tested only, never walked.
+- **3b-vii** Typing in a small `.log` while a write lands: race predates 3b-vii, not walked.
+
+**phase-3b-viii**
+
+- **3b-viii** Whole walk unticked (Claude path rows 1-9, DB query line 10-13, local model, Settings): ghost-text feel and timings never walked by the operator.
+- **3b-viii** Agent-origin `db_set_dsn` refreshes the schema vocabulary only while Settings is open, so ghost-text's schema cache can go stale mid-session.
+- **3b-viii** The agent's own `ClaudeCodeCLIHarness.interrupt()` still sends SIGINT, which ends the `claude -p` process; the session may not survive an interrupt.
+- **3b-viii** Real Claude path costs quota and is walk-only; a recycled session (every 20 operations) and 10-idle-minute stop are unit-tested against a fake only.
+
+**phase-3c-i**
+
+- **3c-i** Walk rows 1-10 never ticked (tabs, per-org profile isolation, relaunch, pop-up, find, download, camera prompt, inspector, clear data, org rm).
+- **3c-i** A page's `beforeunload` question is not shown (WKWebView has no public hook); Interaction rule 1 unmet until WebKit offers one.
+- **3c-i** A load that times out shows its error only after WebKit's own timeout, a minute or more.
+- **3c-i** `wakil org rm` cannot delete the organisation's WebKit store; it names it and says to clear it in Settings first.
+- **3c-i** A page's own question in a pane you are not in waits shown, without the keyboard: needs a click to answer.
+- **3c-i** Unwalked: HTTP basic-auth prompt, file chooser, untrusted certificate, crashed page, failed download, link to an app the Mac lacks.
+
+**phase-3c-ii**
+
+- **3c-ii** Operator's own `.ui` acts in a page on a production site have no surface (Decision 48); needs a proposal `origin:` parameter and `parkAndAwait` support.
+- **3c-ii** The site allow-list lives in memory: a reopened conversation or relaunch asks again. Until the config tree is read, every site counts as production.
+- **3c-ii** Pages over 200 KB are cut, and frames are counted not read.
+- **3c-ii** Unwalked residue: framework-controlled fields, open shadow roots, cross-origin frames, agent click on `target=_blank`, the colours, the 1 s quiet after typing, `lastOperatorInput` routing.
+
+**phase-3c-iii**
+
+- **3c-iii** Clearing browsing data then reloading open tabs writes those pages back into history (M-b).
+- **3c-iii** A fragment change followed by a title change drops the new title from history; the history read is capped at 200 rows before ranking.
+- **3c-iii** Keys sent with no gap (a script) can land after the completion, giving `youtube.comoutube.com`.
+- **3c-iii** Long plain terminal output may draw slower since every row is scanned for links (M-d); `seq 1 200000` was never timed against main.
+
+**phase-3d-i**
+
+- **3d-i** None of the 18 walk rows (auto-groups, pinning, PR group, vertical column, AI naming, favicons, middle-click, tiles) was walked; Walked column is blank, Known section says "None yet".
+
+**phase-3d-iii**
+
+- **3d-iii** A `<video>` inside a shadow root is not found, so it does not float; ⌘H does not float.
+- **3d-iii** Restore dock over SwiftUI's hosting view is proven only in plain AppKit; a pane rebuilt by a layout change may float briefly (unverified).
+- **3d-iii** Floating relies on two WebKit private callbacks and one private preference; a macOS update could drop one and the setting turns itself off.
+
+**phase-3d-iv**
+
+- **3d-iv** Row 10 accepted not re-run after 9cc7b06; probe items open: (b) `security` prompt and exit status, (e) exact words after rebuild, (f) whether saved tab state ever holds a typed password.
+- **3d-iv** A login form inside an iframe gets no key (ruling 11); the script watches the main frame only.
+- **3d-iv** Every rebuild re-asks for each Keychain item (ad-hoc signature changes code hash); signing (2b-vii) removes it.
+- **3d-iv** Ad-hoc signed, no hardened runtime: the agent's shell could `DYLD_INSERT_LIBRARIES` into Wakil (unmeasured) or run `Wakil --dispatch browser_password_save/_delete/_never` with no prompt. (security)
+- **3d-iv** A password a site sends in a GET URL is not scrubbed from the tab URL, so the agent's read of the address can show it. (security)
+- **3d-iv** A password under 6 characters shown as page text by a show-password toggle is not hidden in page text or labels (ruling 15). (security)
+- **3d-iv** `wakil org rm` names saved passwords as residue and deletes none; Settings Copy leaves the password on the pasteboard for 90 s. (security)
+- **3d-iv** Import receipt reads `Imported 1 passwords.` for one row; non-local http pages get no key and refuse fill.
+- **3d-iv** Unwalked residue: Keychain prompt, LocalAuthentication, key pixels, framework-controlled logins (React), open shadow-root logins; Cover list in section 4 not run, machine walk "Not run yet".
+
+**phase-conversations**
+
+- **conversations** The whole 7-row walk is unwalked ("Not walked"): two live agents in one place, switching mid-turn, approval from chip and Running row, quit/relaunch into Continue, production red, five dot colours.
+
+**rail-collapse**
+
+- **rail-collapse** Rows 4 to 8 unwalked: 6 pt right-edge peek strip, Reduce Motion crossfade, maximise while collapsed, collapsed state across relaunch, VoiceOver "Open panes" and agent `rail_set`.
+- **rail-collapse** Hover peek, its timings, slide, release, Reduce Motion and relaunch persistence are walk-only; no check reaches them (`rail.edge` in `uncoverable.tsv`).
