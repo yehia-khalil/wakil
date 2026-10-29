@@ -198,7 +198,7 @@ by date. The charter's §4 keeps the rule and the table.
     confirmation, never supplies it: `writeGate` gates `.mutate` at every origin, and
     authorship changes only the plane's wording. A cell is editable only when the pane can
     name the single table its rows came from and every primary-key column is present
-    (Decisions 59, 60); everything else is read-only and says so. A committed edit re-runs the
+    (Decisions 60, 61); everything else is read-only and says so. A committed edit re-runs the
     pane's query; a gate refusal keeps what was typed. Voice never commits a cell.
     Why: the statement is honest but the wrong ergonomics for fixing one value; a grid that wrote through itself would breach Invariant 2, and an invented `WHERE` updates the wrong row.
     Reverse if: the provenance rule proves so restrictive that few real result sets qualify — then the typed statement stays the whole answer.
@@ -677,297 +677,283 @@ by date. The charter's §4 keeps the rule and the table.
     Reverse if: an operator needs a key inside a pane, or a hold like push-to-talk, rebound — then those leave the fixed list by their own design, not by widening the refusals.
     Commit: 892357b6.
 
-51. **A read-only Mongo aggregate containing `$out` or `$merge` is refused, and every new
+51. **A handed agent is an ordinary conversation started off screen; its push asks unless the operator
+    ticked May push; what needs the operator is counted from the read, with no seen store.**
+    **Hand to agent** (the Ticket header, a thread's box, ⌘P's ⌘↩) opens a popover with a prefilled
+    brief, harness, provider and **May push**. **Start** is the operator's alone: `ticket_hand_off`
+    and `ticket_hand_off_cancel` are `operatorOnlyActions` ("ticket_hand_off is the operator's: an
+    agent does not start conversations."), so a spoken turn may open the popover but never start it
+    (Invariant 7). It starts through the one start path (`send`, `WindowModel.startHandOff`) in the
+    ticket's place, the screen untouched; it appears as a chip. An agent may edit the brief's text
+    (`ticket_hand_off_brief`), never May push, harness or provider, and never takes the keyboard or
+    replaces a popover the operator has open.
+    **The price** (`handedLookup` beside the production lookup; `handedAgentPrice`): for a handed
+    agent `editor_changes_publish`, `_merge` and `_rebase` are *gate* always; `_push` and `_sync` are
+    *gate* unless May push is on, then *allow* on any branch of the place's roots (Decision 44). Other
+    prices are unchanged; PR merges and other GitHub writes stay refused. **May push is read fail-closed:**
+    on only when exactly one hand-off names the conversation and says on; an unreadable file reads off;
+    it survives a resume or fork (`CarryTicketHandoff`); an unclear resume stays handed with May push
+    off; it reads off while a spoken message is unanswered. A gated push parks on the plane with its
+    own sentence instead of being refused.
+    **On disk, per organisation, written by the window only** (`WAKIL_IN_WINDOW=1`): drafts in
+    `tickets/drafts.json` by thread id (with the operator's text an agent's draft replaced, for
+    **Restore yours**); the hand-off in the ticket's record (`handoffs`; a keyless PR's in
+    `tickets/pr-handoffs.json`); the last harness, provider and May push in `tickets/handoff.json`.
+    **The count is derived, not stored:** one per review thread on the operator's open PR
+    (unresolved, not outdated, last word not theirs), one per own PR with a failing check, one per
+    review request, from the last `ticket_in_flight` read. No seen store, no snooze. It draws as an
+    amber tick and ` · N` on the editor rail row (`Tickets · N` with no editor) and the Ticket
+    label; nothing at the top of the window.
+    Why: a handed agent is worth handing to only if it finishes unwatched, and trusted only if the one write that publishes beyond this Mac asks by default; a count from GitHub's state cannot drift from it.
+    Reverse if: May push is ticked by habit (then the default price is wrong), or an operator wants a thing they have seen to stop counting.
+    Commit: fcd2825d · `app/Sources/WakilKit/Gate/WriteGate.swift`.
+
+52. **A read-only Mongo aggregate containing `$out` or `$merge` is refused, and every new
     `DbDriver` ships its own adversarial write-rejection tests.**
     Why: those stages write from inside a read-looking operation; query languages differ, so an untested driver is an open write path.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/readonly.go`.
 
-52. **Writing goes through a separate `ConnectWritable`, never a flag on `Connect`; the SQLite
+53. **Writing goes through a separate `ConnectWritable`, never a flag on `Connect`; the SQLite
     write DSN is `mode=rw`, never `rwc`.**
     Why: a boolean must not decide read safety; a mutation must never create a database.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/dbdriver.go`.
 
-53. **Swift never classifies SQL; the Go gates answer via `db_classify_statement`, judging the
+54. **Swift never classifies SQL; the Go gates answer via `db_classify_statement`, judging the
     operator's raw text before any paging wrap.**
     Why: a second classifier would disagree with the gate; the gate must not reason about text Wakil composed.
     Reverse if: not stated.
     Commit: 2ae2a062.
 
-54. **`confirmation` stays a sibling of `name`/`arguments` in `tools/call`, never inside a
+55. **`confirmation` stays a sibling of `name`/`arguments` in `tools/call`, never inside a
     tool's argument schema.**
     Why: an agent emitting "confirm" is not a human typing it; inside the schema an agent could self-confirm.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/MCP/MCPServer.swift`.
 
-55. **Cancelling a MySQL read issues `KILL QUERY` on a second connection and waits for it before
+56. **Cancelling a MySQL read issues `KILL QUERY` on a second connection and waits for it before
     the connection returns to the pool.**
     Why: cancelling the context leaves MySQL running the statement; an unwaited kill could hit a later statement on the reused connection.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/sqlconn.go`.
 
-56. **`db_cancel` covers reads only; a cancelled API mutation is recorded as fate-unknown.**
+57. **`db_cancel` covers reads only; a cancelled API mutation is recorded as fate-unknown.**
     Why: a cancelled write may still land, so a cancel must not claim to have stopped it.
     Reverse if: not stated.
     Commit: 2ae2a062.
 
-57. **A pane's row index is the position in the displayed order, and `read_pane` returns rows
+58. **A pane's row index is the position in the displayed order, and `read_pane` returns rows
     in displayed order.**
     Why: a sort reorders the screen, so agent and operator would otherwise mean different rows by one number.
     Reverse if: not stated.
     Commit: 2ae2a062.
 
-58. **`JSONValue` reads numbers only through `intValue`/`int64Value`/`doubleValue`, never
+59. **`JSONValue` reads numbers only through `intValue`/`int64Value`/`doubleValue`, never
     `case .number`; `==` is numeric across cases; no `Hashable`.**
     Why: `if case .number` silently stops matching integers; a Double loses integers above 2^53, so a wrong row key reaches the write gate.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Core/JSONValue.swift`.
 
-59. **Go decides editability and composes the edit; Swift carries the WHERE predicate as an
+60. **Go decides editability and composes the edit; Swift carries the WHERE predicate as an
     opaque token, and a leading `=` meaning SQL lives in Go alone.**
     Why: keys above 2^53 cannot survive Swift; a second answer to "value or expression" is a second escaper.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/editable.go`.
 
-60. **Only a single-table bare-identifier result is editable (no WITH, join, subquery, derived
+61. **Only a single-table bare-identifier result is editable (no WITH, join, subquery, derived
     or qualified column; key and BIT columns read-only); MySQL literals double backslashes.**
     Why: an aliased expression named like a real column makes the UPDATE hit the real table; doubled quotes alone corrupt `C:\path`.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/editable.go`.
 
-61. **A bound value or hole is made only by a gesture, named exactly as typed; text pasted from
+62. **A bound value or hole is made only by a gesture, named exactly as typed; text pasted from
     outside stays literal.**
     Why: binding matches exact column names, so trimming or parsing `<id>` would make holes from prose or overwrite a binding with literal text.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Api/ApiParts.swift`.
 
-62. **A pasted cURL drops credential headers and flags (named, never carried), matches an entry
+63. **A pasted cURL drops credential headers and flags (named, never carried), matches an entry
     in the active environment only, and is never journalled.**
     Why: the command may carry credentials, and switching environment is bigger than a paste should do silently.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Api/ApiCurlFill.swift`.
 
-63. **Body Format re-indents whitespace between JSON tokens only, never round-tripping through
+64. **Body Format re-indents whitespace between JSON tokens only, never round-tripping through
     `JSONSerialization`.**
     Why: key order and integers above 2^53 would be lost.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Api/ApiBodyFormat.swift`.
 
-64. **The ambient org comes from `WAKIL_ORG` alone: unset is an error, no fallback to
+65. **The ambient org comes from `WAKIL_ORG` alone: unset is an error, no fallback to
     `CLAUDE_CONFIG_DIR`, no `set_org` tool or active-org file.**
     Why: a fallback resolves silently to the wrong org; a settable org would make the cross-org guard compare a value to itself.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/paths.go`.
 
-65. **The agent's `--allowedTools` is derived from the registry as `.read` and `.control`, never
+66. **The agent's `--allowedTools` is derived from the registry as `.read` and `.control`, never
     `.mutate`, and no `--permission-mode` is passed.**
     Why: a mutating action must be structurally absent from the allow list; default mode keeps everything unlisted failing closed.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/App/AgentMCPConfig.swift`.
 
-66. **The permission bridge denies by default, refuses built-in tools by name, echoes
+67. **The permission bridge denies by default, refuses built-in tools by name, echoes
     `updatedInput` verbatim, and lets a production mutation through to `dispatch`.**
     Why: allowing by default hands the agent `Bash`/`Write`; `dispatch` journals `blocked`; `updatedInput` replaces the arguments wholesale.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/MCP/PermissionPrompt.swift`.
 
-67. **`session_set_provider`, `session_new`, `session_switch` and `session_close` are
+68. **`session_set_provider`, `session_new`, `session_switch` and `session_close` are
     operator-only: off the agent's allowed tools and denied at the permission layer.**
     Why: an allow-listed tool never reaches the permission prompt, so exclusion and denial are two halves of one refusal.
     Reverse if: not stated.
     Commit: ea3b2d3d.
 
-68. **A provider token is read only by `wakil provider credentials`, appears only in its success
+69. **A provider token is read only by `wakil provider credentials`, appears only in its success
     JSON, and is on no MCP tool surface.**
     Why: an agent that could read the token could launch sessions outside the write gate.
     Reverse if: not stated.
     Commit: 2ae2a062 · `cmd/wakil/providercredentials.go`.
 
-69. **Agent-facing binaries take their place from `WAKIL_PROJECT`/`WAKIL_ENVIRONMENT`, ahead of
+70. **Agent-facing binaries take their place from `WAKIL_PROJECT`/`WAKIL_ENVIRONMENT`, ahead of
     `active.json`.**
     Why: binaries read `active.json` at call time, so a switch would move them; Invariant 5 forbids a project argument, so the pin rides in the environment.
     Reverse if: not stated.
     Commit: ffbaf922 · `internal/wakilcore/active.go`.
 
-70. **Claude capacity is read from the headers of a 1-token `POST /v1/messages`, never
+71. **Claude capacity is read from the headers of a 1-token `POST /v1/messages`, never
     `/api/oauth/usage`; `ctx_capacity` refresh honours only operator-origin dispatches.**
     Why: the stored setup-token lacks `user:profile`, so usage returns 403; a refresh spends the operator's own rate limit.
     Reverse if: not stated.
     Commit: 2ae2a062 · `internal/wakilcore/capacity_claude.go`.
 
-71. **Remote git allows only ssh and https (file only under test), and Wakil's ssh takes only
+72. **Remote git allows only ssh and https (file only under test), and Wakil's ssh takes only
     HostName, Port, User, ProxyJump and HostKeyAlias from `ssh -G`, with its own known_hosts.**
     Why: the repository must choose no program or transport; a push must never fall back to another account's key.
     Reverse if: not stated.
     Commit: 2f76a8fb · `internal/wakilcore/gitremote.go`.
 
-72. **The org-less launch draws the room with no bleeds; `VoidPalette` is not consulted
+73. **The org-less launch draws the room with no bleeds; `VoidPalette` is not consulted
     (optional palette).**
     Why: `forEnvironment` answers an empty environment with the non-production pair, asserting a fact in the one channel Invariant 8 reserves.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Visual/VoidUniforms.swift`.
 
-73. **A window holds one live `.cancelAction`: the front-most plane owns it and every other
+74. **A window holds one live `.cancelAction`: the front-most plane owns it and every other
     plane surrenders its key equivalent.**
     Why: AppKit picks an arbitrary match, and Esc on the org plane cancelled a parked mutation behind it.
     Reverse if: not stated.
     Commit: 2ae2a062.
 
-74. **The snap graph is stored, never re-derived from geometry, and a drag dispatches one layout
+75. **The snap graph is stored, never re-derived from geometry, and a drag dispatches one layout
     action on release with an absolute rect.**
     Why: flush is not snapped, so deriving would re-couple panes the operator pulled apart; per-point actions flood the journal.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Layout/SnapGraph.swift`.
 
-75. **A pane's snapshot lives in its own `@Observable` cell (`paneCells`), never in one shared
+76. **A pane's snapshot lives in its own `@Observable` cell (`paneCells`), never in one shared
     dictionary.**
     Why: one shared dictionary brought back the 240.5 ms/frame regression the terminal refresh was written to avoid.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/App/PaneSnapshotCell.swift`.
 
-76. **The palette's environment switch is not gated and raises no confirmation plane,
+77. **The palette's environment switch is not gated and raises no confirmation plane,
     production included; production is drawn red in the list.**
     Why: the write gate prices a production target only for the agent's origin; the operator's own chooser never raised a plane.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilKit/Command/CommandCatalog.swift`.
 
-77. **Only the minimum leaves Wakil to a quick-task provider: ghost-text sends column names of at
+78. **Only the minimum leaves Wakil to a quick-task provider: ghost-text sends column names of at
     most five tables, a commit draft the staged diff, group and conversation names titles and
     first turns.**
     Why: the least that does the job; file contents, untracked contents and rows never go; the journal records that text left, not what.
     Reverse if: not stated.
     Commit: 106d181b.
 
-78. **A composer line whose first word is delete, drop, remove, truncate, erase, purge or wipe
+79. **A composer line whose first word is delete, drop, remove, truncate, erase, purge or wipe
     goes to the agent without asking the model; no fast-path action may be `.mutate`.**
     Why: the 1.5B model answered "delete the draft bookings" by closing a pane; `session_resume`, `api_cancel` and `db_cancel` need ids or end work.
     Reverse if: not stated.
     Commit: 4a22ca9b · `app/Sources/WakilKit/App/FastPath.swift`.
 
-79. **The fast path asks only the routed quick provider (a down local server sends the line to
+80. **The fast path asks only the routed quick provider (a down local server sends the line to
     the agent) and defaults on only for a local `quickProvider`.**
     Why: a fallback to the session's provider puts quota and 1 to 1.8 s on every composer line.
     Reverse if: not stated.
     Commit: 4a22ca9b · `app/Sources/WakilKit/App/FastPath.swift`.
 
-80. **Monaco is vendored under `app/Resources/monaco` and loaded with a content rule list
+81. **Monaco is vendored under `app/Resources/monaco` and loaded with a content rule list
     blocking every non-file request; no CDN.**
     Why: the editor and diff web views must work offline and never fetch remote code.
     Reverse if: not stated.
     Commit: 2ae2a062 · `app/Sources/WakilApp/MonacoEditorRenderer.swift`.
 
-81. **`files_create` and `files_move` refuse an existing name instead of overwriting (a
+82. **`files_create` and `files_move` refuse an existing name instead of overwriting (a
     case-only rename is the one exception).**
     Why: create and move must not destroy data, which is what lets them skip a dialog and be priced allow.
     Reverse if: not stated.
     Commit: 9f41da43 · `internal/wakilcore/fileops.go`.
 
-82. **A git write runs one process at a time per root, and the commit message goes through a
+83. **A git write runs one process at a time per root, and the commit message goes through a
     temp file (`-F`), never as an argument.**
     Why: no line of a message may be read as a flag, and newlines survive.
     Reverse if: not stated.
     Commit: 4a603c4d · `internal/wakilcore/gitwrite.go`.
 
-83. **Visit Anyway on a certificate error is the operator's alone, per host for the session; the
+84. **Visit Anyway on a certificate error is the operator's alone, per host for the session; the
     agent's navigation never passes one.**
     Why: a certificate override is a trust decision.
     Reverse if: not stated.
     Commit: 873ac683 · `app/Sources/WakilApp/BrowserPrompts.swift`.
 
-84. **Command-W on a pinned tab closes it only on a second press on the same tab within 2 s; the
+85. **Command-W on a pinned tab closes it only on a second press on the same tab within 2 s; the
     tab's × closes in one click.**
     Why: it guards the keyboard, where a Command-W meant elsewhere lands on a pin; the named exception to `PRODUCT.md` Rule 1.
     Reverse if: not stated.
     Commit: 618a2432 · `app/Sources/WakilKit/Browser/BrowserPinnedClose.swift`.
 
-85. **Restoring from picture-in-picture puts the web view back synchronously inside WebKit's
+86. **Restoring from picture-in-picture puts the web view back synchronously inside WebKit's
     private callback, and every private selector is guarded with `responds(to:)`.**
     Why: otherwise the page shows a blank video box, and a dropped private selector must turn PiP off rather than crash.
     Reverse if: WebKit's public API gains a macOS PiP route.
     Commit: 618a2432 · `app/Sources/WakilApp/BrowserPictureInPictureHost.swift`.
 
-86. **A conversation's title is `operatorName ?? aiName ?? messageTitle`, and the model's name
+87. **A conversation's title is `operatorName ?? aiName ?? messageTitle`, and the model's name
     is never an action.**
     Why: a late model reply must not overwrite a rename; a `source: ai` dispatch parameter would be forgeable by the agent.
     Reverse if: not stated.
     Commit: 106d181b · `app/Sources/WakilKit/Core/Conversation.swift`.
 
-87. **The e2e harness addresses its instance by pid from `open -n`, never by bundle id, and
+88. **The e2e harness addresses its instance by pid from `open -n`, never by bundle id, and
     refuses to start without a pid distinct from every existing Wakil.**
     Why: bundle-id addressing silently returns the operator's instance, so a check would drive their live credentials.
     Reverse if: not stated.
     Commit: 2ae2a062 · `e2e/driver/launch.go`.
 
-88. **`make e2e-new` builds the merge-base (never origin/main's tip) and requires every new
+89. **`make e2e-new` builds the merge-base (never origin/main's tip) and requires every new
     check to go red against it.**
     Why: a check that passes against the code from before the work does not test the work.
     Reverse if: not stated.
     Commit: 2ae2a062.
 
-89. **No `make e2e-full` before merge: a branch merges on green `make e2e-new` and `make e2e`;
+90. **No `make e2e-full` before merge: a branch merges on green `make e2e-new` and `make e2e`;
     the night run runs the full suite on `origin/main` only when it moved.**
     Why: the checks drive the real window on the operator's Mac, which is free only at night.
     Reverse if: not stated.
     Commit: c591a5d3 · `e2e/night/run.go`.
 
-90. **The night window is 23:00 to 07:00, its lock is the live `wakil-e2e-night run` process,
+91. **The night window is 23:00 to 07:00, its lock is the live `wakil-e2e-night run` process,
     and a cut-short or unrun night never reads as green; a runbook is green only if every check
     is.**
     Why: the screen must be free by morning; a crash leaves no stale lock; no record may claim more than was run.
     Reverse if: not stated.
     Commit: c591a5d3 · `e2e/night/window.go`.
 
-91. **The night fixer fixes code, never the check; never retries into green, adds to
+92. **The night fixer fixes code, never the check; never retries into green, adds to
     `uncoverable.tsv`, quarantines or pushes; a red `make e2e-cover` is reported, not fixed.**
     Why: it is the e2e auditor's "never do" list applied headless; writing checks is the auditor's job, with the screen.
     Reverse if: not stated.
     Commit: c591a5d3 · `e2e/night/fixer-prompt.md`.
-
-51. **A handed agent is an ordinary conversation started off screen; its push asks unless the operator
-    ticked May push; what needs the operator is counted from the read, with no seen store.**
-    **Hand to agent** (the Ticket header, a thread's box, ⌘P's ⌘↩) opens a popover with a prefilled
-    brief, harness, provider and **May push**; **Start** is the operator's alone. It starts a
-    conversation through the one start path (`send`, `WindowModel.startHandOff`) in the ticket's place
-    with no screen showing it: the screen, its conversation and its canvas are untouched, and it appears
-    as a chip. `ticket_hand_off` and `ticket_hand_off_cancel` are `operatorOnlyActions`, so an agent that
-    calls them is refused with "ticket_hand_off is the operator's: an agent does not start
-    conversations."; a spoken turn may open the popover but never press Start (Invariant 7). An agent
-    may edit the brief's text (`ticket_hand_off_brief`; the start message marks what it wrote), but
-    only the operator sets May push, the harness and the provider, and an agent's open never changes
-    them, never takes the keyboard and never replaces a popover the operator has open.
-    **The price.** A caller is *handed* when the conversation has a stored hand-off (`handedLookup` on the
-    registry, beside the production lookup; `handedAgentPrice` in `Gate/WriteGate.swift`).
-    `editor_changes_publish`, `_merge` and `_rebase` are *gate* for a handed agent always; `_push` and
-    `_sync` (a pull, then a push) are *gate* unless the operator switched **May push** on, and then
-    *allow*, as any agent's under Decision 44. File writes, stage and commit stay as Decision 36 prices
-    them; PR merges and every other GitHub write stay refused. **May push is read fail-closed**: it is
-    stored with the hand-off (in the ticket's record, or its PR's file; written by Wakil only), on only when exactly one hand-off
-    names the conversation and says on, and any unreadable file reads off. It survives a resume or a
-    fork (`CarryTicketHandoff`), a resume that cannot tell whether the session was handed stays handed
-    with May push off, and it reads off while a spoken message in the conversation is unanswered. An
-    agent's gated push, sync, publish, merge or rebase now parks on the plane with its own sentence
-    (`push <root>'s current branch to its upstream`) instead of being refused with none.
-    **Kept on disk, per organisation, written by the window only** (each write refuses unless
-    `WAKIL_IN_WINDOW` is `1`): reply drafts in `tickets/drafts.json` by thread id (text, who wrote it,
-    conversation, root, branch, and the operator's text an agent's draft replaced, for **Restore
-    yours**); the hand-off in the ticket's record (`handoffs`; a PR with no ticket key in
-    `tickets/pr-handoffs.json`); and the last harness, provider and May push in `tickets/handoff.json`,
-    which prefill the next popover.
-    **The count is derived, not stored.** One per review thread on the operator's open PR (unresolved,
-    not outdated, last word not theirs), one per own PR with a failing check, one per PR asking for their
-    review, from the last `ticket_in_flight` read (every 2 minutes while Wakil is the active app and the
-    screen unlocked, when Wakil returns after 60 s, after a write from Wakil, on an org switch). There is
-    no seen store and no snooze: a count lowers when the thing is dealt with. It draws as an amber tick
-    and ` · N` on the editor rail row, `Tickets · N` when no editor is open, and on the Ticket label;
-    nothing appears at the top of the window.
-    *Why:* a handed agent is only worth handing to if it can finish without the operator watching, and
-    only worth trusting if the one thing that publishes beyond this Mac asks by default; counting from
-    what GitHub says, rather than from what was looked at, cannot drift from it.
-    *Reverse if:* a handed agent's push asks so often May push is ticked by habit (then the default
-    price, not the switch, is wrong), or an operator wants a thing they have seen to stop counting.
-    The charter (`north-star.md`) carries no row for this decision yet: it is over its word limit
-    and is trimmed first.
 
 93. **A connection is fronted by its own `wakil-connect`, the only gate on its tools; the ask goes
     over an approval socket only `wakil-connect` gets, never a registry action.**
