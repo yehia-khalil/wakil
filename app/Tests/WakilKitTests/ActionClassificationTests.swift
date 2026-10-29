@@ -156,6 +156,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "ctx_rename_project",
             // 3b-v (Decision 38): Decision 30 kept — the agent reads editor settings, never writes them.
             "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment",
+            // Keyboard: which key runs which command is the operator's; the agent reads the keymap.
+            "ctx_set_key", "ctx_set_keys",
             // 3b-viii (Decision 42): which model reads the operator's code is theirs to choose.
             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
             "ctx_set_project_editor_settings",

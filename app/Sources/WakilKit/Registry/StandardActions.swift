@@ -1622,6 +1622,9 @@ public func registerStandardActions(
         }
     ))
 
+    // The keymap's read and its two operator-only writes, beside the other settings tiers.
+    await registerKeyboardActions(into: registry, context: context)
+
     await registry.register(Action(
         name: "ctx_set_project_editor_settings",
         description: "Change one project's editor settings in its project.json: tabSize (1 to 16) "

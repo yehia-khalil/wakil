@@ -473,6 +473,13 @@ public final class WindowModel {
     /// What the browser actions read; `WindowSession` points it at the wiring's.
     public var browserSettingsCache = BrowserSettingsCache()
 
+    /// The keymap in force, read through `ctx_keyboard` at launch and after every change
+    /// (`WindowModel+Keyboard.swift`). The defaults until the first read lands.
+    public internal(set) var keymap = Keymap(overrides: [:])
+
+    /// settings.json's error, whole, when the keymap could not be read; the defaults are then in force.
+    public internal(set) var keymapError: String?
+
     /// The database each pane's query line has been pointed at by the
     /// operator, keyed by pane id — see `QueryLineDatabaseChoice`, which
     /// carries what the pane's subject named at the time so a choice
@@ -2172,6 +2179,7 @@ public final class WindowModel {
             // 3b-v: the tabs follow the project, so the settings in force are read with it.
             await refreshEditorSettings()
             await refreshBrowserSettings()
+            await refreshKeymap()
             // 3c-ii: launch, and an org, project or environment switch, all end here.
             await refreshBrowserSites()
             // Capacity is read once the providers and the org are known,
