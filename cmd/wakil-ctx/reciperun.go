@@ -48,7 +48,45 @@ type recipeSecretResult struct {
 	Ref string `json:"ref"`
 }
 
+type recipeListArgs struct {
+	ProjectPath string `json:"projectPath,omitempty" jsonschema:"a project.json path; default the active project"`
+}
+
 func registerRecipeRunTools(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "recipe_list", Description: "The project's Running settings as stored: recipes by name; each repo (a root's folder name, in the roots' order) with its recipe, overrides and doesntRun, and its effective recipe with where each field came from; and problems, every validation problem whole (empty when the recipes are valid; an effective recipe is then left out)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a recipeListArgs) (*mcp.CallToolResult, map[string]any, error) {
+			path, p, err := recipeProject(a.ProjectPath)
+			if err != nil {
+				return toolErr(err), nil, nil
+			}
+			p.SetDir(path)
+			problems := []string{}
+			valid := true
+			if err := wakilcore.ValidateRecipes(*p); err != nil {
+				valid = false
+				problems = append(problems, err.Error())
+			}
+			repos := []any{}
+			for _, r := range p.Roots {
+				name := wakilcore.RepoNameIn(path, r)
+				row := map[string]any{"repo": name, "path": r.Path, "recipe": r.Recipe, "doesntRun": r.DoesntRun}
+				if r.Overrides != nil {
+					row["overrides"] = asObject(r.Overrides)
+				}
+				if valid {
+					if eff, err := wakilcore.EffectiveRecipe(*p, name); err == nil {
+						row["effective"] = asObject(eff)
+					}
+				}
+				repos = append(repos, row)
+			}
+			recipes := map[string]any{}
+			for name, r := range p.Recipes {
+				recipes[name] = asObject(r)
+			}
+			return nil, map[string]any{"project": p.Name, "recipes": recipes, "repos": repos, "problems": problems}, nil
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "recipe_prepare", Description: "Get a checkout ready to run a repo: builds its run plan (as recipe_plan), writes the plan's files (kept out of git), on firstRun copies and clones from Main's folder (never over a file the checkout has; clone is copy-on-write), writes the .env lines when the recipe opts in, and reads the plan's secrets from the Keychain. Answers plan, prepared (wrote, copied, cloned, envFile) and secretEnv (variable to value, for the processes' terminals only). Refuses, naming each variable, a secret with no value kept."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a recipePrepareArgs) (*mcp.CallToolResult, recipePrepareResult, error) {
 			plan, org, err := buildPlan(a.recipePlanArgs)

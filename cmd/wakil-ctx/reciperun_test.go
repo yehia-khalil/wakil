@@ -31,6 +31,14 @@ func TestRecipePrepareRunStepsAndTry(t *testing.T) {
 	if msg != "" {
 		t.Fatal(msg)
 	}
+	list, msg := callRecipe(t, cs, "recipe_list", map[string]any{})
+	if msg != "" || list["recipes"].(map[string]any)["vite"] == nil || len(list["repos"].([]any)) != 2 {
+		t.Fatalf("list: %v %s", list, msg)
+	}
+	webRow := list["repos"].([]any)[1].(map[string]any)
+	if webRow["repo"] != "web" || webRow["recipe"] != "vite" || webRow["effective"].(map[string]any)["recipeName"] != "vite" {
+		t.Fatalf("web row: %v", webRow)
+	}
 	checkout := filepath.Join(os.Getenv("HOME"), ".wakil", "orgs", "initech", "workspaces", "proj", "w", "web")
 	os.MkdirAll(checkout, 0o755)
 	args := map[string]any{"repo": "web", "workspace": "w",
