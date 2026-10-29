@@ -114,3 +114,30 @@ were not. `gh pr reopen <n>` if that turns out to be wrong.
 | **#301** | The e2e fixture's keychain shim cannot reach the shipped binary, and the agent checks hang on a login-keychain prompt |
 | **#242** | Every integer above 2^53 dies in the Go MCP SDK, before Swift ever decodes it |
 | **#292** | An act can lose the foreground midway, and the failure blames the app |
+
+---
+
+## Owed from the retired phase log (2026-10-29)
+
+Each line is something a walk or a map left owed or open that main's code does not
+visibly resolve. Issue numbers (#nnn) are from the old `rafiq` tracker. Read the lines for the
+sub-phase you are about to design.
+
+- **2b-vii** — signing: notarisation needs a paid Developer ID this Mac lacks; local signing with entitlements and the hardened runtime is reachable. Also unwalked: the terminal's bundle `PATH` on a Developer ID build.
+- **2c-v** — cut 2026-09-16 (session browser). The label is not reused and 2c-vi is not renumbered; 15 citations land on it.
+- **2c-vi** — PM board, deferred 2026-10-06; its write waits on open question 15. Exit: a dragged card and "move 2835 to review" dispatch one action, and only a transition Jira offers from the current status is reachable. Reuses the 2c-i data surface. Not a Jira client.
+- **2c-ii** — D1 (one of thirteen walk defects) deliberately unfixed; reason in the fix round's spec §13.
+- **2c-iii** — `pane_close` ends in `panes?.drop`, a second leak site that should await the terminal's teardown (`LayoutActions.swift`).
+- **2c-iii** — the tripwire's `panes` and `layout` entries are wrong; whoever moves them corrects them.
+- **2c-iii** — `WindowSession`'s close path is untestable (no `WakilApp` test target) and needs an operator walk; `harness?.stop()` and `shutdown()` ordering are untested.
+- **2c-iii** — a TUI that repaints via scroll regions (`CSI S`/`T`) would still record noise in a block; walked once against Claude Code only. "Send to thread" copies a fenced quote and reaches no compose field.
+- **2c-iii / 3a-i** — the terminal pane cannot paste or edit a selection (#365).
+- **2c-iv** — #342: an accessibility client that sets a field's whole value drops its holes. A hole dragged between fields, a chip at the path's wrap edge and a query row's `×` beside a twin holding typing are walk-only. Unicode domain names and IPv6 zones are refused by the URL check. The environment menu once opened empty; cause never confirmed.
+- **2e** — #323's journal half: a refused action is journalled as `"error"` with no text; adding text needs a redaction review first.
+- **2e** — keeping the whole canvas on an account switch (operator ruling, "after 2e"); not built.
+- **2e / #176** — `backups/` keeps a displaced account's identity across a switch; the plaintext fallback can leave a `.credentials.json` a replacing login would not sweep; a replacing login does not revoke the displaced refresh token. Unsettled: whether the CLI resolves symlinks in `CLAUDE_CONFIG_DIR` before hashing the Keychain name (§9.1's `realpath`).
+- **2d-ii** — the first-use speech model download was never exercised; `2d-ii-thread-earlier` and `2d-ii-voice-lands-unsent` are intermittent; a pane twitches after a drop (#353).
+- **3a-ii-b** — `api-unbind.jsonl` and `bg-agent-chip-over-landing.jsonl` are red on main, with no issue.
+- **3a-iii** — Sign in (device flow) waits on Wakil's two OAuth apps (`operator-todo.md`).
+- **3b-iii** — `api-bound-locks.jsonl` is intermittent on main; `3b-i-editor-unsaved-save.jsonl` lost its app once with no crash report.
+- **Layout-persistence timing tests** flake under load (#312, #328, #332, #344); see also #222 and #282 above.
