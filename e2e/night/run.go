@@ -31,6 +31,9 @@ type Steps struct {
 	// Preflight fails when this job cannot drive the window at all (no
 	// Accessibility grant), so a night that could test nothing says so.
 	Preflight func() error
+	// MergeCheck fails, naming them, when main still carries feature documents:
+	// specs, plans or acceptance lists a merged feature should have removed.
+	MergeCheck func() error
 	// Prepare puts the night worktree on commit, detached and clean.
 	Prepare    func(commit string) error
 	Suite      func(deadline time.Time) (SuiteRun, error)
@@ -110,6 +113,10 @@ func night(steps Steps, store Store) Result {
 	}
 	if err := steps.Prepare(main); err != nil {
 		return didNotStart("Preparing the night worktree failed", err)
+	}
+	// Report, never stop: stale documents say nothing about the suite.
+	if err := steps.MergeCheck(); err != nil {
+		r.MergeCheck = err.Error()
 	}
 	if err := steps.Preflight(); err != nil {
 		return didNotStart("This job cannot drive the window", err)

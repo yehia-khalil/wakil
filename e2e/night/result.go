@@ -60,9 +60,11 @@ type Result struct {
 	// FixCommits are the fix branch's commits, one "<short sha> <subject>" each.
 	FixCommits []string
 	// Fixer is what the fixer wrote: its summary and the drafted PR description.
-	Fixer   string
-	Rerun   *SuiteRun
-	Skipped []string
+	Fixer string
+	Rerun *SuiteRun
+	// MergeCheck names the feature documents left on main; empty when clean.
+	MergeCheck string
+	Skipped    []string
 }
 
 // RedFilesSince reads the run records a pass left under evidenceRoot and
@@ -110,6 +112,9 @@ func (r Result) Markdown() string {
 		} else {
 			writeRun(&b, "The re-run", *r.Rerun)
 		}
+	}
+	if r.MergeCheck != "" {
+		fmt.Fprintf(&b, "## Feature documents on main\n\n%s\n\n", strings.TrimSpace(r.MergeCheck))
 	}
 	if len(r.Skipped) > 0 {
 		b.WriteString("## Skipped\n\n")

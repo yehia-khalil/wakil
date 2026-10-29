@@ -16,12 +16,13 @@ binding; §9 is the glossary.
 Five rungs — **Design → Plan → Build → Cover → Walk** — driven by
 `superpowers:brainstorming`, `superpowers:writing-plans` and
 `superpowers:executing-plans`, then the repo's own e2e auditor, then the operator.
-Two files per sub-phase: a spec and a plan, both under `docs/superpowers/`.
+Two files per sub-phase: a spec and a plan, both under `docs/superpowers/`. Feature documents
+(specs, plans, runbooks) live on the feature's branch and leave `main` with it.
 
 **End every turn that finished a unit of work by naming the next step and its tool.**
 
 **Do not invoke** `/wayfinder`, `/to-spec`, `/to-tickets`, `/implement` or
-`/mattpocock-skills:code-review` — retired 2026-09-26. See `docs/agents/workflow.md`.
+`/mattpocock-skills:code-review` — retired. See `docs/agents/workflow.md`.
 
 ### Interaction rules
 
@@ -37,7 +38,7 @@ tracker** — specs and plans are files. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Three: `bug`, `needs-triage`, `wontfix`. See `docs/agents/triage-labels.md`.
+`bug`, `needs-triage`, `wontfix`. See `docs/agents/triage-labels.md`.
 
 ### The e2e auditor
 

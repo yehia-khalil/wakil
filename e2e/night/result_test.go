@@ -62,3 +62,10 @@ func TestANightThatDidNotStartNeverReadsAsGreen(t *testing.T) {
 		t.Fatalf("a night that did not start mentions green:\n%s", md)
 	}
 }
+
+func TestFeatureDocsOnMainAreNamedInTheResult(t *testing.T) {
+	md := Result{Night: at(27, 0, 0), Outcome: Green, MergeCheck: "docs/superpowers/specs/x.md"}.Markdown()
+	if !strings.Contains(md, "Feature documents on main") || !strings.Contains(md, "docs/superpowers/specs/x.md") {
+		t.Errorf("not reported in:\n%s", md)
+	}
+}

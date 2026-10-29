@@ -1,7 +1,6 @@
 # Triage Labels
 
-Three labels, since 2026-09-26. Issues are a bug inbox; the roles a work-tracking
-vocabulary needed went with the tickets.
+Three labels. Issues are a bug inbox.
 
 | Label | Meaning |
 |---|---|
@@ -9,10 +8,8 @@ vocabulary needed went with the tickets.
 | `needs-triage` | Filed but not yet evaluated. |
 | `wontfix` | Will not be actioned. Closed. |
 
-**Retired 2026-09-26**, and not to be re-applied: `ready-for-agent`, `ready-for-human`,
-`needs-info`, and every `wayfinder:*` label (`map`, `grilling`, `research`, `prototype`,
-`task`). They described a ticket-as-work-unit workflow that no longer exists — see
-`docs/superpowers/specs/2026-09-26-workflow-superpowers-migration-design.md`.
+**Retired, never re-apply:** `ready-for-agent`, `ready-for-human`, `needs-info`, and every
+`wayfinder:*` label (`map`, `grilling`, `research`, `prototype`, `task`).
 
-`enhancement` and `documentation` survive as descriptive tags on a bug report. They
-carry no workflow meaning.
+`enhancement` and `documentation` survive as descriptive tags on a bug report, with no
+workflow meaning.

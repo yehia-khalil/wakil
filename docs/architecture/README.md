@@ -107,8 +107,7 @@ flowchart LR
 
 - `docs/wakil/north-star.md` — the charter. §4 Invariants are binding; §9 is the glossary.
 - `PRODUCT.md` §Interaction Rules — how every control behaves.
-- `docs/wakil/decisions.md` — decision records.
+- `docs/wakil/decisions.md` — the decisions that still stand.
 - `docs/wakil/org-and-provider-model.md` — organisations, providers and accounts.
 - `docs/agents/workflow.md` — the five rungs (Design → Plan → Build → Cover → Walk).
-- `docs/superpowers/specs/` — phase specs, with the reasoning behind each piece.
 - `CONTRIBUTING.md` — where code goes, and the tests each change needs.

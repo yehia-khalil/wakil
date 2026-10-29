@@ -68,7 +68,7 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 
 ## Acceptance runbooks
 
-`docs/wakil/*-acceptance.md`, one per sub-phase: what the operator walks by hand (the Walk rung).
+`docs/wakil/*-acceptance.md`, one per sub-phase, on its branch until the feature merges: what the operator walks by hand (the Walk rung).
 `make e2e-runbook` renders the machine half (the e2e records) into a runbook between its markers.
 
 ## Make targets
@@ -78,6 +78,7 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 | `make build` | Builds every Go binary in `BINS` into `bin/` |
 | `make test` | `docs-check`, then `go test ./...` |
 | `make docs-check` | Fails if `docs/wakil/north-star.md` exceeds 4,000 words |
+| `make merge-check` | Fails if any plan, spec or `docs/wakil/*-acceptance.md` remains; run on the PR that targets `main`, not part of `make test` |
 | `make test-live` | Engine-backed Go tests against Docker MySQL and Mongo |
 | `make vet` | `go vet ./...` |
 | `make fmt` | Fails if any Go file is not gofmt-clean |

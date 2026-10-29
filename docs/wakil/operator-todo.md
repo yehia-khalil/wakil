@@ -35,23 +35,6 @@ driving. Kept current as work proceeds; **last updated 2026-09-21.**
 >    legibility when you point at it, because while a pane is maximized the rail is the
 >    only way back to the others.
 
-> **2026-09-20 — a runbook is waiting to be walked:
-> `conversation-layouts-acceptance.md`.** [#142](https://github.com/yehia-khalil/rafiq/issues/142)
-> and its three tickets are closed, so pane arrangements are now keyed by
-> conversation rather than by project. Ten checks, written and unwalked.
->
-> **Copy `~/.wakil/layouts` before you start.** The defect
-> [#148](https://github.com/yehia-khalil/rafiq/issues/148) found *destroyed layout
-> files*: a switch onto a conversation with no arrangement of its own wrote an empty
-> canvas over both that conversation's file and the project's seed, which is what every
-> later conversation in that project opens on. It is fixed and pinned by a test; checks
-> 3 and 6 are what would catch it coming back, and both read your real files.
->
-> **One check cannot be replaced by a test, by construction.** Every automated test in
-> this work drives a `session_get` double, so `wakilcore.LineageRootIn` — the resolver
-> that decides which conversation an arrangement belongs to — has never once answered a
-> live window. Check 4 is the only place it does.
-
 > **2026-09-16 — the MySQL write credential exists.** `wakil.acceptance`'s staging
 > `core` database now carries `writeRef: acc-staging-core-write`, and the two
 > credentials name two different MySQL users rather than both naming `root`:
@@ -72,13 +55,13 @@ driving. Kept current as work proceeds; **last updated 2026-09-21.**
 > **Verified at the server, not at the window.** `wakil_write` can `UPDATE edit_quote`,
 > is denied `UPDATE` on `customers` and `DROP` on `edit_quote`; `wakil_read` can
 > `SELECT` and is denied `UPDATE`. **What is still unestablished is the same thing
-> `phase-log.md` names — the MySQL write path has never been exercised at the window.**
+> `parked.md` names — the MySQL write path has never been exercised at the window.**
 > This removes the reason it could not be; it does not walk checks 12, 14 and 17.
 
 > **2026-09-15 — the acceptance-check backlog is closed.** Every outstanding acceptance
 > runbook in the repository was accepted by the operator on that date rather than walked:
 > 2a check 8, 2b-i's three standing checks, 2b-iii's six, 2b-v's ten, 2b-vi's dual-drive
-> gap, and 2c-ii-b's checks 12, 14 and 17. `phase-log.md`'s "The 2026-09-15 acceptance"
+> gap, and 2c-ii-b's checks 12, 14 and 17. `parked.md`'s "2026-09-15 acceptance backlog"
 > records exactly what each one leaves unestablished. **Nothing in this file blocks a
 > phase marker any more.** The sections below are kept because what they describe is
 > still true and still unrun — they are now a reference for what to reach for if a
@@ -104,8 +87,8 @@ below as the procedure to follow on a new machine — the steps are unchanged.*
 **Two corrections to the steps below, learned by running them.** `wakil org create`
 accepts no `--jira-base` silently, and the omission does not surface until the first
 Jira call — check `cat ~/.wakil/orgs/<org>/org.json` after Step 2. And do not point
-two orgs at one config dir in Step 3: see "One config dir serves one org" in
-`phase-1-acceptance.md`.
+two orgs at one config dir in Step 3: see the phase-1 item in
+`parked.md`.
 
 **2026-09-06.** This is a breaking change and nothing migrates automatically.
 Org identity used to be derived from `CLAUDE_CONFIG_DIR` — the Claude account's
@@ -362,7 +345,7 @@ is a substitute for what the server itself will permit. The server's grant is th
 line and the only one Wakil has no view of.
 
 So, plainly: **a `writeRef` pointing at a `root` credential works perfectly, and defeats
-the entire point.** Every check in `docs/wakil/phase-2b-iii-acceptance.md` will pass
+the entire point.** Every check in the 2b-iii acceptance runbook will pass
 against it. The two-credential design exists so that write authority is *proved to the
 server by presenting a credential the server has granted write roles to*, rather than
 asserted by Wakil to itself and hoped to be honoured at the far end — and a `root`
@@ -431,7 +414,7 @@ start a session and says which command would fix it.
   expecting a window to launch a session under it.
 
   **A `--share` binding is the exception and needs no `--claude-path` of its own** (fixed
-  2026-09-14, `shared-accounts-acceptance.md` D2). It names a config dir another org homes,
+  2026-09-14). It names a config dir another org homes,
   so it inherits that record's binary — same account, same machine, same `claude`. Passing
   the flag anyway still wins. The inheritance is resolved on every read rather than copied
   into the record, so moving the binary means editing the homing record alone; if that
@@ -519,7 +502,7 @@ run, executed by the operator and recorded."*
 
 It was run on 2026-09-05 and all seven exit criteria passed — but against the
 model this branch replaced, before org identity moved to `WAKIL_ORG` and before
-providers became their own axis. `docs/wakil/phase-1-acceptance.md` has been
+providers became their own axis. The phase-1 acceptance runbook has been
 rewritten for the current model: its setup steps are new, the seven criteria are
 unchanged, and a table at the top says which of them the decoupling actually
 moved (criterion 6, session discovery, most of all — the function it exercised
@@ -532,7 +515,7 @@ Step 1 of the runbook.
 
 **Done.** Re-run completed 2026-09-07 by the operator. All seven exit criteria PASS
 against the org/provider model; results are recorded criterion by criterion, dated,
-in `docs/wakil/phase-1-acceptance.md` alongside the 2026-09-05 ones.
+in the phase-1 acceptance runbook alongside the 2026-09-05 ones.
 
 Summary of what the re-run established, and what it cost:
 
@@ -551,7 +534,7 @@ Summary of what the re-run established, and what it cost:
   `env VAR=~/path` does not expand the tilde in zsh, which silently creates a config
   dir named `~`.
 - One structural limitation found, not a defect: **one config dir serves one org.**
-  See the section of that name in `phase-1-acceptance.md`, and Invariant 4's
+  See the phase-1 item in `parked.md`, and Invariant 4's
   2026-09-07 qualification in `north-star.md`. Nothing on this list is blocked by it.
 
 Two things left over from the run, both yours:
@@ -621,7 +604,7 @@ Still open, in rough order:
    only, so run `wakil provider list --org <org>` for each of `personal`, `initech` and
    `umbrella` once and confirm no two rows share a `configDir` — `~/.claude-initech` was
    flipped between orgs during the acceptance run, and a collision created before the
-   guard would still be sitting there. Details in `phase-1-acceptance.md`.
+   guard would still be sitting there. Details in `parked.md` (phase-1).
 3. **A config-dir collision exists right now, and it is live.** Audited 2026-09-07 by
    reading `~/.wakil/orgs/*/providers/*.json`:
 
@@ -663,8 +646,7 @@ Still open, in rough order:
 4. `umbrella` has an org and a Jira base but no provider and no project. Add them
    when there is work there: §3's procedure, unchanged.
 5. Phase 2 now has a spec and a running implementation — see
-   `docs/superpowers/specs/2026-09-07-phase-2a-spine-design.md` and
-   `docs/superpowers/plans/2026-09-07-phase-2a-spine.md`. Charter open question 5 is
+   the 2026-09-07 phase-2a-spine design and plan (left `main` when merged). Charter open question 5 is
    closed (start fresh, resume as a visible action). Question 10 (default STT engine)
    remains open and blocks sub-phase 2d only.
 
@@ -743,7 +725,7 @@ is in the paragraph below, and it is the only check no script could ever have ru
 **New 2026-09-10.** Session resume's value is a set of human judgements (does a rebuilt
 thread read as the same conversation continued, does the seam read as a seam rather than
 an error) that no test in the suite can make on your behalf. The sub-phase was marked met
-the same day without any of them being made. `docs/wakil/phase-2b-v-acceptance.md` has ten
+the same day without any of them being made. the 2b-v acceptance runbook has ten
 standing checks, every one marked **ACCEPTED — not walked**. Only you can run them — each needs a
 running `Wakil.app`, a real `claude` binary, and a live agent turn, all three of which
 the automated suite is forbidden to touch.
@@ -892,7 +874,7 @@ pinned inside it, and deleting it would strand every sharer with no way back. Re
 bindings first. Neither command ever touches the Keychain, so a token you stored above
 outlives the binding that used it.
 
-This machine's own `docs/wakil/shared-accounts-acceptance.md` is the runbook that walks
+This machine's own shared-accounts acceptance runbook is the one that walks
 these commands and the checks Wakil needs at the window. **Walked in full 2026-09-14, all
 eight result rows PASS** — including the result that settles a question older than this
 sub-phase: `--strict-mcp-config` holds on an enterprise account, and on a team account,

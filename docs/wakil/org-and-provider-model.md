@@ -1,9 +1,9 @@
 # Organisations and providers — deferred design decision
 
 **Status: SUPERSEDED 2026-09-06** by
-`docs/superpowers/specs/2026-09-06-org-provider-decoupling-design.md`, which implements
-this model and answers the open questions below. Kept for the reasoning and the
-measurements, which the spec cites rather than repeats.
+the org/provider decoupling design (which implemented
+this model and answered the open questions below; it left `main` when it merged). Kept for the reasoning and the
+measurements, which that design cited rather than repeated.
 
 *(Original status, when this was written: "deferred to Phase 2. Nothing here is
 implemented." Recorded then because Phase 1 shipped an assumption that
@@ -129,8 +129,8 @@ quietly degrades from "by construction" to "by coincidence".
 > providers (`ListProvidersFor`) and, for each `claude-code` one, reads its
 > recorded `configDir` directly; nothing reads the ambient `CLAUDE_CONFIG_DIR`
 > variable at all, so the silent-fallback trap described above cannot occur —
-> there is no longer an environment variable for a launcher to leave stale. See
-> `docs/superpowers/specs/2026-09-06-org-provider-decoupling-design.md` §6.
+> there is no longer an environment variable for a launcher to leave stale. See the
+> decoupling design's §6 (left `main` when merged).
 
 ## The change, when it happens
 
@@ -197,7 +197,7 @@ an org.
 ### How they were answered — 2026-09-06, by the implementation
 
 Recorded here so this file's last section is not read as still-open. The reasoning
-is in `docs/superpowers/specs/2026-09-06-org-provider-decoupling-design.md`.
+was in the decoupling design, which left `main` when it merged.
 
 - **Org registry: a directory per org.** `~/.wakil/orgs/<org>/` holds `org.json`,
   `active.json`, `projects.json` and `providers/<id>.json`. There is no `orgs.json`
