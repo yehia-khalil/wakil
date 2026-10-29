@@ -277,7 +277,9 @@ struct EditorColumn: View {
         Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1)
             .padding(.horizontal, 2).contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
-            .gesture(DragGesture(minimumDistance: 1)
+            // Measured in the window's space, not the edge's own: the edge moves with the width it sets,
+            // so a local translation fed back into itself and the drag twitched (walk 2026-10-29).
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { g in dragWidth = editorColumnWidth(column.width + g.translation.width, paneWidth: paneWidth) }
                 .onEnded { _ in
                     guard let w = dragWidth else { return }
