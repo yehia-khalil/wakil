@@ -970,3 +970,33 @@ None.
 - Settings: the **Branches** instructions text; **Agents woken by messages**; a project's **Running**.
 - `docs/architecture/state.md`: `workspaces/`, `workspaces.json`, snapshot refs.
 - PRODUCT.md: the home screen, workspaces and messages.
+
+## Amendment 2026-10-29 — piece 4, as built
+
+Calls the build made where the piece above is silent (plan:
+`docs/superpowers/plans/2026-10-29-workspaces-4-messages.md`).
+
+- **`to` is an id, or a title** naming exactly one live conversation of the sender's organisation, as
+  `session_switch` takes a title. A title shared by two is refused, naming the count.
+- **A message needs a sending conversation.** A dispatch whose caller names no live conversation —
+  the operator's `--dispatch`, a Landing — is refused: the operator writes in the conversation
+  itself. The e2e harness drives the action over the agent socket, as the screen's conversation.
+- **Refused, whole:** an empty text; one over 4,000 characters; no sending conversation; a past or
+  unknown recipient; the sender itself; another organisation's (its title is not said).
+- **The budget starts full**: a workspace no operator message has reached yet has the setting's
+  value. The value is read at each use, so a lowered setting clamps what remains.
+- **A message to a working recipient wakes it at its turn's end**, within the budget, with every
+  message it holds, in order.
+- **An operator message** resets its workspace's budget, carries its conversation's held messages at
+  the head of its input, and then wakes the workspace's other conversations holding messages, within
+  the reset budget.
+- **"waiting for you · N messages"** is the state of a conversation holding messages while not
+  working; it counts as *waiting* for its dot, chip and Running row (`LiveConversation.stateWords`,
+  `AgentChip.stateText`), and `session_list` carries `messagesWaiting`.
+- **`session_list`** rows carry `workspace` and `workspaceName`; called by an agent, `self` and
+  `sameWorkspace`.
+- **The setting** is stored as `messageWakes` in `org.json` (absent: 8) and in a project's `agent`
+  block (absent: the organisation's); `-1` clears either. Range 0–99. It is read from each
+  organisation's last Settings read; one never read uses 8.
+- **Until piece 1**, a conversation's workspace for messages is its place
+  (`WindowModel.messageWorkspace(of:)`, the one seam piece 1 replaces).

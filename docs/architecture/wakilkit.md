@@ -87,6 +87,11 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   `siteQuestionWantsTyping` (true unless the proposing conversation's last turn, `PlaceAgent.lastTurnSource`,
   was typed) and `allowPendingSite` (a click answers only a `.site` ask that does not want typing).
 - `WindowModelSupport.swift` — `apiSurfaceCallDetaches`.
+- `ConversationMessages.swift`, `WindowModel+Messages.swift` — messages between conversations
+  (workspaces piece 4): `ConversationMessage`, `conversationMessageBlock` (what the recipient's agent
+  reads, information only), `MessageWakeBudgets` (per workspace; an operator message resets it, a
+  woken turn takes one); the window's `deliverMessage`, `wakeForMessages`, the two `send` hooks and
+  **`messageWorkspace(of:)`, the seam workspaces piece 1 replaces** (today the place).
 - `QuickTasks.swift` — `QuickTasks` (3b-viii, Decision 42): the one entry point for quick tasks.
   `infill` and `respond` route to the org's `quickProvider`, else the active provider, fall back once
   when a local endpoint will not connect, keep the endpoint's error whole, and refuse after shutdown.
@@ -668,7 +673,9 @@ Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTes
   `proposal(name:params:caller:)` describes a parked call the same way; `setScreenScope` (every other
   dispatch is bound to the scope on screen when it began, so writes after an await land there); `ActionError` (`unknown`, `needsConfirmation`, `blockedInProduction`).
 - `StandardActions.swift` — `registerStandardActions` (the `ctx_*`, `db_*` and `session_*`
-  actions, and `pane_sort`), `StandardActionError`, `readConfigTree`. `db_cancel` ends the pane's
+  actions, and `pane_sort`), `StandardActionError`, `readConfigTree`. `ConversationMessageAction.swift` —
+  `conversation_message` and `checkConversationMessage` (its refusals), registered beside
+  `conversation_rename`. `db_cancel` ends the pane's
   read; every pane-bound db read runs as a flight through `dbReadInFlight`.
 - `Journal.swift` — `JournalEntry`, one line of the append-only journal.
 - `DebugDispatch.swift` — `runDebugScript`, behind `--dispatch`.

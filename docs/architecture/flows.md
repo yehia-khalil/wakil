@@ -140,3 +140,12 @@ organisation's agent only: the home lists the screen's own), ⌘P's Running grou
    <titles> — save or close them first.`). `answerCloseQuestion(close:)` takes the answer. Closing stops the agent through
    `stopSession(of:)`, closes the conversation's panes as on quit, and the conversation moves to
    Continue. The place then shows its next live conversation, or its Landing.
+
+**A message between conversations** (workspaces piece 4). `conversation_message {to, text}` is
+`.control` and agent-reachable; its handler refuses what it must (`checkConversationMessage`) and
+parks `.message` on `ConversationBroker`. `WindowModel.deliverMessage` writes "To ‘…’" in the
+sender's thread and "From ‘…’ · <workspace>" in the recipient's, and queues it on
+`PlaceAgent.pendingMessages`. `wakeForMessages` sends the block as a turn when the recipient is idle
+and its workspace's `MessageWakeBudgets` has a wake; otherwise it waits for the turn's end (`append`'s
+`.result`) or the operator's next message, whose `send` resets the budget and carries the block at
+the head of its input. The gate and the plane never read it.

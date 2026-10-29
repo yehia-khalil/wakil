@@ -1,6 +1,19 @@
 {
   "rules": [
     {
+      "match": "message from another conversation (‘send word to the first conversation’",
+      "reply": "read the word from the other conversation"
+    },
+    {
+      "match": "message from another conversation (‘thread turn one’",
+      "reply": "read the thanks from the first conversation"
+    },
+    {
+      "match": "send word to the first conversation",
+      "call": { "action": "conversation_message", "echo": true, "params": { "to": "thread turn one", "text": "the login endpoint answers 201 now" } },
+      "reply": "sent word to the first conversation"
+    },
+    {
       "match": "Draft how e2e-api runs",
       "call": { "action": "running_draft_propose", "echo": true, "params": { "repo": "e2e-api", "recipeName": "e2e-drafted", "recipe": { "setup": ["false"], "processes": [{ "name": "web", "command": "python3 -m http.server $WAKIL_PORT" }], "ready": { "output": "Serving HTTP" }, "notes": { "setup": "README" } } } },
       "reply": "drafted how e2e-api runs"
