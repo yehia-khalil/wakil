@@ -360,18 +360,11 @@ struct KeyboardSettingsForm: View {
 
     // MARK: Restore and Undo
 
+    /// The default back, through the same save as a recorded chord: a command that held the
+    /// default loses it and the Took line says so (rule 7).
     private func restoreDefault(_ id: String) {
-        guard canWrite else { return }
-        stopRecording()
-        refusals[id] = nil
-        undo = nil
-        lineRefusal = nil
-        restoreAllRefusal = nil
-        pending = (id, KeyCommand.all.first { $0.id == id }?.defaultChord)
-        Task {
-            if case .refused(let sentence) = await setKey(id, .restoreDefault) { refusals[id] = sentence }
-            pending = nil
-        }
+        guard canWrite, let command = KeyCommand.all.first(where: { $0.id == id }) else { return }
+        save(id, .restoreDefault, shown: command.defaultChord)
     }
 
     /// Every command back to its default; ids this build doesn't know are kept.

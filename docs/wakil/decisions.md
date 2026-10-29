@@ -1739,7 +1739,8 @@ Each entry: the call, why, and what would change our mind.
     named in the row: any chord with neither ⌘ nor ⌃ unless its key is F1–F19; the system chords
     `⌘Q ⌘H ⌥⌘H ⌘M ⌘Tab ⌘` ⌘Space ⌃Space`; the editing chords `⌘C ⌘V ⌘X ⌘Z ⇧⌘Z ⌘A`. A stored chord
     refused now (a hand edit, an older build) is ignored with the default in force; two stored on one
-    chord in one place: the first in table order wins.
+    chord in one place: the first in table order wins. A default another command's chord already
+    holds in its place is not in force either; that row shows none and says why.
     **Resolution is pane-first, then anywhere.** A command bound to the focused pane's kind is tried
     first, then the anywhere one; a command that declines falls through, and the key passes on when
     none takes it. This is `browserKey`'s rule as data. SwiftUI gives a chord to one menu item, so the
@@ -1750,7 +1751,8 @@ Each entry: the call, why, and what would change our mind.
     **Who writes.** `ctx_keyboard` is `.agentReachable`, `.read`; `ctx_set_key` and `ctx_set_keys`
     are `.operatorOnly`, on `PermissionPrompt`'s list beside the editor and browser settings
     (Decisions 30 and 38). `ctx_set_key` (`id`, `chord`) runs `Keymap.assign`, so the move and the
-    refusals hold however it is reached: `chord: null` restores the default, `""` clears it.
+    refusals hold however it is reached: `chord: null` assigns the default (taking it back from a
+    command that holds it), `""` clears it.
     `ctx_set_keys` writes a whole map (Undo and Restore All send one), keeps ids this build does not
     know, and refuses Decision 50 chords and malformed ones. Go (`keysettings.go`, tools `keyboard`
     and `set_keys`) checks shape only: it refuses a bare printable character as bad shape, and Swift's

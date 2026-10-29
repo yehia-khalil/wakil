@@ -5,7 +5,9 @@ public struct KeymapRefusal: Error, Equatable, Sendable {
 
 /// The keymap in force: each command's default, changed by the `"keys"` overrides in
 /// `settings.json`. A stored chord that is refused (Decision 50) or collides with an earlier
-/// command's chord in the same place is ignored, and `problem` says why. Pure value; no I/O.
+/// command's chord in the same place is ignored, and `problem` says why. So is a default another
+/// command's chord already holds there: that command keeps it, and this one has none. Pure value;
+/// no I/O.
 public struct Keymap: Sendable, Equatable {
     public struct Assignment: Equatable, Sendable {
         public let overrides: [String: String]
@@ -30,7 +32,7 @@ public struct Keymap: Sendable, Equatable {
                     if parsed.isRefused {
                         problems[command.id] = "\(stored) was ignored. \(KeyChord.refusedReason)"
                     } else if let winner = inForce[command.place]?[parsed] {
-                        problems[command.id] = "\(parsed.text) is also stored for \(Self.title(winner)), which wins."
+                        problems[command.id] = "\(parsed.text) was ignored: \(Self.title(winner)) has it."
                     } else {
                         chord = parsed
                     }
@@ -39,8 +41,13 @@ public struct Keymap: Sendable, Equatable {
                 }
             }
             guard let chord else { continue }
+            if let winner = inForce[command.place]?[chord] {
+                let shadowed = "Its default, \(chord.text), is \(Self.title(winner))'s, so it has none."
+                problems[command.id] = problems[command.id].map { "\($0) \(shadowed)" } ?? shadowed
+                continue
+            }
             chords[command.id] = chord
-            if inForce[command.place]?[chord] == nil { inForce[command.place, default: [:]][chord] = command.id }
+            inForce[command.place, default: [:]][chord] = command.id
         }
     }
 
@@ -99,12 +106,6 @@ public struct Keymap: Sendable, Equatable {
         }
         if chord == command.defaultChord { next[id] = nil } else { next[id] = chord.text }
         return .success(Assignment(overrides: next, tookFrom: tookFrom))
-    }
-
-    public func restoringDefault(_ id: String) -> [String: String] {
-        var next = overrides
-        next[id] = nil
-        return next
     }
 
     /// Restore All's map: every command this build knows back to its default. Ids it doesn't know

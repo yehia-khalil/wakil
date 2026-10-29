@@ -85,18 +85,36 @@ import Testing
         #expect(try moved.assign("pane.close", c("⌘W")).get().overrides == [:])
     }
 
-    @Test func restoringDefaultDropsTheEntry() {
-        let map = Keymap(overrides: ["pane.close": "⌃⌘J", "window.open": ""])
-        #expect(map.restoringDefault("pane.close") == ["window.open": ""])
-        #expect(map.isDefault("pane.close") == false)
-        #expect(plain.isDefault("pane.close"))
+    /// ↺ is `assign` of the default: the entry goes, and a command holding the default loses it.
+    @Test func restoringTheDefaultTakesItFromItsHolder() throws {
+        let map = Keymap(overrides: ["editor.save": "⌃⌘S", "conversation.new": "⌘S"])
+        let done = try map.assign("editor.save", c("⌘S")).get()
+        #expect(done.tookFrom == "conversation.new")
+        #expect(done.overrides == ["conversation.new": ""])
+        #expect(map.isDefault("editor.save") == false)
+        #expect(plain.isDefault("editor.save"))
+    }
+
+    /// A default that an earlier command's stored chord already holds is not in force: the row
+    /// shows none and says why, rather than a second, dead ⌘S.
+    @Test func shadowedDefaultHasNoChordAndSaysWhy() {
+        let map = Keymap(overrides: ["conversation.new": "⌘S"])
+        #expect(map.chord("editor.save") == nil)
+        #expect(map.problem("editor.save")?.contains("New Conversation") == true)
+        #expect(map.isDefault("editor.save") == false)
+        #expect(map.resolve(c("⌘S"), paneKind: nil) == ["conversation.new"])
+        #expect(map.menuHolder(of: c("⌘S")) == "conversation.new")
+        // Shadowed by a later command's stored chord: Save is earlier, so Open… loses ⌘P.
+        let open = Keymap(overrides: ["editor.save": "⌘P"])
+        #expect(open.chord("window.open") == nil)
+        #expect(open.problem("window.open")?.contains("Save") == true)
     }
 
     @Test func unknownIdsSurviveAssign() throws {
         let map = Keymap(overrides: ["future.cmd": "⌃⌘J"])
         #expect(try map.assign("editor.save", c("⌃⌘K")).get().overrides["future.cmd"] == "⌃⌘J")
         #expect(try map.assign("editor.save", nil).get().overrides["future.cmd"] == "⌃⌘J")
-        #expect(map.restoringDefault("editor.save")["future.cmd"] == "⌃⌘J")
+        #expect(try map.assign("editor.save", c("⌘S")).get().overrides["future.cmd"] == "⌃⌘J")
     }
 
     @Test func storedRefusedChordFallsBackToDefault() {

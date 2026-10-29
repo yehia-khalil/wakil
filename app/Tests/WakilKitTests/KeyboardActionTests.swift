@@ -106,6 +106,18 @@ private func focusedBrowserWindow(keys: KeysContext = KeysContext()) async throw
         #expect(reply == .object(["tookFrom": .null]))
     }
 
+    /// null runs `assign` with the default: a command that took the default meanwhile loses it,
+    /// and the reply names it, as a recorded chord's would.
+    @Test func testSetKeyNullTakesTheDefaultBack() async throws {
+        let context = KeysContext(keys: ["editor.save": "⌃⌘S", "conversation.new": "⌘S"])
+        let registry = await keyboardRegistry(context)
+        let reply = try await registry.dispatch(
+            name: "ctx_set_key", params: .object(["id": .string("editor.save"), "chord": .null]),
+            origin: .ui, caller: .test("staging"), confirmation: nil)
+        #expect(await context.writes == [.object(["keys": .object(["conversation.new": .string("")])])])
+        #expect(reply == .object(["tookFrom": .string("conversation.new")]))
+    }
+
     /// An absent chord is a missing param, not a restore; an unknown id writes nothing.
     @Test func testSetKeyNeedsAChordAndAKnownId() async throws {
         let context = KeysContext()

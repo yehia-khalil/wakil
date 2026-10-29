@@ -50,13 +50,15 @@ public func registerKeyboardActions(into registry: ActionRegistry, context: (any
             guard let chordParam = fields["chord"] else {
                 throw StandardActionError.missingParam(action: "ctx_set_key", param: "chord")
             }
-            guard KeyCommand.byID[id] != nil else {
+            guard let command = KeyCommand.byID[id] else {
                 throw StandardActionError.serverError(action: "ctx_set_key", message: unknownCommand(id))
             }
             // Parsed before the read, so a malformed chord costs no round trip.
             var chord: KeyChord?
             switch chordParam {
-            case .null, .string(""): chord = nil
+            // Restoring is giving the command its default: a command holding it loses it.
+            case .null: chord = command.defaultChord
+            case .string(""): chord = nil
             case .string(let text): chord = try parsedChord(text, action: "ctx_set_key")
             default:
                 throw StandardActionError.missingParam(action: "ctx_set_key", param: "chord")
@@ -64,15 +66,10 @@ public func registerKeyboardActions(into registry: ActionRegistry, context: (any
             let keymap = Keymap(overrides: try await readStoredKeys(context, action: "ctx_set_key"))
             let overrides: [String: String]
             let tookFrom: String?
-            if chordParam == .null {
-                overrides = keymap.restoringDefault(id)
-                tookFrom = nil
-            } else {
-                switch keymap.assign(id, chord) {
-                case .success(let next): (overrides, tookFrom) = (next.overrides, next.tookFrom)
-                case .failure(let refusal):
-                    throw StandardActionError.serverError(action: "ctx_set_key", message: refusal.message)
-                }
+            switch keymap.assign(id, chord) {
+            case .success(let next): (overrides, tookFrom) = (next.overrides, next.tookFrom)
+            case .failure(let refusal):
+                throw StandardActionError.serverError(action: "ctx_set_key", message: refusal.message)
             }
             // The whole map in one write: a move is the chord given and the chord taken, together.
             _ = try await callCheckedTool(
