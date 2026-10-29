@@ -111,4 +111,21 @@ import Testing
         #expect(map.problem("pane.close")?.contains("New Conversation") == true)
         #expect(map.problem("conversation.new") == nil)
     }
+
+    /// Settings → Keyboard's search: "⌘T" and "tab" both find New Tab, in either case.
+    @Test func matchingFindsByTitleOrChord() {
+        let ids = { (q: String, map: Keymap) in KeyCommand.matching(q, keymap: map).map(\.id) }
+        // A part of a chord matches, so ⇧⌘T's Reopen Closed Tab is found too.
+        #expect(ids("⌘T", plain) == ["editor.newScratch", "browser.newTab", "browser.reopenTab"])
+        #expect(ids("⌘t", plain) == ids("⌘T", plain), "a chord's letter in either case")
+        #expect(ids("tab", plain).contains("browser.newTab"))
+        #expect(ids("SAVE", plain) == ["editor.save"])
+        #expect(ids("  ", plain).count == KeyCommand.all.count, "an empty search shows everything")
+        #expect(ids("⌃⌘J", plain).isEmpty)
+        // The chord in force, not the default: a moved chord is found where it went.
+        let moved = Keymap(overrides: ["editor.save": "⌃⌘J"])
+        #expect(ids("⌃⌘J", moved) == ["editor.save"])
+        #expect(!ids("⌘S", moved).contains("editor.save"))
+        #expect(ids("none", Keymap(overrides: ["editor.save": ""])).isEmpty, "no chord matches no text")
+    }
 }

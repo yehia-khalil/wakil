@@ -59,8 +59,10 @@ final class WakilAppDelegate: NSObject, NSApplicationDelegate {
     /// where the operator is: taken here and pressed. The decision is made now, before the event
     /// is consumed, so a key no command holds there goes on untouched to whatever has the keyboard,
     /// a web view included. A command that then declines loses the key, as a menu shortcut does.
+    /// While Settings → Keyboard records, every key is the recorder's (`isRecordingKey`).
     private func takeUnmenuedKey(_ event: NSEvent) -> Bool {
-        guard let model = menu.model, let chord = KeyChord(event: event), KeyboardShortcut(chord: chord) == nil,
+        guard let model = menu.model, !model.isRecordingKey,
+              let chord = KeyChord(event: event), KeyboardShortcut(chord: chord) == nil,
               model.keymap.claims(chord, paneKind: model.focusedPaneKind) else { return false }
         Task { @MainActor in _ = await model.keyPressed(chord) }
         return true

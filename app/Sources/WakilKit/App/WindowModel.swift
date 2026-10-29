@@ -480,6 +480,10 @@ public final class WindowModel {
     /// settings.json's error, whole, when the keymap could not be read; the defaults are then in force.
     public internal(set) var keymapError: String?
 
+    /// True while Settings → Keyboard records a chord: the app's F-key monitor then leaves every
+    /// key to the recorder, which takes it ahead of the menu bar. Nothing draws from it.
+    @ObservationIgnored public var isRecordingKey = false
+
     /// The database each pane's query line has been pointed at by the
     /// operator, keyed by pane id — see `QueryLineDatabaseChoice`, which
     /// carries what the pane's subject named at the time so a choice

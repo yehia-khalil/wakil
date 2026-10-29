@@ -1,3 +1,5 @@
+import Foundation
+
 /// Where a command's chord is live: in every pane, or only while a pane of one kind has focus.
 /// The pane kind is the string `layoutSnapshot.panes[].kind` holds (`"browser"`).
 public enum KeyPlace: Hashable, Sendable {
@@ -94,6 +96,17 @@ public struct KeyCommand: Sendable {
     }()
 
     static let byID: [String: KeyCommand] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+
+    /// Settings → Keyboard's search: the commands whose title or chord in force contains `query`,
+    /// ignoring case, in table order. A blank query matches every command.
+    public static func matching(_ query: String, keymap: Keymap) -> [KeyCommand] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return all }
+        return all.filter { command in
+            command.title.localizedCaseInsensitiveContains(needle)
+                || keymap.chord(command.id)?.text.localizedCaseInsensitiveContains(needle) == true
+        }
+    }
 }
 
 /// A key that works a fixed way and cannot be rebound; Settings → Keyboard lists them read-only.
