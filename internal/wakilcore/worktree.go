@@ -130,6 +130,9 @@ func (w *GitWriter) WorktreeAdd(ctx context.Context, o WorktreeAddOptions) (Work
 		from := o.From
 		if from == "" {
 			from = "HEAD"
+			if o.FromIsBase && w.resolves(ctx, "refs/remotes/origin/HEAD") {
+				from = "origin/HEAD"
+			}
 		}
 		if !w.resolves(ctx, from) {
 			if !o.FromIsBase {
@@ -421,8 +424,32 @@ func (w *GitWriter) DefaultBranch(ctx context.Context) string {
 	return ""
 }
 
-// Detach lets go of a checkout's branch without touching its files (git switch --detach), so
-// another checkout can take it: a switch to a branch an idle conversation's checkout held.
+// ReleaseBranch lets go of the branch a folder has checked out, so another checkout can take it
+// (a switch to a branch held elsewhere): a checkout detaches, keeping its files; the repository's
+// own folder (Main's) goes back to the default branch, bringing its changes along.
+func (w *GitWriter) ReleaseBranch(ctx context.Context) (string, error) {
+	list, err := w.WorktreeList(ctx)
+	if err != nil {
+		return "", err
+	}
+	if t, ok := worktreeAt(list, w.Root); ok && t.Main {
+		base := w.DefaultBranch(ctx)
+		if base == "" || base == t.Branch {
+			return "", UserError("Your folder " + w.Root + " has no other branch to go back to than " + t.Branch)
+		}
+		r, err := w.Switch(ctx, base, SwitchOptions{Carry: "bring"})
+		if err != nil {
+			return "", err
+		}
+		if !r.Switched {
+			return "", UserError("Your folder " + w.Root + " could not switch to " + base + ": " + strings.Join(r.Blocked, ", "))
+		}
+		return "Your folder " + w.Root + " went back to " + base, nil
+	}
+	return "", w.Detach(ctx)
+}
+
+// Detach lets go of a checkout's branch without touching its files (git switch --detach).
 func (w *GitWriter) Detach(ctx context.Context) error {
 	if err := w.inProgress(ctx); err != nil {
 		return err

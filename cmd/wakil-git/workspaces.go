@@ -200,16 +200,17 @@ func addWorkspaceTools(s *mcp.Server) {
 			return nil, emptyResult{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_detach", Description: "Writes. Lets go of a checkout's branch without touching its files (git switch --detach), so another checkout can take the branch."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a rootArg) (*mcp.CallToolResult, emptyResult, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "git_release_branch", Description: "Writes. Lets go of the branch a folder has checked out so another checkout can take it: a checkout detaches (git switch --detach), keeping its files; Main's folder goes back to the remote's default branch, bringing its changes along."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a rootArg) (*mcp.CallToolResult, noteResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
-				return fail, emptyResult{}, nil
+				return fail, noteResult{}, nil
 			}
-			if err := w.Detach(ctx); err != nil {
-				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			note, err := w.ReleaseBranch(ctx)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), noteResult{}, nil
 			}
-			return nil, emptyResult{}, nil
+			return nil, noteResult{Note: note}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_take_from_main", Description: "Writes. Takes branch out of Main's folder (root) into the workspace's new checkout: Main's uncommitted work is snapshotted, Main's folder goes back to base, and the work is carried into the checkout. Any failure puts Main's folder back as it was and is shown whole."},

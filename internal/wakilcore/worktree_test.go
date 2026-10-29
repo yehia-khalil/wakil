@@ -299,3 +299,18 @@ func TestDetachFreesTheBranchAndKeepsTheFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReleaseBranchSendsMainBackToItsDefaultBranchWithItsChanges(t *testing.T) {
+	repo, _, w := worktreeFixture(t)
+	gitIn(t, repo, "switch", "-q", "feature")
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("mine\n"), 0o644)
+	if _, err := w.ReleaseBranch(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, repo, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+		t.Fatalf("on %q", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "mine\n" {
+		t.Fatalf("a.txt %q", b)
+	}
+}
