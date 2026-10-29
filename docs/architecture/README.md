@@ -42,6 +42,7 @@ flowchart LR
   it. It has no test target, so nothing worth asserting is decided there.
 - **`WakilKit`** (`app/Sources/WakilKit/`) is everything else in Swift: `WindowModel`, the stores,
   `ActionRegistry`, the gate, the MCP client and server, and the harness.
+  `Keyboard/` holds the one keymap: every menu chord is a row there (Decision 50).
 - **`ActionRegistry.dispatch`** is the single path for every state change, whether a control, the
   agent, or a `--dispatch` script asked. It asks `writeGate` first and journals every outcome.
 - **The Go binaries** (`cmd/`, `internal/`) are headless capabilities behind MCP. The window starts

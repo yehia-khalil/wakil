@@ -21,4 +21,11 @@ import Testing
         #expect(BrowserPinnedClose.press(arm, pane: "browser-1", tab: "t2", now: t0.addingTimeInterval(0.5)) == .arm)
         #expect(BrowserPinnedClose.press(arm, pane: "browser-2", tab: "t1", now: t0.addingTimeInterval(0.5)) == .arm)
     }
+
+    /// The tip names Close Tab's chord in force, so a rebinding reaches it.
+    @Test func tipNamesTheChordInForce() {
+        #expect(BrowserPinnedClose.tip("⌘W") == "Press ⌘W again to close")
+        #expect(BrowserPinnedClose.tip("⌃⌘W") == "Press ⌃⌘W again to close")
+        #expect(BrowserPinnedClose.tip(nil) == "Choose Close Tab again to close")
+    }
 }

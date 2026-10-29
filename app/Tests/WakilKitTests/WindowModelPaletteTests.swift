@@ -1083,6 +1083,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
     // 3c-i: the browser settings read, and the operator-only write.
     "ctx_browser_settings", "ctx_set_browser_settings",
+    // Keyboard: the keymap read, and the two operator-only writes.
+    "ctx_keyboard", "ctx_set_key", "ctx_set_keys",
     // 3d-i (Ruling 17): the pull-request read.
     "ctx_github_pull_requests",
     // 3b-viii (Decision 42): the operator-only write for a local model endpoint.
@@ -1116,6 +1118,8 @@ private let agentToolsBeforeThePalette: Set<String> = [
     // 3b-v (Decision 38): the read only; both writes are operator-only and absent.
     "mcp__wakil__ctx_editor_settings",
     "mcp__wakil__ctx_browser_settings",
+    // Keyboard: the read only; both writes are operator-only and absent.
+    "mcp__wakil__ctx_keyboard",
     // Names: `.control` and agent-reachable, for the agent's own conversation.
     "mcp__wakil__conversation_rename",
     // Names: `.control` and agent-reachable, a browser tab's name.

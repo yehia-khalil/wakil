@@ -51,7 +51,8 @@ func HeavyNames(folders []string) []string {
 // as SaveProject drops them.
 type AppSettings struct {
 	Editor  EditorAppSettings  `json:"editor"`
-	Browser BrowserAppSettings `json:"browser"` // 3c-i; see browsersettings.go
+	Browser BrowserAppSettings `json:"browser"`        // 3c-i; see browsersettings.go
+	Keys    map[string]string  `json:"keys,omitempty"` // the keymap's overrides; see keysettings.go
 }
 
 // EditorAppSettings is the app-wide tier as stored: zero values mean "the default".

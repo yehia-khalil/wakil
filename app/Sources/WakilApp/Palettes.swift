@@ -263,6 +263,8 @@ private final class ResponderBox: @unchecked Sendable {
 /// the menu's (`AppScene`), which is the one path no focused view can keep from them.
 struct PalettePlane: View {
     let controller: PaletteController
+    /// The keymap in force, for the header's chord.
+    @Environment(\.keymap) private var keymap
 
     @FocusState private var queryFocused: Bool
     @State private var monitor: Any?
@@ -386,10 +388,12 @@ struct PalettePlane: View {
                 micro(palette.mode == .open ? "OPEN OR SWITCH TO" : "RUN A COMMAND")
             }
             Spacer()
-            Text(palette.mode == .open ? "⌘P" : "⌘K")
-                .font(.system(size: 9, design: .monospaced))
-                .tracking(1.2)
-                .foregroundStyle(Self.ink.opacity(0.52))
+            if let chord = keymap.chord(palette.mode == .open ? "window.open" : "window.commands") {
+                Text(chord.text)
+                    .font(.system(size: 9, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(Self.ink.opacity(0.52))
+            }
         }
     }
 
@@ -503,6 +507,13 @@ struct PalettePlane: View {
                         .foregroundStyle(tone.opacity(entry.isProduction ? 0.72 : 0.52))
                         .fixedSize()
                 }
+                // The command's chord (keyboard Task 5), in the subtitle's dimmed type.
+                if let chord = entry.chord {
+                    Text(chord)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(tone.opacity(dim ? 0.38 : 0.50))
+                        .fixedSize()
+                }
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 11)
@@ -533,7 +544,8 @@ struct PalettePlane: View {
     }
 
     private func accessibilityHint(_ entry: PaletteEntry, showsKind: Bool) -> String {
-        [entry.subtitle, showsKind ? entry.kindLabel : ""].filter { !$0.isEmpty }.joined(separator: ", ")
+        [entry.subtitle, showsKind ? entry.kindLabel : "", entry.chord ?? ""].filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 
     /// The title with the query's matched letters bright and the rest dim; with no query, the
