@@ -745,7 +745,14 @@ an agent's write finds its checkout.
   instructions (decision 10), within `patience`, else `fallbackBranchName`.
 - `WorkspaceActions.swift` — `registerWorkspaceActions`: `workspace_list` (agent and operator),
   `workspace_start` (the agent's copy from a base it chose),
-  `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only).
+  `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only);
+  piece 3's `workspace_open` and `workspace_new_conversation` (operator-only), parked on the
+  `ConversationBroker` (`.openView`, `.newHere`) for `WindowModel.openWorkspaceView` / `newConversationHere`.
+- `HomeScreen.swift` — piece 3: `homeScreen(HomeInput) → HomeScreen`, the home screen decided — sections per
+  project (the current first), Main, cards (`HomeCard`: repos, PRs, needs, conversation lines, children,
+  ⋯'s facts), pills, tickets not started here, Earlier, the help line's form, first run.
+- `HomeComposer.swift` — piece 3: `homeStartChoices` (the composer's *Start in* rows) and
+  `homeComposerPlaceholder`.
 - Piece 2, running the app: `RunPlan.swift` (`RunPlan`, `RunStepResult`, `RunTryResult`,
   `readyOutputMatches`), `WorkspacePorts.swift` (the router's `ensurePorts`: blocks from wakil-ctx's
   `ports_allocate`, recorded in `workspaces.json`; `markSetUp`), `WorkspaceRunner.swift`
@@ -763,8 +770,10 @@ an agent's write finds its checkout.
   conversation Wakil started for that repo — through `RecipeDraftLookup`);
   `App/WindowModel+RecipeDrafts.swift` starts that conversation off screen in Main and asks it for a fix.
 
-Uses: `Harness`, `MCP`, `Registry`.
-Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `WindowModelWorkspacesTests` (the window's side, in `App/WindowModel+Workspaces.swift`), `RecipeDraftingTests`.
+Uses: `Editor` (the tickets in flight), `Harness`, `MCP`, `Registry`.
+Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `HomeScreenTests`, `WorkspacePaletteTests` (⌘P's Running
+grouped by workspace, `Command/PaletteSources.swift`), `WindowModelWorkspacesTests` (the window's side, in
+`App/WindowModel+Workspaces.swift`, and the view doors, `WindowModelWorkspaceViewsTests`), `RecipeDraftingTests`.
 
 ### Visual/ — design-language values
 

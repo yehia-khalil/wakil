@@ -552,6 +552,31 @@ Calls the build made where the umbrella left room, or where code forced a refine
   copies, branches, ports and conversations — which it reads but never writes. Sent only by a window
   the write rule is wired into; the launch prompt is unchanged (it is per project, the map per
   conversation).
+### Amendment 2026-10-30 — piece 3 as built
+
+- **A view with no agent is a conversation slot with no turn.** Opening a pane over the Landing already
+  minted a conversation with no process; opening a view does the same with no pane. Main's view is the
+  project + environment canvas (the seed the Landing drew over); a workspace's is the slot moved into
+  the workspace, so its canvas is the workspace's view. **Open** goes back to the place's slot while one
+  is live, so Main keeps one view per environment. A slot draws no line on the home: it is a view.
+- **`workspace_open {workspace, project?, environment?}`** (`main` or an id) and
+  **`workspace_new_conversation {workspace}`**, operator-only `.control`, parked on the conversation
+  broker as `session_switch` is. The card, a project's Open, ⌘P's workspace and Main rows dispatch them.
+- **The current project is always drawn**, even with nothing going on: its header holds Main's Open and
+  *Open a pane: Database · Terminal · Browser* (each opens Main's view with that pane). Decision 26's line
+  therefore stands on every day, not only the first run; the Open column stays dropped.
+- **Start on a ticket not started here opens the ticket** (`ticket_open`), where Hand to agent starts it;
+  a record-only workspace for a ticket comes with crews (piece 5).
+- **A card's PRs** are the in-flight rows of its tickets or branches (`2 PRs open · 1 failing`); Archive is
+  always in ⋯ (asking only with a conversation waiting, Rule 1). The merged-PRs offer, Main's
+  "changed by you" branches and a line's "doing now" wait for reads that carry them (a line says its
+  state and the repos it holds).
+- **Earlier** lists the current project's past conversations (`session_list` is per project) and every
+  archived workspace of the organisation.
+- **Identifiers** stay under the `landing` surface (`landing.card.<id>`, `landing.project.<p>.open`, …);
+  a conversation line keeps `landing.row.running:<n>`, numbered in drawing order.
+- **Not built in piece 3:** chips limited to other organisations' agents, ⌘P `#` opening a ticket's
+  workspace, and moving data panes when a workspace's environment changes.
 
 ## Calls made for the operator
 
