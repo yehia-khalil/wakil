@@ -72,13 +72,13 @@ driving. Kept current as work proceeds; **last updated 2026-09-21.**
 > **Verified at the server, not at the window.** `wakil_write` can `UPDATE edit_quote`,
 > is denied `UPDATE` on `customers` and `DROP` on `edit_quote`; `wakil_read` can
 > `SELECT` and is denied `UPDATE`. **What is still unestablished is the same thing
-> `phase-log.md` names — the MySQL write path has never been exercised at the window.**
+> `parked.md` names — the MySQL write path has never been exercised at the window.**
 > This removes the reason it could not be; it does not walk checks 12, 14 and 17.
 
 > **2026-09-15 — the acceptance-check backlog is closed.** Every outstanding acceptance
 > runbook in the repository was accepted by the operator on that date rather than walked:
 > 2a check 8, 2b-i's three standing checks, 2b-iii's six, 2b-v's ten, 2b-vi's dual-drive
-> gap, and 2c-ii-b's checks 12, 14 and 17. `phase-log.md`'s "The 2026-09-15 acceptance"
+> gap, and 2c-ii-b's checks 12, 14 and 17. `parked.md`'s "2026-09-15 acceptance backlog"
 > records exactly what each one leaves unestablished. **Nothing in this file blocks a
 > phase marker any more.** The sections below are kept because what they describe is
 > still true and still unrun — they are now a reference for what to reach for if a

@@ -141,3 +141,36 @@ sub-phase you are about to design.
 - **3a-iii** — Sign in (device flow) waits on Wakil's two OAuth apps (`operator-todo.md`).
 - **3b-iii** — `api-bound-locks.jsonl` is intermittent on main; `3b-i-editor-unsaved-save.jsonl` lost its app once with no crash report.
 - **Layout-persistence timing tests** flake under load (#312, #328, #332, #344); see also #222 and #282 above.
+
+## Owed from the walks, before the runbooks go (2026-10-29)
+
+**2026-09-15 acceptance backlog** — the operator accepted these without walking them; each is still unknown:
+
+- **2a** — check 8: cross-org isolation at the window, never run for want of a fixture; unit tests only.
+- **2b-i** — the canvas, rail and palettes were never looked at under a real mouse and eye.
+- **2b-iii** — the write gate's UI half (the confirmation plane at the window; 2a checks 5 and 6) was not walked.
+- **2b-v** — ten checks accepted unwalked. Come back to check 10: resuming a session open in a second terminal must leave both with separate transcripts (`session-resume-probe.md` §9 measured it going wrong under continue-in-place). It needs a hand-opened `claude` session.
+- **2b-vi** — the live in-window provider swap is headless-only; `ctx_set_provider` is proven, the swap is not.
+- **2c-ii-b** — the MySQL write path (checks 12, 14, 17) has never been exercised at the window; the write credential exists since 2026-09-16.
+
+**3a-ii** (found by e2e, not ruled on):
+
+- The agent's own shell commits under git config, not the organisation's identity.
+- Drafts do not survive a relaunch (R3); the ↑ history goes with them.
+- A cancelled commit shows `editor_changes_commit: CancellationError()` under the message box.
+- Commit All refused by a hook leaves every file staged (`git add -A` ran first).
+- Unstaging an untracked path gives git's refusal, not Rule 7's no-op.
+- ⌘⇧G focuses the list, not the message box (spec Rule 3).
+- After a Settings save the hint changes only once the Changes view is shown again.
+
+**3a-iii** (deferred from the whole-branch review):
+
+- **Credentials pasted into a clone link bypass the helper and are journalled.** (security)
+- **The device code is journalled.** (security)
+- Hosts are not validated as `hostname[:port]`; conflict paths with spaces are listed split.
+- An instructions update is lost if that turn's send fails.
+- Account Test has no Cancel; a clone whose sheet is closed still adds its project.
+- A ProxyJump hop gets no organisation key; Wakil's `known_hosts` does not inherit `~/.ssh/known_hosts`.
+- The agent's own shell pushes with the Mac's git and ssh, not the organisation's account.
+
+**3b-iii** — diff tabs are not saved, so a migrated pane has none after a relaunch (R7); files past 10,000 lines show no change marks or peek (B1).
