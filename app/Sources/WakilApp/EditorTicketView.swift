@@ -536,10 +536,19 @@ struct EditorTicketView: View {
             }
             ForEach(groups, id: \.repo) { g in
                 if groups.count > 1 {
-                    Text(g.name).font(.system(size: 11, design: .monospaced)).foregroundStyle(EditorPaneStyle.text.opacity(0.6))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
-                        .accessibilityIdentifier("editor.ticket.repo:\(g.name)")
+                    // A divider, not a line of text (walk 2026-10-29): the folder glyph, the name in
+                    // full white and semibold, and a hairline out to the edge; space above all but the first.
+                    HStack(alignment: .center, spacing: 6) {
+                        Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(EditorPaneStyle.text.opacity(0.55))
+                        Text(g.name).font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(EditorPaneStyle.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
+                        Rectangle().fill(EditorPaneStyle.text.opacity(0.14)).frame(minWidth: 12, maxWidth: .infinity, maxHeight: 1)
+                    }
+                    .padding(.top, g.repo == groups.first?.repo ? 2 : 10)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("editor.ticket.repo:\(g.name)")
                 }
                 ForEach(g.prs, id: \.number) { pr in prCard(pr) }
             }
