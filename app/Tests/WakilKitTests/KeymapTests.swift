@@ -11,6 +11,65 @@ import Testing
         #expect(FixedKey.all.count == 8)
     }
 
+    /// The table is the menu bar now, so a typo silently changes a shortcut: every row pinned
+    /// against the plan's table (id, title, place, default chord, menu group), in table order.
+    @Test func tableMatchesThePlanRowForRow() {
+        let plan: [(String, String, String, String, String)] = [
+            ("conversation.new", "New Conversation", "A", "⌘N", "Conversation"),
+            ("conversation.close", "Close Conversation", "A", "⇧⌘W", "Conversation"),
+            ("pane.maximize", "Maximize Pane", "A", "⌘↩", "Pane"),
+            ("pane.close", "Close Pane", "A", "⌘W", "Pane"),
+            ("pane.toggleDensity", "Toggle Density", "A", "⇧⌘D", "Pane"),
+            ("editor.newScratch", "New Scratch Tab", "A", "⌘T", "Editor"),
+            ("editor.showFiles", "Show Files", "A", "⌘B", "Editor"),
+            ("editor.searchFiles", "Search Files", "A", "⇧⌘F", "Editor"),
+            ("editor.showChanges", "Show Changes", "A", "⇧⌘G", "Editor"),
+            ("editor.save", "Save", "A", "⌘S", "Editor"),
+            ("window.organisation", "Organisation…", "A", "⇧⌘O", "Window"),
+            ("window.open", "Open…", "A", "⌘P", "Window"),
+            ("window.commands", "Run a Command…", "A", "⌘K", "Window"),
+            ("window.settings", "Settings…", "A", "⌘,", "Window"),
+            ("window.toggleRail", "Toggle Rail", "A", "⌃⌘R", "Window"),
+            ("browser.newTab", "New Tab", "B", "⌘T", "Browser"),
+            ("browser.closeTab", "Close Tab", "B", "⌘W", "Browser"),
+            ("browser.findPrevious", "Find Previous", "B", "⇧⌘G", "Browser"),
+            ("browser.reopenTab", "Reopen Closed Tab", "B", "⇧⌘T", "Browser"),
+            ("browser.focusAddress", "Open Location", "B", "⌘L", "Browser"),
+            ("browser.reload", "Reload Page", "B", "⌘R", "Browser"),
+            ("browser.back", "Back", "B", "⌘[", "Browser"),
+            ("browser.forward", "Forward", "B", "⌘]", "Browser"),
+            ("browser.bookmark", "Add Bookmark", "B", "⌘D", "Browser"),
+            ("browser.copyURL", "Copy Page Address", "B", "⇧⌘C", "Browser"),
+            ("browser.find", "Find…", "B", "⌘F", "Browser"),
+            ("browser.findNext", "Find Next", "B", "⌘G", "Browser"),
+            ("browser.zoomIn", "Zoom In", "B", "⌘=", "Browser"),
+            ("browser.zoomOut", "Zoom Out", "B", "⌘-", "Browser"),
+            ("browser.zoomReset", "Actual Size", "B", "⌘0", "Browser"),
+            ("browser.showNextTab", "Show Next Tab", "B", "⌃Tab", "Browser"),
+            ("browser.showPreviousTab", "Show Previous Tab", "B", "⌃⇧Tab", "Browser"),
+            ("browser.nextTab", "Next Tab", "B", "⇧⌘]", "Browser"),
+            ("browser.previousTab", "Previous Tab", "B", "⇧⌘[", "Browser"),
+            ("browser.tab1", "Tab 1", "B", "⌘1", "Browser"),
+            ("browser.tab2", "Tab 2", "B", "⌘2", "Browser"),
+            ("browser.tab3", "Tab 3", "B", "⌘3", "Browser"),
+            ("browser.tab4", "Tab 4", "B", "⌘4", "Browser"),
+            ("browser.tab5", "Tab 5", "B", "⌘5", "Browser"),
+            ("browser.tab6", "Tab 6", "B", "⌘6", "Browser"),
+            ("browser.tab7", "Tab 7", "B", "⌘7", "Browser"),
+            ("browser.tab8", "Tab 8", "B", "⌘8", "Browser"),
+            ("browser.lastTab", "Last Tab", "B", "⌘9", "Browser"),
+            ("browser.toggleTabColumn", "Toggle Tab Column", "B", "⌃⌘S", "Browser"),
+        ]
+        let rows = KeyCommand.all.map { command in
+            (command.id, command.title, command.place == .anywhere ? "A" : command.place == .pane("browser") ? "B" : "?",
+             command.defaultChord.text, command.group.title)
+        }
+        #expect(rows.count == plan.count)
+        for (row, want) in zip(rows, plan) {
+            #expect(row == want, "\(want.0)")
+        }
+    }
+
     @Test func noTwoDefaultsShareAChordInOnePlace() {
         var seen = Set<String>()
         for command in KeyCommand.all {
