@@ -1,0 +1,5 @@
+{"dispatch":{"action":"workspace_open","params":{"workspace":"w"},"refuses":"only the operator opens a workspace's view"}}
+{"dispatch":{"action":"workspace_new_conversation","params":{"workspace":"w"},"refuses":"only the operator opens a workspace's view"}}
+{"dispatch":{"action":"workspace_open","params":{"workspace":"nope"},"refuses":"there is no workspace nope"}}
+{"dispatch":{"action":"workspace_new_conversation","params":{"workspace":"nope"},"refuses":"there is no workspace nope"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}

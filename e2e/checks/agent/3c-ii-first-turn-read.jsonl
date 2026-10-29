@@ -7,7 +7,7 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"second reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
 {"expect":{"tree":"absent","text":"second reply in the thread"}}
 {"do":{"focus":"window.composer"}}
 {"do":{"keys":"read this page"}}

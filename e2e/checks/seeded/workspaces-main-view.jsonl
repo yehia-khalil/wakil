@@ -1,0 +1,16 @@
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"do":{"click":"landing.project.e2e-project.open"}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"journal":{"contains":"\"action\":\"workspace_open\""}}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"focus":"window.composer"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"dispatch":{"action":"workspace_open","params":{"workspace":"main"}}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}

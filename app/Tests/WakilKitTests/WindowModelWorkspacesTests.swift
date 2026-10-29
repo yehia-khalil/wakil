@@ -321,3 +321,88 @@ struct WindowModelWorkspaceRootsTests {
         await model.shutdown()
     }
 }
+
+// Workspaces, piece 3: the views' doors (decision 22) — Main's view with panes and no agent, a
+// workspace's view with no conversation, New conversation here.
+@MainActor
+struct WindowModelWorkspaceViewsTests {
+    private func router(with workspaces: [Workspace]) async -> WorkspaceRouter {
+        let store = WorkspaceStore()
+        await store.use(load: { WorkspacesFile(workspaces: workspaces) }, save: { _ in })
+        let router = WorkspaceRouter(store: store)
+        _ = await router.load(org: org)
+        return router
+    }
+
+    @Test func mainsViewOpensWithNoAgentAndOpeningItAgainGoesBackToIt() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: []))
+        #expect(!model.sessionStarted, "the home first")
+
+        await model.openWorkspaceView(nil)
+
+        let view = try #require(model.currentAgent)
+        #expect(model.sessionStarted, "the canvas is drawn, not the home")
+        #expect(view.isViewSlot && view.workspace == nil, "Main's view, and no agent behind it")
+        #expect(sessions.issuedSockets.allSatisfy(\.stopped) || view.harness == nil)
+        await model.newConversation()
+        #expect(!model.sessionStarted)
+        await model.openWorkspaceView(nil)
+        #expect(model.currentAgent?.id == view.id, "Main keeps one view per place")
+        await model.shutdown()
+    }
+
+    @Test func aWorkspaceWithNoLiveConversationOpensOnItsOwnView() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+
+        await model.openWorkspaceView("w1")
+
+        let view = try #require(model.currentAgent)
+        #expect(view.isViewSlot)
+        #expect(view.workspace?.id == "w1")
+        #expect(view.layoutScope?.lineageRoot == "workspace-w1", "the workspace's view, filed under the workspace")
+        #expect(model.liveConversationRows().first { $0.id == view.id }?.workspace?.id == "w1")
+        await model.shutdown()
+    }
+
+    @Test func aWorkspaceOpensOnItsMostRecentConversationAndNewHereStartsAnother() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        first.workspace = ws
+        await model.newConversation()
+
+        await model.openWorkspaceView("w1")
+        #expect(model.currentAgent?.id == first.id)
+
+        await model.newConversationHere("w1")
+        let fresh = try #require(model.currentAgent)
+        #expect(fresh.id != first.id && fresh.isViewSlot && fresh.workspace?.id == "w1")
+        #expect(fresh.layoutScope == first.layoutScope, "its conversations share the workspace's view")
+        #expect(first.harness != nil, "the one left keeps running in the background")
+        await model.shutdown()
+    }
+
+    @Test func anUnknownWorkspaceIsSaidWhole() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: []))
+        await model.openWorkspaceView("gone")
+        #expect(model.status == "workspace_open: there is no workspace gone")
+        #expect(!model.sessionStarted, "the screen stays where it was (Rule 6)")
+        await model.shutdown()
+    }
+}

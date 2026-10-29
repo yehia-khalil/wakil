@@ -71,7 +71,9 @@ struct Home: View {
         ) {
             if let card = confirmingArchive {
                 Button("Archive") { run(card.id) { await model.archiveWorkspace(card.id, confirm: true) } }
+                    .accessibilityIdentifier("landing.archive.confirm")
                 Button("Cancel", role: .cancel) {}
+                    .accessibilityIdentifier("landing.archive.cancel")
             }
         } message: {
             Text("A conversation in it is waiting for you. Its uncommitted work is kept as a snapshot and the copies are removed; Restore brings it back.")
@@ -86,13 +88,13 @@ struct Home: View {
                 Text(screen.title)
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(coolWhite.opacity(0.94))
-                    .accessibilityIdentifier("home.title")
+                    .accessibilityIdentifier("landing.title")
                 if !screen.helpInFull {
                     Image(systemName: "info.circle")
                         .foregroundStyle(coolWhite.opacity(0.5))
                         .help(HomeScreen.help)
                         .accessibilityLabel(HomeScreen.help)
-                        .accessibilityIdentifier("home.help.info")
+                        .accessibilityIdentifier("landing.help.info")
                 }
                 Spacer(minLength: 8)
                 Text("⌘N new conversation in Main of \(model.project)")
@@ -105,7 +107,7 @@ struct Home: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(coolWhite.opacity(0.62))
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("home.help")
+                    .accessibilityIdentifier("landing.help")
             }
             if !screen.pills.isEmpty { pills(screen.pills) }
         }
@@ -115,6 +117,7 @@ struct Home: View {
     private func pills(_ pills: [HomePill]) -> some View {
         WrappingRow(spacing: 8) {
             ForEach(pills) { pill in
+                let key = pill.project ?? "all"
                 Button { filter = pill.project } label: {
                     HStack(spacing: 6) {
                         Text(pill.label).font(.system(size: 12))
@@ -128,7 +131,7 @@ struct Home: View {
                     .foregroundStyle(coolWhite.opacity(pill.selected ? 0.95 : 0.7))
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("home.pill.\(pill.project ?? "all")")
+                .accessibilityIdentifier("landing.pill.\(key)")
                 .accessibilityValue(pill.selected ? "selected" : "")
             }
         }
@@ -153,7 +156,7 @@ struct Home: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(section.current)
-                .accessibilityIdentifier("home.project.\(section.project)")
+                .accessibilityIdentifier("landing.project.\(section.project)")
                 if section.current {
                     Text("you are here").font(.system(size: 11)).foregroundStyle(violet.opacity(0.9))
                 }
@@ -169,7 +172,7 @@ struct Home: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(coolWhite.opacity(0.75))
                 .help("Open Main's view: your own folders, with panes and no agent")
-                .accessibilityIdentifier("home.project.\(section.project).open")
+                .accessibilityIdentifier("landing.project.\(section.project).open")
             }
             if section.current { openAPane }
             if let main = section.main { mainBlock(main) }
@@ -194,7 +197,7 @@ struct Home: View {
         .padding(.bottom, 8)
         .background(slab)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("home.main")
+        .accessibilityIdentifier("landing.main")
     }
 
     // MARK: - A card
@@ -223,7 +226,7 @@ struct Home: View {
                             .buttonStyle(.plain)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(violet)
-                            .accessibilityIdentifier("home.card.\(card.id).new")
+                            .accessibilityIdentifier("landing.card.\(card.id).new")
                     }
                     menu(card).disabled(disabled)
                 }
@@ -243,12 +246,12 @@ struct Home: View {
                 }
                 if let prs = card.prs {
                     Text(prs).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.6))
-                        .accessibilityIdentifier("home.card.\(card.id).prs")
+                        .accessibilityIdentifier("landing.card.\(card.id).prs")
                 }
                 if let needs = card.needs {
                     Text(needs).font(.system(size: 12)).foregroundStyle(amber)
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("home.card.\(card.id).needs")
+                        .accessibilityIdentifier("landing.card.\(card.id).needs")
                 }
             }
             .padding(.horizontal, 18)
@@ -258,7 +261,7 @@ struct Home: View {
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default) { Task { await model.openWorkspace(card.id) } }
-            .accessibilityIdentifier("home.card.\(card.id)")
+            .accessibilityIdentifier("landing.card.\(card.id)")
             .accessibilityValue(card.needsYou ? "needs you" : "")
             VStack(alignment: .leading, spacing: 0) { ForEach(card.lines) { conversationLine($0) } }
             ForEach(card.children) { child in cardView(child, depth: depth + 1).padding(.leading, 18) }
@@ -300,7 +303,7 @@ struct Home: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityIdentifier("home.card.\(card.id).menu")
+        .accessibilityIdentifier("landing.card.\(card.id).menu")
     }
 
     /// Runs a card action; the page re-reads after it, and its card is disabled meanwhile (Rule 5).
@@ -415,7 +418,7 @@ struct Home: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("home.earlier")
+            .accessibilityIdentifier("landing.earlier")
             if earlierOpen {
                 ForEach(Array(earlier.archived.enumerated()), id: \.element.id) { index, w in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -430,7 +433,7 @@ struct Home: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(violet)
                             .disabled(busy == w.id)
-                            .accessibilityIdentifier("home.earlier.archived.\(index).restore")
+                            .accessibilityIdentifier("landing.earlier.archived.\(index).restore")
                     }
                     .padding(.leading, 14)
                 }

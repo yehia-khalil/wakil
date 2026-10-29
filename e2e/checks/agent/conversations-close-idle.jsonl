@@ -9,5 +9,5 @@
 {"expect":{"tree":"absent","text":"first reply in the thread"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
 {"expect":{"tree":"absent","text":"Nothing to continue"}}
-{"expect":{"tree":"absent","text":"RUNNING"}}
+{"expect":{"tree":"absent","text":"your folders · asking and reading"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}

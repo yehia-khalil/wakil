@@ -18,6 +18,6 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"second reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
 {"expect":{"label":"landing.row.running:0","contains":"thread turn one"}}
 {"expect":{"tree":"absent","text":"Fixture Named Conversation"}}

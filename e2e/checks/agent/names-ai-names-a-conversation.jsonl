@@ -12,5 +12,5 @@
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"expect":{"journal":{"contains":"\"action\":\"conversation_named\""}}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
 {"expect":{"label":"landing.row.running:0","contains":"Fixture Named Conversation"}}

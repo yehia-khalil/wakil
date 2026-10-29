@@ -3,10 +3,11 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
 {"expect":{"tree":"contains","text":"Value: idle"}}
 {"expect":{"tree":"absent","text":"first reply in the thread"}}
 {"expect":{"focus":"window.composer"}}
 {"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"frame":"landing.row.running:0","inside":"window"}}
 {"expect":{"frame":"landing.row.running:0","clear":"landing.row.open:terminal"}}
+{"expect":{"frame":"landing.main","inside":"window"}}

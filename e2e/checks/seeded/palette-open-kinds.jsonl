@@ -1,4 +1,4 @@
-{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"keys":"database"}}

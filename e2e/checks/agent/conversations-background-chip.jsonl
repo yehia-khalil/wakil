@@ -5,7 +5,7 @@
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
 {"do":{"click":"landing.row.open:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held"}}

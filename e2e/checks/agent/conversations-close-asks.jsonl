@@ -19,7 +19,7 @@
 {"expect":{"tree":"contains","text":"NEWEST FIRST"}}
 {"expect":{"frame":"landing.row.open:terminal","inside":"window"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
-{"expect":{"tree":"absent","text":"RUNNING"}}
+{"expect":{"tree":"absent","text":"your folders · asking and reading"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
 {"expect":{"tree":"absent","text":"Nothing to continue"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}
