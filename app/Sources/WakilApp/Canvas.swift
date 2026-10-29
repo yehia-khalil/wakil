@@ -708,6 +708,8 @@ extension WakilWindow {
                             projectPath: path, general: general, commits: commits, pullRequests: pullRequests)
                     },
                     saveProjectPMKey: { path, key in await model.saveProjectPMKey(projectPath: path, key) },
+                    runningDispatch: { action, params in await model.runningDispatch(action, params) },
+                    runningEnvironment: model.environment,
                     saveProjectBranchInstructions: { path, branches in
                         await model.saveProjectAgentInstructions(projectPath: path, branches: branches)
                     },

@@ -91,6 +91,10 @@ struct SettingsPane: View {
     var saveProjectAgentInstructions: (String, String?, String?, String?) async -> String? = { _, _, _, _ in nil }
     /// The project's Jira project, by project.json path: the refusal whole, or nil.
     var saveProjectPMKey: (String, String) async -> String? = { _, _ in nil }
+    /// Workspaces, piece 2: the Running settings' actions, dispatched as the operator, and the
+    /// environment a Try's throwaway workspace records.
+    var runningDispatch: (String, JSONValue) async -> (result: JSONValue?, error: String?) = { _, _ in (nil, "no window") }
+    var runningEnvironment: String = ""
     /// Workspaces (decision 10): a project's Branches text.
     var saveProjectBranchInstructions: (String, String) async -> String? = { _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
@@ -438,6 +442,7 @@ struct SettingsPane: View {
                         }
                         if projectOpen {
                             row(.projectEditor(project.name), label: "Editor", depth: 2, disclosure: .leaf)
+                            row(.projectRunning(project.name), label: "Running", depth: 2, disclosure: .leaf)
                             ForEach(project.environments, id: \.name) { environment in
                                 let environmentOpen = expansion.isOpen(
                                     project: project.name, environment: environment.name)
@@ -585,7 +590,7 @@ struct SettingsPane: View {
         switch selection {
         case .organisation, .providers, .editor, .browser, .keyboard, .projects: return
         case .project: expansion.projectsOpen = true
-        case .projectEditor(let project), .environment(let project, _):
+        case .projectEditor(let project), .projectRunning(let project), .environment(let project, _):
             expansion.reveal(project: project)
         case .databases(let project, let environment), .api(let project, let environment):
             expansion.reveal(project: project, environment: environment)
@@ -1087,6 +1092,15 @@ struct SettingsPane: View {
                 // Row drafts and refusals are @State: key the form to its project so they do not
                 // carry from one project's Editor node to another's.
                 .id(project.path)
+            } else {
+                gone(name)
+            }
+        case .projectRunning(let name):
+            if let project = tree.projects.first(where: { $0.name == name }) {
+                // Workspaces, piece 2: how the project's repos run. Keyed to the project, so one
+                // project's drafts and Try never carry into another's.
+                RunningSettingsForm(project: project, environment: runningEnvironment, dispatch: runningDispatch)
+                    .id(project.path)
             } else {
                 gone(name)
             }
@@ -2968,6 +2982,8 @@ enum SettingsNode: Hashable {
     case browser
     case keyboard
     case projectEditor(String)
+    /// Workspaces, piece 2: a project's Running settings.
+    case projectRunning(String)
 
     /// A stable fragment for this node's accessibility identifier.
     ///
@@ -2984,6 +3000,7 @@ enum SettingsNode: Hashable {
         case .browser: return "browser"
         case .keyboard: return "keyboard"
         case .projectEditor(let name): return "projectEditor.\(name)"
+        case .projectRunning(let name): return "projectRunning.\(name)"
         case .project(let name): return "project.\(name)"
         case .environment(let project, let environment):
             return "environment.\(project).\(environment)"
@@ -3004,6 +3021,7 @@ enum SettingsNode: Hashable {
         switch self {
         case .project(old): return .project(new)
         case .projectEditor(old): return .projectEditor(new)
+        case .projectRunning(old): return .projectRunning(new)
         case .environment(old, let e): return .environment(project: new, environment: e)
         case .databases(old, let e): return .databases(project: new, environment: e)
         case .api(old, let e): return .api(project: new, environment: e)
@@ -3040,6 +3058,8 @@ enum SettingsNode: Hashable {
             return ["Wakil", "Keyboard"]
         case .projectEditor(let name):
             return [organisation, "Projects", name, "Editor"]
+        case .projectRunning(let name):
+            return [organisation, "Projects", name, "Running"]
         case .project(let name):
             return [organisation, "Projects", name]
         case .environment(let project, let environment):
