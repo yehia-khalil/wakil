@@ -1,0 +1,28 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"dispatch":{"action":"browser_pin","params":{"pane":"browser-1","tab":"t1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-2","field":"tabs[0].pinned","equals":"true"}}
+{"expect":{"pane":"browser-2","field":"tabs[0].name","equals":"null"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t1","name":"Quarterly ledger"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"expect":{"pane":"browser-2","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"pane":"browser-2","field":"tabs[0].pinned","equals":"true"}}
+{"dispatch":{"action":"pane_close","params":{"id":"browser-2"}}}
+{"dispatch":{"action":"pane_focus","params":{"id":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}
+{"do":{"hotkey":"cmd+shift+t"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-3","field":"tabs[0].name","equals":"Quarterly ledger"}}

@@ -126,6 +126,20 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         #expect(arguments == ["searchSuggestions": .bool(true)])
     }
 
+    /// 3d-i. `tabs` and `nameGroups` reach the tool, `false` included.
+    @Test func theBrowserWriteForwardsTabsAndNameGroups() async throws {
+        let (registry, caller) = try await registryWithRecordingContext()
+        _ = try await registry.dispatch(
+            name: "ctx_set_browser_settings",
+            params: .object(["tabs": .string("vertical"), "nameGroups": .bool(false)]),
+            origin: .ui, caller: .test("staging"), confirmation: nil)
+        let calls = await caller.recorded()
+        guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
+            Issue.record("expected one call, got \(calls)"); return
+        }
+        #expect(arguments == ["tabs": .string("vertical"), "nameGroups": .bool(false)])
+    }
+
     // 3a-v-a e2e audit: Inline blame's Off never reached Go.
     @Test func theAppWriteForwardsInlineBlame() async throws {
         let (registry, caller) = try await registryWithRecordingContext()

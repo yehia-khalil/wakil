@@ -788,3 +788,58 @@ func TestOrgRmNamesTheBrowserStoreItLeaves(t *testing.T) {
 		t.Fatalf("org rm with no browser profile stderr = %q, want only the removal line", got)
 	}
 }
+
+// useFakeSecurityExiting points `security` at a script that exits with status, so org rm's
+// Keychain check never reaches the real login keychain.
+func useFakeSecurityExiting(t *testing.T, status string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "security")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit "+status+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_SECURITY_BINARY", path)
+}
+
+func orgRmWithSecurityExit(t *testing.T, status string) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "")
+	useFakeSecurityExiting(t, status)
+	var stderr bytes.Buffer
+	if code := run([]string{"org", "create", "initech"}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+		t.Fatalf("org create: exit = %d, stderr = %q", code, stderr.String())
+	}
+	stderr.Reset()
+	if code := run([]string{"org", "rm", "initech"}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+		t.Fatalf("org rm: exit = %d, stderr = %q", code, stderr.String())
+	}
+	return stderr.String()
+}
+
+// TestOrgRmNamesTheSavedPasswordsItLeaves: saved browser passwords live in the Keychain, outside
+// the org directory, so org rm names them as residue and deletes nothing.
+func TestOrgRmNamesTheSavedPasswordsItLeaves(t *testing.T) {
+	got := orgRmWithSecurityExit(t, "0")
+	for _, want := range []string{`removed org "initech"`, "wakil:initech:browser-login:default", "Settings → Browser → Passwords"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stderr = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestOrgRmSavedPasswordsAbsentAddsNothing: exit 44 means none are saved.
+func TestOrgRmSavedPasswordsAbsentAddsNothing(t *testing.T) {
+	if got := orgRmWithSecurityExit(t, "44"); got != "removed org \"initech\"\n" {
+		t.Fatalf("stderr = %q, want only the removal line", got)
+	}
+}
+
+// TestOrgRmSavedPasswordsCheckFailureStillRemoves: a failed check says so and the org is removed.
+func TestOrgRmSavedPasswordsCheckFailureStillRemoves(t *testing.T) {
+	got := orgRmWithSecurityExit(t, "36")
+	for _, want := range []string{`removed org "initech"`, "could not check the Keychain for its saved browser passwords: "} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stderr = %q, want it to contain %q", got, want)
+		}
+	}
+}

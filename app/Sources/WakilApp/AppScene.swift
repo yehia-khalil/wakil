@@ -499,6 +499,13 @@ struct WakilApplication: App {
                     withModel { model in Task { await model.openSettings() } }
                 }
                 .keyboardShortcut(",", modifiers: .command)
+                // §10's collapsible rail. ⌃⌘R is free (⌘R is Reload Page, a different chord; the
+                // system claims neither) and, like ⌘P, needs no focused pane. It dispatches
+                // `rail_set` through the model, so the agent's call and this press are one path.
+                Button("Toggle Rail") {
+                    withModel { model in Task { await model.toggleRail() } }
+                }
+                .keyboardShortcut("r", modifiers: [.control, .command])
             }
             // 3c-i. The browser's keys: each is the focused browser pane's action (`browserKey`), and
             // anywhere else the key goes on to whatever holds the keyboard, as if this menu were not
@@ -520,6 +527,10 @@ struct WakilApplication: App {
                 // ⌘D, select the next match), as the other browser keys do (ruling 13).
                 Button("Add Bookmark") { browserKey(.bookmark) }
                     .keyboardShortcut("d", modifiers: .command)
+                // The active tab's address, with a `Copied` tip; outside a browser pane the key goes
+                // on to what holds it (the editor's and the terminal's own ⌘⇧C stay theirs).
+                Button("Copy Page Address") { browserKey(.copyURL) }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
                 Divider()
                 Button("Find…") { browserKey(.find) }
                     .keyboardShortcut("f", modifiers: .command)
@@ -547,6 +558,9 @@ struct WakilApplication: App {
                 }
                 Button("Last Tab") { browserKey(.tab(9)) }
                     .keyboardShortcut("9", modifiers: .command)
+                Divider()
+                Button("Toggle Tab Column") { browserKey(.toggleTabColumn) }
+                    .keyboardShortcut("s", modifiers: [.control, .command])
             }
         }
     }

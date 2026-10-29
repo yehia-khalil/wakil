@@ -164,6 +164,13 @@ public struct WakilWiring: Sendable {
     public let resumes: ResumeBroker
     /// 3c-i. The browser settings the browser actions read; the window refreshes it. Built here, before the window exists.
     public let browserSettings: BrowserSettingsCache
+    /// 3d-iv: the browser's saved passwords, for the key's list and Settings to read directly
+    /// (ruling 10); every write goes through a `browser_password_*` action. Scoped to
+    /// `WAKIL_KEYCHAIN`'s file when the environment names one.
+    public let browserPasswords: BrowserPasswordStore
+    /// 3d-iv: the passwords a page has held this run, hidden from the agent's page reads. The window's
+    /// page seam remembers nothing itself; the actions do.
+    public let passwordScrub: BrowserPasswordScrub
     /// Where a `session_set_provider` request parks for the window to act
     /// on. Same reasoning and lifecycle contract as `resumes`, for the
     /// same action-set-shared-by-`--dispatch`-and-the-window reason — see
@@ -332,7 +339,13 @@ public struct WakilWiring: Sendable {
         removeBrowserData: BrowserDataRemover? = nil,
         // 3c-ii. Reads and acts on a tab's page; WebKit's, so only the app can. Nil leaves the
         // agent's browser tools answering "no page driver", as `--dispatch` and tests want.
-        browserPageDriver: (any BrowserPageDriver)? = nil
+        browserPageDriver: (any BrowserPageDriver)? = nil,
+        // 3d-iv. Fills a tab's login form; WebKit's, so only the app can. Nil leaves
+        // `browser_password_fill` and `_suggest` refusing, as `--dispatch` and tests want.
+        browserPasswordPage: (any BrowserPasswordPage)? = nil,
+        // 3d-i walk. Writes the system pasteboard, which only the app can (`browser_copy_url`); nil
+        // leaves that action answering the address with `copied: false`, as `--dispatch` and tests want.
+        copyBrowserText: BrowserTextCopier? = nil
     ) async -> WakilWiring {
         var diagnostics: [String] = []
         // `environment["WAKIL_PROVIDER"]` here, not a live pick: every
@@ -451,6 +464,14 @@ public struct WakilWiring: Sendable {
         // shell context follows the window, an agent's place stays its own): one organisation's id
         // never reaches another's web view (Invariant 4). Nothing while no organisation is active.
         let browserHome = URL(fileURLWithPath: environment["HOME"] ?? NSHomeDirectory())
+        // 3d-iv. The Keychain file `WAKIL_KEYCHAIN` names (e2e, tests), else the login keychain. The
+        // scrub sits between the window's page driver and every agent read, so a password a page has
+        // held reads as `••••••••` (ruling 15).
+        let browserPasswords = BrowserPasswordStore(environment: environment)
+        let passwordScrub = BrowserPasswordScrub()
+        let scrubbedPageDriver = browserPageDriver.map {
+            BrowserScrubbingPageDriver(base: $0, scrub: passwordScrub) as any BrowserPageDriver
+        }
         let browser = browserActions(
             panes: panes, layout: layout,
             settings: {
@@ -470,7 +491,16 @@ public struct WakilWiring: Sendable {
                 return org.isEmpty ? nil : try BrowserOrgFiles(home: browserHome, org: org)
             },
             removeData: removeBrowserData,
-            driver: browserPageDriver)
+            driver: scrubbedPageDriver,
+            // 3d-i ruling 17: the active organisation's pull requests, read by wakil-ctx (which
+            // reads the organisation itself and returns no credential).
+            pullRequests: {
+                try await browserSettingsRegistry.dispatch(
+                    name: "ctx_github_pull_requests", params: .object([:]), origin: .ui,
+                    caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
+                    confirmation: nil)
+            },
+            copyText: copyBrowserText)
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes),
@@ -513,6 +543,10 @@ public struct WakilWiring: Sendable {
             organization: { await liveLookup.organization() }, handOff: handOffLookup)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
+        await registerBrowserPasswordActions(
+            into: registry, panes: panes, store: browserPasswords, scrub: passwordScrub,
+            page: browserPasswordPage, home: browserHome,
+            activeOrg: { await shellContext.current().org })
         let commitDrafts = CommitDraftSink()
         await registerCommitDraftAction(into: registry, drafts: commitDrafts)
 
@@ -589,6 +623,8 @@ public struct WakilWiring: Sendable {
             confirmations: ConfirmationBroker(),
             resumes: resumes,
             browserSettings: browserSettings,
+            browserPasswords: browserPasswords,
+            passwordScrub: passwordScrub,
             providerSwitches: providerSwitches,
             conversationRequests: conversationRequests,
             diagnostics: diagnostics,

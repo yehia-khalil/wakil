@@ -42,9 +42,10 @@ final class PaletteController {
     @ObservationIgnored private let holder: PaletteFocusReturn.Holder
     @ObservationIgnored private let focusRequestsAtOpen: Int
 
-    init(model: WindowModel, mode: PaletteMode) {
+    /// `renaming`: a chip's Rename… — the palette opens on that name step (names, Calls made 12).
+    init(model: WindowModel, mode: PaletteMode, renaming rename: PaletteRename? = nil) {
         self.model = model
-        palette = model.makePalette(mode: mode)
+        palette = model.makePalette(mode: mode, renaming: rename)
         recentsEpoch = model.paletteEpoch
         focusRequestsAtOpen = model.keyboardFocusRequests
         let window = NSApp.keyWindow
@@ -114,6 +115,9 @@ final class PaletteController {
         case .runCommand(let commandId, _):
             keepRecents()
             run(effect, inFlight: commandId)
+        case .runName:
+            // In flight under the name step's `commandId` (`PaletteModel.inFlight`).
+            run(effect, inFlight: palette.steps.last?.commandId ?? selectedId)
         }
     }
 
@@ -126,6 +130,13 @@ final class PaletteController {
         guard let effect = palette.confirmAlternate() else { return false }
         run(effect, inFlight: selectedId)
         return true
+    }
+
+    /// ⌘R: the selected row's name step (names, Calls made 11). Only called while the row offers
+    /// one (`footerHints`), so ⌘R reads "rename" in no other palette.
+    func renameSelected() {
+        guard !closed else { return }
+        _ = palette.renameSelected()
     }
 
     /// Esc: one step back, or closed at the root. A popped text step's line is kept as a recent.
@@ -202,10 +213,17 @@ final class PaletteController {
     func close(restoringFocus: Bool = true) {
         guard !closed else { return }
         closed = true
-        // A text step's typed line survives the close as a recent (rule 2).
-        palette.closing()
+        // A text step's typed line survives the close as a recent (rule 2), and a name step's
+        // changed name runs (names, Calls made 10): the model returns it once — never after Return
+        // ran it, nor while that run is in flight. Run past the close, so no error row is left to
+        // show it: `conversation_rename`'s refusal is in `status`, whole (rule 8).
+        let keep = palette.closing()
         keepRecents()
         model.paletteClosed()
+        if let keep {
+            let model = self.model
+            Task { _ = await model.performPalette(keep) }
+        }
         let moved = model.keyboardFocusRequests != focusRequestsAtOpen
         onClose()
         let decision = PaletteFocusReturn.decide(restoringFocus: restoringFocus, runMovedFocus: moved, heldBy: holder)
@@ -304,6 +322,7 @@ struct PalettePlane: View {
         .onAppear {
             installMonitor()
             queryFocused = true      // rule 3: type at once, no click
+            selectLineIfNamed()      // opened on a name step (a chip's Rename…)
             controller.syncRoot()
         }
         .onChange(of: host) { _, _ in
@@ -312,7 +331,22 @@ struct PalettePlane: View {
         }
         .onDisappear { removeMonitor() }
         // Rule 3 again: every step pushed or popped hands the line the keyboard.
-        .onChange(of: palette.steps.count) { _, _ in queryFocused = true }
+        .onChange(of: palette.steps.count) { _, _ in
+            queryFocused = true
+            selectLineIfNamed()
+        }
+    }
+
+    /// Rule 3 for a name step (`PaletteStep.selectAllOnShow`): it arrives filled with the shown
+    /// name, selected, so typing replaces it. Once the field holds the keyboard — the next turn —
+    /// its field editor selects the whole line.
+    private func selectLineIfNamed() {
+        guard palette.steps.last?.selectAllOnShow == true else { return }
+        let host = self.host
+        DispatchQueue.main.async {
+            guard let editor = (host ?? NSApp.keyWindow)?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
+            editor.selectAll(nil)
+        }
     }
 
     private var plane: some View {
@@ -417,7 +451,7 @@ struct PalettePlane: View {
     private var count: String {
         let total: Int
         if let step = palette.steps.last {
-            total = step.isText ? palette.results.count : step.choices.count
+            total = step.isText || step.isName ? palette.results.count : step.choices.count
         } else {
             total = palette.rootRows.count
         }
@@ -562,13 +596,16 @@ struct PalettePlane: View {
     // MARK: Footer
 
     /// `↑↓ move · ⏎ <verb> · esc to dismiss`, the verb the selected row's; with nothing
-    /// Return would run, `⏎` is left out rather than promised. A ticket or PR row adds ⌘↩:
+    /// Return would run, `⏎` is left out rather than promised. A ticket or PR row adds ⌘↩, a row that
+    /// offers a rename `⌘R rename`; both go before `esc`:
     /// `↑↓ move · ⏎ open · ⌘↩ hand to agent · esc to dismiss`.
     private var footer: some View {
         let verb = palette.footerVerb
-        let parts = ["↑↓ move", verb.isEmpty ? "" : "⏎ \(verb)", palette.footerAlt, "esc to dismiss"]
-        let hint = parts.filter { !$0.isEmpty }.joined(separator: " · ")
-        return Text(hint)
+        let alt = palette.footerAlt
+        // `⌘R rename` while the selected row offers it (names, Calls made 11).
+        let keys = ["↑↓ move"] + (verb.isEmpty ? [] : ["⏎ \(verb)"]) + (alt.isEmpty ? [] : [alt])
+            + palette.footerHints + ["esc to dismiss"]
+        return Text(keys.joined(separator: " · "))
             .font(.system(size: 10, weight: .medium))
             .tracking(1.2)
             .foregroundStyle(Self.ink.opacity(0.52))
@@ -583,20 +620,28 @@ struct PalettePlane: View {
 
     // MARK: Keys
 
-    /// ↑ ↓ Return Esc, unmodified, and ⌘↩ on a row that has an alternate, in this plane's own window
-    /// while it is key. Mid-composition (marked text) every one is the input method's.
+    /// ↑ ↓ Return Esc, unmodified, in this plane's own window while it is key; ⌘↩ on a row that has an
+    /// alternate; and ⌘R while the selected row offers a rename. Mid-composition (marked text) every
+    /// one is the input method's.
     private func installMonitor() {
         guard monitor == nil, let host else { return }
         let controller = self.controller
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak host] event in
             let taken: Bool = MainActor.assumeIsolated {
                 guard !controller.closed, let host, event.window === host, host.isKeyWindow else { return false }
-                let flags = event.modifierFlags.intersection([.command, .control, .option])
+                let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
                 if flags == .command, [36, 76].contains(event.keyCode) {
                     if let editor = host.firstResponder as? NSTextView, editor.hasMarkedText() { return false }
                     return controller.confirmAlternate()
                 }
-                guard flags.isEmpty, [126, 125, 36, 76, 53].contains(event.keyCode) else { return false }
+                // ⌘R on a row that offers a rename (names, Calls made 11); on any other row it goes
+                // on to the menu, as before.
+                if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "r",
+                   !controller.palette.footerHints.isEmpty {
+                    controller.renameSelected()
+                    return true
+                }
+                guard flags.subtracting(.shift).isEmpty, [126, 125, 36, 76, 53].contains(event.keyCode) else { return false }
                 if let editor = host.firstResponder as? NSTextView, editor.hasMarkedText() { return false }
                 switch event.keyCode {
                 case 126: controller.move(-1)

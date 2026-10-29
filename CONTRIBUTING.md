@@ -12,6 +12,7 @@ Each rule below names the test that enforces it, or says *convention*.
 | You are adding | It goes in | Enforced by |
 |---|---|---|
 | A capability that touches a system (a database, an API, git, Jira, files, the Keychain) | Go: logic in `internal/wakilcore`, a tool in a `cmd/<binary>/main.go` | `internal/wakilcore/layering_test.go` (wakilcore imports nothing else from the module); keeping the MCP SDK out of wakilcore is *convention* |
+| A saved browser password (the exception to the row above: Swift, in `Browser/`, through Security.framework, not Go and not `/usr/bin/security`; Decision 49) | `BrowserPasswordStore` and the `browser_password_*` actions in `WakilKit/Browser/`; the page side in `WakilApp` | `BrowserPasswordStoreTests` (its own temporary keychain), `ActionClassificationTests` |
 | Something the operator or the agent can do | An `Action`, registered by the `register*Actions` function of the folder that owns it (for example `registerEditorActions` in `Editor/EditorActions.swift`) | `ActionClassificationTests` (it declares an audience) |
 | State a pane shows | That pane kind's folder (`Api/`, `Editor/`, `Terminal/`; the db and settings kinds in `Panes/`): its `PaneKind` conformance and `PaneStore+<Kind>.swift`; see "A new pane kind" | *convention* (`PaneKindsTests` checks a kind is registered, not where its state lives) |
 | A pure decision a view needs (a label, a layout number, a key rule) | `WakilKit`, beside the kind or folder it belongs to; **never `WakilApp`**, which has no test target | *convention* |

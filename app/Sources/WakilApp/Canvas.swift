@@ -251,6 +251,10 @@ extension WakilWindow {
             }
             return drawn
         }
+        // A click anywhere — the page, the address field, another pane — takes the keyboard from a
+        // browser group header, so ⌘R reloads the page again. A click on the `pr` chip sets it back
+        // on its mouse-up (`BrowserTabList`), after this.
+        if model.browserHeaderFocus != nil { model.browserHeaderFocus = nil }
         let landed = paneAt(
             x: point.x, y: point.y, panes: drawn, focusedId: snapshot.focusedId, overLanding: overLanding != nil)
         guard let id = paneClickFocusTarget(target: landed, focusedId: snapshot.focusedId, landsOnInput: landsOnInput)
@@ -615,6 +619,11 @@ extension WakilWindow {
                             withPane["pane"] = .string(pane.id)
                             await model.dispatchFromSurface(name, .object(withPane))
                         },
+                        dispatchAnswer: { name, params in
+                            var withPane = params
+                            withPane["pane"] = .string(pane.id)
+                            return await model.dispatchFromSurfaceAnswer(name, .object(withPane))
+                        },
                         isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                         isKeyboardOwner: !(
                             model.showOrgPlane || model.organization.isEmpty || model.pending != nil
@@ -634,6 +643,8 @@ extension WakilWindow {
                         isClosed: {
                             model.drawnScope == scope && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
                         },
+                        // Another pane maximised in front of this one (3d-iii ruling 1).
+                        isCovered: model.layoutSnapshot.maximizedId.map { $0 != pane.id } ?? false,
                         sites: model.browserSites,
                         agentAllowed: model.browserAllowedOnScreen,
                         revokeSite: { site in Task { await model.revokeBrowserSite(site) } },
@@ -642,7 +653,19 @@ extension WakilWindow {
                             await model.browserSuggestions(typed: typed, pane: pane.id, search: search)
                         },
                         engineSuggestions: { typed in await model.browserEngineSuggestions(typed: typed) },
-                        chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) })
+                        chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) },
+                        project: model.project,
+                        closeArm: model.browserCloseArm,
+                        copiedTip: model.browserCopiedTip,
+                        pullRequests: model.browserPullRequestsOnScreen,
+                        headerFocus: model.browserHeaderFocus?.pane == pane.id ? model.browserHeaderFocus?.group : nil,
+                        setHeaderFocus: { group in
+                            model.browserHeaderFocus = group.map { BrowserHeaderFocus(pane: pane.id, group: $0) }
+                        },
+                        refreshPullRequests: { Task { await model.refreshBrowserPullRequests() } },
+                        openRenameTabPalette: { tab in model.openRenameTabPalette(pane: pane.id, tab: tab) },
+                        placeNow: { model.browserScope },
+                        verticalTabs: model.browserSettings.tabs == "vertical")
                     // **One view per place and pane.** Pane ids repeat from place to place, so
                     // without this a switch from A's `browser-1` to B's would keep the view: no
                     // appearance (no re-report of B's pages) and A's snapshot as B's `old`.
@@ -668,6 +691,7 @@ extension WakilWindow {
                     saveEditorSettings: { fields in await model.saveEditorSettings(fields) },
                     saveBrowserSettings: { fields in await model.saveBrowserSettings(fields) },
                     clearBrowserData: { org in await model.clearBrowserData(org: org) },
+                    browserPullRequestsAbsent: model.browserPullRequestsAbsent,
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },

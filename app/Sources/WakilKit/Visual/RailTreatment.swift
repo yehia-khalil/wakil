@@ -113,6 +113,32 @@ public enum RailTreatment {
     /// `Rail.dc.html` state 3: `rgba(232,236,246,0.05)`.
     public static let rowHoverTint: Double = 0.05
 
+    // MARK: - The spine (the collapsed rail)
+
+    /// A spine mark's opacity, by what it says. The quiet marks are on the far plane, as the rail
+    /// is at rest; the active and working marks are not dimmed with them, because a 2 pt mark at 0.30
+    /// is a smudge and the hue is the whole message — "what is open" and "what is working" stay
+    /// readable collapsed. Scale and blur are not applied to a mark at all: 1.4 px of blur on a 2 pt
+    /// line is its whole width.
+    ///
+    /// **While a pane is maximized the whole spine defers**, as the rail does (`deferredOpacity`):
+    /// the same fade, one rule. Promotion outranks it the same way — the pointer on the spine brings
+    /// the rail out, and the rail is promoted.
+    ///
+    /// Takes the two facts rather than the mark, so `Visual/` stays below `Layout/`.
+    public static func spineOpacity(working: Bool, active: Bool, isMaximized: Bool) -> Double {
+        if isMaximized { return deferredOpacity }
+        if working { return 1.0 }
+        return active ? 0.95 : 0.6
+    }
+
+    /// What the peeked rail sits on. Out over the canvas the pane names would be read against
+    /// whatever pane is under them, and the 4.5:1 floor is measured against the void; so the rail
+    /// brings the void with it, `Contrast.voidBase`, nearly opaque — the one place on this surface
+    /// that a backing is earned rather than decorative.
+    public static let peekSlabColour = Contrast.voidBase
+    public static let peekSlabOpacity: Double = 0.9
+
     public static func scale(promoted: Bool) -> Double {
         promoted ? Plane.mid.scale : Plane.far.scale
     }

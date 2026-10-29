@@ -77,12 +77,39 @@ public struct PlaceAgentHandoff: Sendable, Equatable {
     }
 }
 
+/// Where a conversation's shown title came from.
+public enum ConversationTitleSource: String, Sendable, Equatable {
+    case operator_ = "operator", ai, message, none
+}
+
+/// The three-slot title: the operator's name, else the model's, else the first message's title.
+/// `none` while nothing names it yet (no names and `messageTitle` is `newConversationTitle`).
+public func conversationDisplayTitle(
+    operatorName: String?, aiName: String?, messageTitle: String
+) -> (title: String, source: ConversationTitleSource) {
+    if let operatorName { return (operatorName, .operator_) }
+    if let aiName { return (aiName, .ai) }
+    if messageTitle == newConversationTitle { return (messageTitle, .none) }
+    return (messageTitle, .message)
+}
+
+/// A name as stored: trimmed, every run of whitespace one space. Nil when nothing is left.
+public func cleanConversationName(_ raw: String) -> String? {
+    let text = raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    return text.isEmpty ? nil : text
+}
+
 /// One live conversation as the window lists it.
 public struct LiveConversation: Sendable, Equatable {
     public let id: String
     public let session: String?
     public let place: Place
     public let title: String
+    public let titleSource: ConversationTitleSource
+    /// What clearing its name would show (names, Calls made 10): the model's name, else the first
+    /// message's title — `conversationDisplayTitle` with no operator's name. The name step's
+    /// `Clear name — back to “<fallback>”`.
+    public let fallbackTitle: String
     public let state: ConversationState
     public let onScreen: Bool
     public let lastActivity: Date
@@ -94,13 +121,16 @@ public struct LiveConversation: Sendable, Equatable {
     public let handoff: PlaceAgentHandoff?
 
     public init(
-        id: String, session: String?, place: Place, title: String, state: ConversationState,
+        id: String, session: String?, place: Place, title: String,
+        titleSource: ConversationTitleSource = .message, fallbackTitle: String? = nil, state: ConversationState,
         onScreen: Bool, lastActivity: Date, isProduction: Bool = false, handoff: PlaceAgentHandoff? = nil
     ) {
         self.id = id
         self.session = session
         self.place = place
         self.title = title
+        self.titleSource = titleSource
+        self.fallbackTitle = fallbackTitle ?? title
         self.state = state
         self.onScreen = onScreen
         self.lastActivity = lastActivity
@@ -121,6 +151,7 @@ public struct LiveConversation: Sendable, Equatable {
             "project": .string(place.project),
             "environment": .string(place.environment),
             "title": .string(title),
+            "titleSource": .string(titleSource.rawValue),
             "state": .string(state.rawValue),
             "onScreen": .bool(onScreen),
             "handed": .bool(handoff != nil),

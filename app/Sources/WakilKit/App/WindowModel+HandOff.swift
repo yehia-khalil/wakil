@@ -16,8 +16,10 @@ extension WindowModel {
         let agent = backgroundAgent(in: r.place, providerId: r.provider)
         agent.handoff = PlaceAgentHandoff(key: r.key, pr: r.pr, thread: r.thread, root: r.root, branch: r.branch, mayPush: r.mayPush)
         // The chip reads well: `INI-142 · <the operator's first line>`, not the whole brief
-        // (conversations call 6; walk 2026-10-28).
-        agent.title = conversationTitle(r.title)
+        // (conversations call 6; walk 2026-10-28) — the first message's slot. The model never names
+        // a handed conversation: its ticket names it. The operator's own name still wins (names).
+        agent.messageTitle = conversationTitle(r.title)
+        agent.namingAsked = true
         reserved?(agent.id)
         let scope = TurnScope(place: r.place, rootPath: r.root, providerId: r.provider, conversation: agent.id)
         guard await send(r.brief, scope: scope) else {
@@ -139,7 +141,7 @@ extension WindowModel {
                 key: pr == nil ? key : nil, pr: pr?.number, thread: h["thread"].flatMap { if case .string(let t) = $0, !t.isEmpty { t } else { nil } },
                 root: root, branch: "", mayPush: h["mayPush"] == .bool(true))
             // Named as its chip was (`INI-142 · …`), on Running as on Continue (walk 2026-10-29).
-            if case .string(let title)? = h["title"], !title.isEmpty { agent.title = conversationTitle(title) }
+            if case .string(let title)? = h["title"], !title.isEmpty { agent.messageTitle = conversationTitle(title) }
         } catch {
             agent.handoff = PlaceAgentHandoff(key: nil, pr: nil, thread: nil, root: root, branch: "", mayPush: false)
             noteHandOffFailure(

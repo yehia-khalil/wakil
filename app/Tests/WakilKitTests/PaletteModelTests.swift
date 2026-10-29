@@ -768,3 +768,204 @@ private func drillStep() -> PaletteModel {
         #expect(m.confirmAlternate() == nil)
     }
 }
+
+// MARK: - The name step (names, Calls made 10 and 11)
+
+private let conversationRename = PaletteRename(
+    action: "conversation_rename", params: .object(["conversation": .string("c1")]),
+    current: "Old", fallback: "Model", placeholder: "Conversation name")
+
+private let runningRow = PaletteEntry(
+    id: "conversation:c1", group: .running, title: "Old", subtitle: "wakil", kindLabel: "conversation",
+    verb: "switch to", action: .focusPane(id: "agent-1"), state: .idle, rename: conversationRename)
+
+/// ⌘P with a Running row (which offers a rename) above the open-pane rows.
+private func withRunning() -> PaletteModel {
+    var m = PaletteModel(mode: .open)
+    m.rootEntries = [runningRow] + openRows
+    return m
+}
+
+/// The name step for `conversationRename`, pushed by Return on a row whose action is `.pushName`.
+private func nameStep() -> PaletteModel {
+    var m = cmdK([PaletteEntry(id: "global.renameConversation", group: .commands, title: "Rename Conversation…",
+                               subtitle: "", kindLabel: "command", verb: "choose",
+                               action: .pushName(conversationRename))])
+    #expect(m.confirm() == nil)
+    return m
+}
+
+private let runMine = PaletteEffect.runName(
+    action: "conversation_rename", params: .object(["conversation": .string("c1")]), name: "Mine")
+
+@Test func aNameStepArrivesFilledAndSelected() {
+    let m = nameStep()
+    let step = try! #require(m.steps.last)
+    #expect(step.isName)
+    #expect(step.rename == conversationRename)
+    #expect(step.selectAllOnShow)
+    #expect(m.query == "Old")
+    #expect(m.placeholder == "Conversation name")
+    #expect(!m.steps.contains { $0.isText })
+}
+
+@Test func itsOneRowSaysWhatReturnDoes() {
+    var m = nameStep()
+    m.type("Mine")
+    #expect(m.results.map(\.title) == ["Rename to “Mine”"])
+    #expect(m.results.first?.id == "name")
+    #expect(m.footerVerb == "run")
+    m.type("")
+    #expect(m.results.map(\.title) == ["Clear name — back to “Model”"])
+    #expect(m.footerVerb == "run")
+    m.type("Old")
+    #expect(m.results.map(\.title) == ["Keep “Old”"])
+    #expect(m.footerVerb == "keep")
+}
+
+@Test func returnRunsAChangedName() {
+    var m = nameStep()
+    m.type("  Mine ")
+    #expect(m.confirm() == runMine)
+    #expect(m.isRunning(m.results[0]))
+    // Rule 5: a second Return while it runs fires nothing.
+    #expect(m.confirm() == nil)
+}
+
+@Test func anEmptyLineRunsAClear() {
+    var m = nameStep()
+    m.type("   ")
+    #expect(m.confirm() == .runName(action: "conversation_rename",
+                                    params: .object(["conversation": .string("c1")]), name: ""))
+}
+
+@Test func returnOnKeepClosesAndRunsNothing() {
+    var m = nameStep()
+    #expect(m.confirm() == .close)
+    #expect(m.inFlight.isEmpty)
+    #expect(m.closing() == nil)
+}
+
+@Test func escapeCancels() {
+    var m = nameStep()
+    m.type("Mine")
+    #expect(m.escape() == nil)
+    #expect(m.steps.isEmpty)
+    #expect(m.closing() == nil)
+}
+
+@Test func closingKeepsAChangedName() {
+    var m = nameStep()
+    m.type("Mine")
+    #expect(m.closing() == runMine)
+    // A second close never runs it again.
+    #expect(m.closing() == nil)
+}
+
+@Test func closingAfterTheRunDoesNotRunAgain() {
+    // Review focus 3: confirm ran it; the palette closes on its success — one dispatch, not two.
+    var m = nameStep()
+    m.type("Mine")
+    #expect(m.confirm() == runMine)
+    #expect(m.closing() == nil)   // in flight
+
+    var done = nameStep()
+    done.type("Mine")
+    #expect(done.confirm() == runMine)
+    done.runFinished(entryId: done.steps.last!.commandId, error: nil)
+    #expect(done.closing() == nil)   // ran and finished
+
+    // A failed run stays; a line typed after it is a new name, and closing keeps that one.
+    var failed = nameStep()
+    failed.type("Mine")
+    #expect(failed.confirm() == runMine)
+    failed.runFinished(entryId: failed.steps.last!.commandId, error: "conversation_rename: no live conversation c1")
+    #expect(failed.closing() == nil)
+    failed.type("Yours")
+    #expect(failed.closing() == .runName(action: "conversation_rename",
+                                         params: .object(["conversation": .string("c1")]), name: "Yours"))
+}
+
+@Test func cmdROnARunningRowPushesItsRename() {
+    var m = withRunning()
+    #expect(m.selected?.id == "conversation:c1")
+    #expect(m.footerHints == ["⌘R rename"])
+    #expect(m.renameSelected() == nil)
+    #expect(m.steps.last?.rename == conversationRename)
+    #expect(m.query == "Old")
+    #expect(m.footerHints.isEmpty)
+    _ = m.escape()
+    #expect(m.selected?.id == "conversation:c1")   // back where the operator was (rule 6)
+
+    m.move(1)   // an open pane: no rename
+    #expect(m.footerHints.isEmpty)
+    #expect(m.renameSelected() == nil)
+    #expect(m.steps.isEmpty)
+}
+
+@Test func aNameStepSurvivesAContextChange() {
+    var m = withRunning()
+    _ = m.renameSelected()
+    m.type("Mine")
+    m.contextChanged(rootEntries: openRows)
+    #expect(m.steps.last?.isName == true)
+    #expect(m.query == "Mine")
+}
+
+@Test func aNameStepKeepsNoRecents() {
+    var m = nameStep()
+    m.type("Mine")
+    _ = m.escape()
+    var n = nameStep()
+    n.type("Mine")
+    _ = n.closing()
+    #expect(m.recents.isEmpty)
+    #expect(n.recents.isEmpty)
+    #expect(n.results.count == 1)
+}
+
+@Test func returnRunsAFailedNameAgain() {
+    var m = nameStep()
+    m.type("Mine")
+    #expect(m.confirm() == runMine)
+    m.runFinished(entryId: m.steps.last!.commandId, error: "refused")
+    #expect(m.confirm() == runMine)
+}
+
+// MARK: - Opened on the name step (names, Calls made 12)
+
+/// A chip's Rename… opens ⌘P on the name step: Esc closes the palette straight back (Rule 6), with
+/// nothing run on the close — Esc cancels, not keeps.
+@Test func aPaletteOpenedOnTheNameStepClosesOnEsc() {
+    var m = PaletteModel(mode: .open)
+    m.openOnName(conversationRename)
+    let step = try! #require(m.steps.last)
+    #expect(step.isName && step.selectAllOnShow)
+    #expect(m.query == "Old")
+    m.type("Mine")
+    #expect(m.escape() == .close)
+    #expect(m.steps.isEmpty)
+    #expect(m.closing() == nil)
+}
+
+/// Opened on the step, the close still keeps a changed name (Rule 2), and Return runs it once.
+@Test func aPaletteOpenedOnTheNameStepKeepsOnCloseAndRunsOnce() {
+    var m = PaletteModel(mode: .open)
+    m.openOnName(conversationRename)
+    m.type("Mine")
+    #expect(m.closing() == runMine)
+
+    var n = PaletteModel(mode: .open)
+    n.openOnName(conversationRename)
+    n.type("Mine")
+    #expect(n.confirm() == runMine)
+    n.runFinished(entryId: n.steps.last!.commandId, error: nil)
+    #expect(n.closing() == nil)
+}
+
+/// A name step pushed from a row (⌘K's Rename Conversation…, ⌘R) still drops back to the list.
+@Test func aPushedNameStepEscapesToTheList() {
+    var m = nameStep()
+    #expect(m.escape() == nil)
+    #expect(m.steps.isEmpty)
+}

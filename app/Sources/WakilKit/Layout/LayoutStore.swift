@@ -290,7 +290,14 @@ public actor LayoutStore {
     /// end by pulling first responder into a pane nobody asked for.
     private var focusRequests: Int
 
-    public init(voidSize: PaneFrame = LayoutStore.defaultVoid) {
+    /// Whether the rail is put away (§10's spine). The window's, not a scope's: it is not in
+    /// `LayoutSnapshot`, so it is neither saved with an arrangement nor served by `read_layout`;
+    /// `WindowState` keeps it across a relaunch. Here because the layout actions already reach this
+    /// store, and `reading()` hands it to the window in the hop it already makes.
+    private var railCollapsed: Bool
+
+    public init(voidSize: PaneFrame = LayoutStore.defaultVoid, railCollapsed: Bool = false) {
+        self.railCollapsed = railCollapsed
         void = voidSize
         screen = .initial
         byScope = [.initial: LayoutSnapshot()]
@@ -323,7 +330,17 @@ public actor LayoutStore {
     /// named by the old `focusedId` would answer a request meant for the new
     /// one.
     public func reading() -> LayoutReading {
-        LayoutReading(snapshot: snapshot(), focusRequests: focusRequests, scope: scope)
+        LayoutReading(
+            snapshot: snapshot(), focusRequests: focusRequests, scope: scope,
+            railCollapsed: railCollapsed)
+    }
+
+    /// Puts the rail away or brings it back. Returns whether anything changed.
+    @discardableResult
+    public func setRailCollapsed(_ collapsed: Bool) -> Bool {
+        guard railCollapsed != collapsed else { return false }
+        railCollapsed = collapsed
+        return true
     }
 
     /// Records that an operator asked for the keyboard where it already is.
@@ -507,23 +524,36 @@ public actor LayoutStore {
         byScope[scope]?.panes.first(where: { $0.id == id })?.editorTabs
     }
 
-    /// The browser pane `id`'s saved tabs and selected tab (3c-i). A no-op when unchanged.
-    public func setBrowserTabs(id: String, to tabs: [BrowserSavedTab], active: String?) {
+    /// The browser pane `id`'s saved tabs, selected tab (3c-i), groups and whether its tab column is
+    /// hidden (3d-i). No groups and a shown column are kept as `nil`, so a pane that uses neither
+    /// writes what a 3c layout wrote. A no-op when unchanged.
+    public func setBrowserTabs(
+        id: String, to tabs: [BrowserSavedTab], active: String?, groups: [BrowserGroup], columnHidden: Bool
+    ) {
+        let keptGroups = groups.isEmpty ? nil : groups
+        let keptHidden: Bool? = columnHidden ? true : nil
         guard var current = byScope[scope],
-            let index = current.panes.firstIndex(where: { $0.id == id }),
-            current.panes[index].browserTabs != tabs || current.panes[index].browserActiveTab != active
+            let index = current.panes.firstIndex(where: { $0.id == id })
+        else { return }
+        let pane = current.panes[index]
+        guard pane.browserTabs != tabs || pane.browserActiveTab != active || pane.browserGroups != keptGroups
+            || pane.browserColumnHidden != keptHidden
         else { return }
         current.panes[index].browserTabs = tabs
         current.panes[index].browserActiveTab = active
+        current.panes[index].browserGroups = keptGroups
+        current.panes[index].browserColumnHidden = keptHidden
         byScope[scope] = current
     }
 
     /// `nil` when the pane is missing or has no saved tabs.
-    public func browserTabs(id: String) -> (tabs: [BrowserSavedTab], active: String?)? {
+    public func browserTabs(id: String)
+        -> (tabs: [BrowserSavedTab], active: String?, groups: [BrowserGroup], columnHidden: Bool)?
+    {
         guard let pane = byScope[scope]?.panes.first(where: { $0.id == id }),
             let tabs = pane.browserTabs
         else { return nil }
-        return (tabs, pane.browserActiveTab)
+        return (tabs, pane.browserActiveTab, pane.browserGroups ?? [], pane.browserColumnHidden ?? false)
     }
 
     /// The editor pane `id`'s column (3b-ii), and the window's default for a new pane: what the
@@ -979,10 +1009,16 @@ public struct LayoutReading: Sendable {
     /// The scope `snapshot` is the canvas of (3c-i): read in the same hop, so a window drawing the
     /// snapshot knows whose canvas it is drawing, not whose place its context already names.
     public let scope: LayoutScope?
+    /// Whether the rail is put away, read in the same hop (`LayoutStore.railCollapsed`).
+    public let railCollapsed: Bool
 
-    public init(snapshot: LayoutSnapshot, focusRequests: Int, scope: LayoutScope? = nil) {
+    public init(
+        snapshot: LayoutSnapshot, focusRequests: Int, scope: LayoutScope? = nil,
+        railCollapsed: Bool = false
+    ) {
         self.snapshot = snapshot
         self.focusRequests = focusRequests
         self.scope = scope
+        self.railCollapsed = railCollapsed
     }
 }

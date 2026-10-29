@@ -24,6 +24,7 @@ App -> Registry
 App -> Speech
 App -> Terminal
 App -> Visual
+Browser -> Harness
 Browser -> Layout
 Browser -> Panes
 Browser -> Registry

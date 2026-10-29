@@ -208,10 +208,35 @@ public struct RunningConversationsSource: PaletteSource {
                 subtitle: "\(c.placeLabel) \u{00b7} \(c.state.rawValue)", kindLabel: "conversation",
                 verb: "switch to",
                 action: .dispatch(action: "session_switch", params: .object(["conversation": .string(c.id)])),
-                isProduction: c.isProduction, state: c.state)
+                isProduction: c.isProduction, state: c.state,
+                // Names, Calls made 11: ⌘R on the row, the name step for its conversation.
+                rename: conversationRename(id: c.id, current: c.title, fallback: c.fallbackTitle))
         }
     }
 }
+
+/// The name step's subject for a live conversation (names, Calls made 10–12): `conversation_rename`
+/// with its id, so the reply's `renaming` is that id wherever the operator is when it runs.
+public func conversationRename(id: String, current: String, fallback: String) -> PaletteRename {
+    PaletteRename(
+        action: "conversation_rename", params: .object(["conversation": .string(id)]),
+        current: current, fallback: fallback, placeholder: conversationNamePlaceholder)
+}
+
+/// The name step's placeholder for a conversation, ⌘K's and ⌘P's alike.
+public let conversationNamePlaceholder = "Conversation name"
+
+/// The name step's subject for a browser tab (names, spec §3 and Calls made 12): `browser_rename_tab`
+/// with its pane and tab, so the rename lands on that tab and selects nothing (Rule 6). `current` is the
+/// tab's `label`, `fallback` its `pageLabel`.
+public func tabRename(pane: String, tab: String, current: String, fallback: String) -> PaletteRename {
+    PaletteRename(
+        action: "browser_rename_tab", params: .object(["pane": .string(pane), "tab": .string(tab)]),
+        current: current, fallback: fallback, placeholder: tabNamePlaceholder)
+}
+
+/// The name step's placeholder for a browser tab, ⌘K's and a tile's alike.
+public let tabNamePlaceholder = "Tab name"
 
 // MARK: - New pane
 

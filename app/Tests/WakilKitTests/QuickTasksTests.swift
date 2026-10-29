@@ -173,6 +173,20 @@ private let respondReq = RespondRequest(instructions: "title", input: "x", jsonS
         #expect(await tasks.routedId(.respond) == "main")
     }
 
+    @Test func recordFailureShowsUnderTheRoutedProvider() async {
+        let lines = Lines()
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: local, active: claude),
+                               log: { line in lines.append(line) }) { _ in nil }
+        await tasks.recordFailure("the model's reply was not a group name: x", for: .respond)
+        #expect(await tasks.endpointErrors() == ["main": "the model's reply was not a group name: x"])
+        #expect(lines.all == ["quick-tasks: main: the model's reply was not a group name: x"])
+        await tasks.recordFailure("the model's reply was not a group name: x", for: .respond)
+        #expect(lines.all.count == 1)
+        let none = QuickTasks(config: QuickTasksConfig(quickProvider: nil, active: nil)) { _ in nil }
+        await none.recordFailure("x", for: .respond)
+        #expect(await none.endpointErrors().isEmpty)
+    }
+
     /// Once shut down, no model is made: a dead organisation's credentials are never read.
     @Test func nothingIsMadeAfterShutdown() async {
         let counter = Counter()
