@@ -208,7 +208,7 @@ first hands-on run put that sphere on top of an open pane — because this secti
 goal and never turned it into a position or a size — and the operator asked whether the void
 should be the Core instead. Probed the same day (`void-as-core-probe.md`, twelve renders),
 specified as
-`2026-09-09-void-as-core-design.md`. The occlusion problem is not
+the void-as-core design (sub-phase 2b-iv). The occlusion problem is not
 solved by the rewrite; it stops being possible.
 
 ## 5. Colour
@@ -595,7 +595,7 @@ speech-to-text produces the exact string the ⌘K box would send, through one co
   `2d-stt-probe.md` §10), so releasing ⌥ puts the transcript in the composer unsent, at the
   caret, and Return sends it. The silence case is answered in words in the composer bar —
   "Hearing nothing from <device>" after 1.5 s with no sound — never a meter. Spec:
-  `2026-10-07-2d-ii-voice-capture-design.md`.*
+  the 2d-ii voice-capture design.*
 
   ***There is no waveform. Amended 2026-09-15*** *— on the operator's instruction, at the
   2d artboards, and this bullet is where the contradiction was: it asserted "no separate

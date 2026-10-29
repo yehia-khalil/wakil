@@ -110,7 +110,7 @@ Recorded plainly, because B is a charter-level change and these are its bill.
 second Metal layer entirely — all of which exist only to keep a front-layer object from
 getting in the way. `CoreState` survives as the thing that drives the void. **Corrected
 after the fact:** the near-plane parallax and the occlusion-pause logic were *not* deleted
-with them. `2026-09-09-void-as-core-design.md` §4 rescues the near
+with them. `docs/superpowers/specs/2026-09-09-void-as-core-design.md` §4 rescues the near
 plane for the thought thread rather than orphaning it, and §5 carries the occlusion pause
 onto the surviving layer unchanged, reasoning included. Only the hit-testing opt-out went
 with the object it was written for. 2b-ii's spec §2.1 justified two Metal layers *because*
@@ -132,7 +132,7 @@ the Core sits in front of the panes; with no Core, one layer is correct.
 ## 7. Status
 
 **A decision, taken 2026-09-09.** B is specified as
-`2026-09-09-void-as-core-design.md` and implemented as sub-phase
+`docs/superpowers/specs/2026-09-09-void-as-core-design.md` and implemented as sub-phase
 2b-iv; `north-star.md`'s open question 11 is closed and `design-language.md` §4 is
 rewritten.
 
@@ -140,7 +140,7 @@ Five choices were made in the design review that this probe did not settle: B is
 sub-phase, meant to be walked only **after** 2b-ii's acceptance run had recorded a human
 judgement of the sphere it replaces. **That gate was never walked** — the plan that
 executed the sub-phase ran straight through and deleted the sphere first; see
-`phase-2b-iv-acceptance.md` §0 and `docs/wakil/north-star.md` §8 for the honest
+`docs/wakil/phase-2b-iv-acceptance.md` §0 and `docs/wakil/north-star.md` §8 for the honest
 record and what remains recoverable. "The Core" keeps its name and means
 presence rather than an object; each state's frame rate follows its own cadence; §9's
 thread and §12's waveform anchor to the bottom edge **with the bleed reacting to them**;

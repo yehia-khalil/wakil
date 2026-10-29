@@ -1,6 +1,6 @@
 # Agent-run e2e — probe
 
-**Run 2026-09-23**, against the six items `2026-09-23-agent-e2e-design.md`
+**Run 2026-09-23**, against the six items `docs/superpowers/specs/2026-09-23-agent-e2e-design.md`
 §14 pre-registered. Every verdict below was executed on this machine; nothing here
 is inferred from documentation. Two items resolved **better** than the spec
 assumed, one **corrects** the spec outright, and one splits into two answers where

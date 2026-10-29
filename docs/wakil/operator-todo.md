@@ -35,8 +35,8 @@ driving. Kept current as work proceeds; **last updated 2026-09-21.**
 >    legibility when you point at it, because while a pane is maximized the rail is the
 >    only way back to the others.
 
-> **2026-09-20 — a runbook is waiting to be walked:
-> `conversation-layouts-acceptance.md`.** [#142](https://github.com/yehia-khalil/rafiq/issues/142)
+> **2026-09-20 — a runbook is waiting to be walked
+> (its unwalked items are in `parked.md`).** [#142](https://github.com/yehia-khalil/rafiq/issues/142)
 > and its three tickets are closed, so pane arrangements are now keyed by
 > conversation rather than by project. Ten checks, written and unwalked.
 >
@@ -104,8 +104,8 @@ below as the procedure to follow on a new machine — the steps are unchanged.*
 **Two corrections to the steps below, learned by running them.** `wakil org create`
 accepts no `--jira-base` silently, and the omission does not surface until the first
 Jira call — check `cat ~/.wakil/orgs/<org>/org.json` after Step 2. And do not point
-two orgs at one config dir in Step 3: see "One config dir serves one org" in
-`phase-1-acceptance.md`.
+two orgs at one config dir in Step 3: see the phase-1 item in
+`parked.md`.
 
 **2026-09-06.** This is a breaking change and nothing migrates automatically.
 Org identity used to be derived from `CLAUDE_CONFIG_DIR` — the Claude account's
@@ -431,7 +431,7 @@ start a session and says which command would fix it.
   expecting a window to launch a session under it.
 
   **A `--share` binding is the exception and needs no `--claude-path` of its own** (fixed
-  2026-09-14, `shared-accounts-acceptance.md` D2). It names a config dir another org homes,
+  2026-09-14). It names a config dir another org homes,
   so it inherits that record's binary — same account, same machine, same `claude`. Passing
   the flag anyway still wins. The inheritance is resolved on every read rather than copied
   into the record, so moving the binary means editing the homing record alone; if that
@@ -551,7 +551,7 @@ Summary of what the re-run established, and what it cost:
   `env VAR=~/path` does not expand the tilde in zsh, which silently creates a config
   dir named `~`.
 - One structural limitation found, not a defect: **one config dir serves one org.**
-  See the section of that name in `phase-1-acceptance.md`, and Invariant 4's
+  See the phase-1 item in `parked.md`, and Invariant 4's
   2026-09-07 qualification in `north-star.md`. Nothing on this list is blocked by it.
 
 Two things left over from the run, both yours:
@@ -621,7 +621,7 @@ Still open, in rough order:
    only, so run `wakil provider list --org <org>` for each of `personal`, `initech` and
    `umbrella` once and confirm no two rows share a `configDir` — `~/.claude-initech` was
    flipped between orgs during the acceptance run, and a collision created before the
-   guard would still be sitting there. Details in `phase-1-acceptance.md`.
+   guard would still be sitting there. Details in `parked.md` (phase-1).
 3. **A config-dir collision exists right now, and it is live.** Audited 2026-09-07 by
    reading `~/.wakil/orgs/*/providers/*.json`:
 

@@ -137,7 +137,7 @@ sub-phase you are about to design.
 - **2e** — keeping the whole canvas on an account switch (operator ruling, "after 2e"); not built.
 - **2e / #176** — `backups/` keeps a displaced account's identity across a switch; the plaintext fallback can leave a `.credentials.json` a replacing login would not sweep; a replacing login does not revoke the displaced refresh token. Unsettled: whether the CLI resolves symlinks in `CLAUDE_CONFIG_DIR` before hashing the Keychain name (§9.1's `realpath`).
 - **2d-ii** — the first-use speech model download was never exercised; `2d-ii-thread-earlier` and `2d-ii-voice-lands-unsent` are intermittent; a pane twitches after a drop (#353).
-- **3a-ii-b** — `api-unbind.jsonl` and `bg-agent-chip-over-landing.jsonl` are red on main, with no issue.
+- **3a-ii-b** — `api-unbind.jsonl` is red on main, with no issue (`bg-agent-chip-over-landing` is under background-agents).
 - **3a-iii** — Sign in (device flow) waits on Wakil's two OAuth apps (`operator-todo.md`).
 - **3b-iii** — `api-bound-locks.jsonl` is intermittent on main; `3b-i-editor-unsaved-save.jsonl` lost its app once with no crash report.
 - **Layout-persistence timing tests** flake under load (#312, #328, #332, #344); see also #222 and #282 above.
@@ -242,7 +242,6 @@ Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before 
 - **2b-iii** Mongo mutation not built; DDL (CREATE, DROP, ALTER, TRUNCATE, GRANT, LOAD DATA) refused with no per-adapter justification written.
 - **2b-iii** The confirmation token is the literal word `confirm`; database or environment name was considered and deferred.
 - **2b-iii** Confirmation is single-flight only: a second gated dispatch while one is parked is refused with -32005; no queue and no awaiting-confirmation room state.
-- **2b-iii** Signing still needs a Developer ID Application certificate this machine lacks (also owed under 2b-vii in parked.md).
 
 **phase-2b-iv**
 
@@ -374,7 +373,6 @@ Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before 
 - **3b-ii-b** Operator walk (rows 1-9: replace preview, Replace All, undo, reveal, tab drag, middle-click, agent) never ticked; runbook says "Not yet walked".
 - **3b-ii-b** Walk-only visuals never looked at: strike-through, violet preview, drop line, selected revealed row, disabled reveal tooltip, Replace field taking the keyboard.
 - **3b-ii-b** Preview covers only 2,000 shown lines; Replace All past them unexercised (no fixture reaches it). Middle-click close and saved tab order after relaunch are walk-only.
-- **3b-ii-b** `3b-ii-b-replace-cancel` over the 200 MiB haystack was intermittent (step 15 just past the 3 s settle); worth timing before it leaves quarantine.
 
 **phase-3b-iii**
 
@@ -385,7 +383,6 @@ Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before 
 
 - **3b-iv** Keystrokes doubled once after an agent renamed the open file (`ghi` read back `ghighi`, one act, run 20261017-154716); no cause proven.
 - **3b-iv** macOS 14 Move to Trash error message (needs `/usr/bin/trash`, macOS 15) never seen; walk Mac is on 15.
-- **3b-iv** `3b-v-click-focuses-pane` red and quarantined on main: click lands under the Rail, so `editor-2` is never focused.
 
 **phase-3b-iv-b**
 
