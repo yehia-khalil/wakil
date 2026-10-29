@@ -563,7 +563,8 @@ public struct WakilWiring: Sendable {
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore,
             organization: { await liveLookup.organization() }, handOff: handOffLookup, workspaces: workspaces)
         // Workspaces, piece 1: the record's read, and the operator's archive, restore, Bring to Main and Move.
-        await registerWorkspaceActions(into: registry, router: workspaces, organization: { await liveLookup.organization() })
+        await registerWorkspaceActions(into: registry, router: workspaces, organization: { await liveLookup.organization() },
+                                       views: conversationRequests)
         // Workspaces, piece 2: port blocks, Run / Stop / Build (agent-reachable, the saved recipe only),
         // the Running settings and Try (operator-only); Archive stops what runs first.
         await workspaces.use(ctx: routed(.context, contextClient))

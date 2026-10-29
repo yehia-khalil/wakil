@@ -18,6 +18,11 @@ public enum ConversationRequest: Sendable, Equatable {
     /// operator's name, back to the model's or the first message's (names, call 3). It never moves
     /// the screen (Rule 6).
     case rename(conversation: String?, name: String?)
+    /// Open a workspace's view (workspaces, piece 3): `workspace` nil is Main's, of `place` (nil, the
+    /// screen's). A workspace opens on its most recent live conversation, else its view with none.
+    case openView(workspace: String?, place: Place?)
+    /// New conversation here: a fresh conversation in that workspace's view, nothing sent yet.
+    case newHere(workspace: String)
 }
 
 /// Where a `session_new`, `session_switch` or `session_close` request waits for the window to act on it — the

@@ -9,6 +9,10 @@ struct ComposerBar: View {
     let composer: ComposerModel
     /// Esc that listening did not consume goes here (the thread's fold).
     let onEscapeUnconsumed: () -> Bool
+    /// What the empty field says; on the home screen, where a send goes (decision 19).
+    var placeholder: String = "Ask, or name what to open"
+    /// On the home screen: the *Start in* picker, before the hints (workspaces, piece 3).
+    var startIn: AnyView? = nil
 
     @State private var host: NSWindow?
 
@@ -21,6 +25,7 @@ struct ComposerBar: View {
                 RoundedRectangle(cornerRadius: 1).fill(violet).frame(width: 1.5, height: 18)
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if let startIn { startIn }
                 hint
             }
             receiptRow
@@ -53,7 +58,7 @@ struct ComposerBar: View {
                 .allowsHitTesting(!listening)
                 .accessibilityHidden(listening)
             if !listening && composer.draft.isEmpty {
-                Text("Ask, or name what to open")
+                Text(placeholder)
                     .font(.system(size: 14))
                     .foregroundStyle(coolWhite.opacity(0.32))
                     .allowsHitTesting(false)

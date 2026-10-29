@@ -389,7 +389,11 @@ struct WakilWindow: View {
                         HStack(alignment: .bottom, spacing: 20) {
                             ComposerBar(
                                 composer: session.composer,
-                                onEscapeUnconsumed: { threadDisclosure.escape() })
+                                onEscapeUnconsumed: { threadDisclosure.escape() },
+                                placeholder: session.model.sessionStarted || session.model.project.isEmpty
+                                    ? "Ask, or name what to open" : homeComposerPlaceholder(session.model.place, choices: 2),
+                                startIn: session.model.sessionStarted || session.model.project.isEmpty
+                                    ? nil : AnyView(ComposerStartIn(model: session.model)))
                             // Task 10: the running account, always on screen — the same
                             // standing Invariant 8 already gives the environment, for the
                             // reason this task exists at all: "work account against a
@@ -681,7 +685,7 @@ struct WakilWindow: View {
         // put a surface on top would be the org plane's treatment borrowed
         // for a case that does not need it.
         if !model.sessionStarted {
-            Landing(model: model, openTicketsPalette: {
+            Home(model: model, openTicketsPalette: {
                 // ⌘P in open mode with `#` typed: every ticket in flight.
                 openPalette(.open)
                 palette?.type("#")

@@ -1539,6 +1539,10 @@ public final class WindowModel {
                     await self.closeConversation(conversation)
                 case .rename(let conversation, let name):
                     await self.renameConversation(conversation, to: name)
+                case .openView(let workspace, let place):
+                    await self.openWorkspaceView(workspace, in: place)
+                case .newHere(let workspace):
+                    await self.newConversationHere(workspace)
                 }
             }
         }
@@ -5833,6 +5837,53 @@ public final class WindowModel {
         return PaletteItems.continueItems(sessions.items, excluding: liveSessionIds)
     }
 
+    // MARK: Workspaces, piece 3: the home screen's controls, each one dispatch (Invariant 2)
+
+    /// A card, a project's Open, ⌘P's workspace row: `workspace_open`. `id` nil is Main's view of
+    /// `project` and `environment` (the screen's when nil).
+    public func openWorkspace(_ id: String?, project: String? = nil, environment: String? = nil) async {
+        var params: [String: JSONValue] = ["workspace": .string(id ?? "main")]
+        if let project { params["project"] = .string(project) }
+        if let environment { params["environment"] = .string(environment) }
+        await dispatchLayout("workspace_open", .object(params))
+    }
+
+    /// The current project's Open with a pane: Main's view, then that pane in it (decision 26's line).
+    public func openMainView(withPane kind: String) async {
+        await openWorkspaceView(nil)
+        if kind == "terminal" { _ = await openTerminalPane() } else { _ = await openPane(kind: kind) }
+    }
+
+    /// A card's New conversation here: `workspace_new_conversation`.
+    public func newConversation(inWorkspace id: String) async {
+        await dispatchLayout("workspace_new_conversation", .object(["workspace": .string(id)]))
+    }
+
+    /// A card's Archive (`workspace_archive`); `confirm` after the operator agreed (Rule 1). Answers
+    /// whether it ran; a refusal is in `status`, whole.
+    @discardableResult
+    public func archiveWorkspace(_ id: String, confirm: Bool) async -> Bool {
+        await dispatch("workspace_archive", .object(["workspace": .string(id), "confirm": .bool(confirm)])) != nil
+    }
+
+    /// Earlier's Restore (`workspace_restore`).
+    @discardableResult
+    public func restoreWorkspace(_ id: String) async -> Bool {
+        await dispatch("workspace_restore", .object(["workspace": .string(id)])) != nil
+    }
+
+    /// A card's Bring to Main… for one repo (`workspace_bring_home`).
+    @discardableResult
+    public func bringToMain(_ id: String, repo: String) async -> Bool {
+        await dispatch("workspace_bring_home", .object(["workspace": .string(id), "repo": .string(repo)])) != nil
+    }
+
+    /// A card's Move a conversation here… (`conversation_move`).
+    @discardableResult
+    public func moveConversation(_ conversation: String, toWorkspace id: String) async -> Bool {
+        await dispatch("conversation_move", .object(["conversation": .string(conversation), "workspace": .string(id)])) != nil
+    }
+
     /// A Continue row: `session_resume` through the registry, origin `ui`, as ⌘P's session row
     /// runs it.
     public func continueSession(_ id: String) async {
@@ -7674,7 +7725,12 @@ public final class WindowModel {
         // Read now, on the main actor: the live set as the palette opens.
         let running = liveConversationRows()
         var sources: [any PaletteSource] = [
-            RunningConversationsSource(conversations: { running }),
+            // Workspaces, piece 3: grouped by workspace, Main of the screen's place a row always.
+            RunningConversationsSource(
+                conversations: { running },
+                workspaces: { [weak self] in await self?.runningWorkspaces() ?? [] },
+                main: projectKey.isEmpty ? nil : place,
+                mainIsProduction: environmentProduction.isProduction(environment)),
             OpenPanesSource(panes: { [weak self] in await self?.palettePaneSummaries() ?? [] }),
             NewPaneSource(),
         ]
@@ -9711,6 +9767,11 @@ public final class WindowModel {
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
                     isProduction: agent.productionEnvironment, handoff: agent.handoff)
             }
+            .map { row in
+                var row = row
+                if let w = conversations[row.id]?.workspace { row.workspace = (w.id, w.name) }
+                return row
+            }
     }
 
     /// Every session a live conversation holds, its own and the parent it forked from: what
@@ -9800,6 +9861,63 @@ public final class WindowModel {
             _ = await dispatchLayout("term_open", .object(["pane": .string(fresh.id), "path": .string(path)]))
         }
         await refreshLayout()
+    }
+
+    // MARK: - Workspaces, piece 3: views and the home screen's doors
+
+    /// Opens a workspace's view (decision 22, `workspace_open`). `workspace` nil is Main's view of
+    /// `place` (nil, the screen's): the place's conversation slot with no turn when one is live, else
+    /// a fresh one over the project's canvas — panes, and no agent until the operator types. A
+    /// workspace opens on its most recent live conversation, else its view with none.
+    public func openWorkspaceView(_ workspace: String?, in place: Place? = nil) async {
+        guard let workspace else {
+            let target = place ?? self.place
+            await goTo(target)
+            guard self.place.project == target.project else { return }
+            if let slot = liveConversations(in: self.place).first(where: { $0.workspace == nil && $0.isViewSlot }) {
+                await switchToConversation(slot.id)
+                return
+            }
+            await openViewSlot(workspace: nil)
+            return
+        }
+        guard let w = await workspaceRouter?.store.workspace(workspace) else {
+            status = "workspace_open: there is no workspace \(workspace)"
+            return
+        }
+        if let latest = liveConversations().filter({ $0.workspace?.id == w.id }).max(by: { $0.lastActivity < $1.lastActivity }) {
+            await switchToConversation(latest.id)
+            return
+        }
+        await goTo(Place(organization: organization, project: w.project, environment: w.environment))
+        guard self.place.project == w.project else { return }
+        await openViewSlot(workspace: w)
+    }
+
+    /// New conversation here (`workspace_new_conversation`): a fresh conversation in `workspace`'s
+    /// view, the composer focused (Rule 3).
+    public func newConversationHere(_ workspace: String) async {
+        guard let w = await workspaceRouter?.store.workspace(workspace) else {
+            status = "workspace_new_conversation: there is no workspace \(workspace)"
+            return
+        }
+        await goTo(Place(organization: organization, project: w.project, environment: w.environment))
+        guard self.place.project == w.project else { return }
+        await openViewSlot(workspace: w)
+    }
+
+    /// A conversation with no turn, on screen, in Main's view (`w` nil: the project's canvas, as the
+    /// Landing draws over) or moved into `w`'s view. What is on screen goes to the background first,
+    /// untouched; the composer takes the keyboard.
+    private func openViewSlot(workspace w: Workspace?) async {
+        if screenConversations[place] != nil { await showLanding(in: place) }
+        composerFocusForced = true
+        defer { composerFocusForced = false }
+        await enterConversation()
+        guard let w, let agent = currentAgent, let router = workspaceRouter else { return }
+        await router.store.move(agent.id, root: agent.lineageRoot, to: w.id)
+        try? await router.store.save()
+        await workspaceViewFollows(agent.id, from: w, to: w)
     }
 
     /// The Landing path (`newConversation`, and a close that leaves its place none live): `place`

@@ -6,7 +6,8 @@ import Foundation
 /// card's ⋯ menu, piece 3): an agent does not move work out from under another, nor itself.
 public func registerWorkspaceActions(
     into registry: ActionRegistry, router: WorkspaceRouter,
-    organization: @escaping @Sendable () async -> String?
+    organization: @escaping @Sendable () async -> String?,
+    views: ConversationBroker? = nil
 ) async {
     @Sendable func string(_ params: JSONValue, _ key: String) -> String? {
         if case .object(let o) = params, case .string(let s)? = o[key] { return s }
@@ -137,5 +138,55 @@ public func registerWorkspaceActions(
             let target = try required(params, "workspace", "conversation_move")
             let w = try await router.move(conversation, to: target == "main" ? nil : target)
             return .object(["conversation": .string(conversation), "workspace": w.map { .string($0.id) } ?? .string("main")])
+        }))
+
+    // Piece 3: the home screen's doors. Parked on the conversation broker, as session_switch is: the
+    // window acts on it (`WindowModel.openWorkspaceView`, `newConversationHere`).
+    guard let views else { return }
+    await registry.register(Action(
+        name: "workspace_open",
+        description: "Open a workspace's view (decision 22): workspace \"main\" is Main's view of project and environment "
+            + "(the screen's when omitted), the operator's own folders, with panes and no agent needed; a workspace id "
+            + "opens on its most recent live conversation, else its view with none. Typing in its composer starts a "
+            + "conversation there. Moves the screen, going to the place first. Operator use only.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["workspace": text, "project": text, "environment": text], required: ["workspace"]),
+        handler: { params in
+            let id = try required(params, "workspace", "workspace_open")
+            if id == "main" {
+                var place: Place?
+                if let project = string(params, "project"), !project.isEmpty {
+                    let o = try await org("workspace_open")
+                    place = Place(organization: o, project: project, environment: string(params, "environment") ?? "")
+                }
+                await views.request(.openView(workspace: nil, place: place))
+                return .object(["opening": .string("main")])
+            }
+            _ = try await org("workspace_open")
+            guard let w = await router.store.workspace(id) else {
+                throw WorkspaceWriteError(description: "workspace_open: there is no workspace \(id)")
+            }
+            if w.archived { throw WorkspaceWriteError(description: "workspace_open: ‘\(w.name)’ is archived; restore it first") }
+            await views.request(.openView(workspace: id, place: nil))
+            return .object(["opening": .string(id)])
+        }))
+
+    await registry.register(Action(
+        name: "workspace_new_conversation",
+        description: "New conversation here: a fresh conversation in a workspace's view, the composer focused; nothing is "
+            + "sent until the operator types. Operator use only.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["workspace": text], required: ["workspace"]),
+        handler: { params in
+            _ = try await org("workspace_new_conversation")
+            let id = try required(params, "workspace", "workspace_new_conversation")
+            guard let w = await router.store.workspace(id) else {
+                throw WorkspaceWriteError(description: "workspace_new_conversation: there is no workspace \(id)")
+            }
+            if w.archived {
+                throw WorkspaceWriteError(description: "workspace_new_conversation: ‘\(w.name)’ is archived; restore it first")
+            }
+            await views.request(.newHere(workspace: id))
+            return .object(["workspace": .string(id)])
         }))
 }

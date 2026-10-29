@@ -107,6 +107,8 @@ public let operatorOnlyActions: Set<String> = [
     // the agent runs only the saved recipe, through workspace_run).
     "running_read", "running_detect", "running_draft_all", "running_save", "running_secret_set",
     "running_try", "running_try_end",
+    // Workspaces, piece 3: which view is on screen is the operator's, as which conversation is.
+    "workspace_open", "workspace_new_conversation",
     // Conversations 3 of 3: nor end it.
     "session_close",
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
@@ -303,6 +305,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
          "running_try", "running_try_end":
         return "\(toolName): only the operator writes and tries how a repo runs, in the project's Running settings. "
             + "You run the saved recipe with workspace_run (decision 12); tell the operator what the recipe needs."
+    case "workspace_open", "workspace_new_conversation":
+        return "\(toolName): only the operator opens a workspace's view or starts a conversation in it — an agent "
+            + "must not push aside what is on screen. Tell the operator which workspace the work needs; they can "
+            + "open it from its card or \u{2318}P."
     case "session_close":
         return "\(toolName): only the operator closes a conversation — an agent must not end the "
             + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."

@@ -219,3 +219,48 @@ extension WindowModel {
         }
     }
 }
+
+// Workspaces, piece 3: the home screen's reads.
+extension WindowModel {
+    /// The organisation's workspaces with their holders and live states; empty, with the reason in
+    /// `status` whole (Rule 8), when the record cannot be read.
+    public func workspaceListings() async -> [WorkspaceListing] {
+        guard let router = workspaceRouter, !organization.isEmpty else { return [] }
+        if let failure = await router.load(org: organization) {
+            status = failure
+            return []
+        }
+        return await router.listing()
+    }
+
+    /// The home screen (spec, piece 3), from what the window knows now. `projects` and `past` are
+    /// the Landing's own reads (`listProjects`, `landingSessions`); a conversation slot with no turn
+    /// is a view, not a conversation, so it draws no line.
+    public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?) async -> HomeScreen {
+        let listings = await workspaceListings()
+        let current = projectKey
+        let flags = environmentProduction
+        let input = HomeInput(
+            organization: organization, project: current, environment: environment, projects: projects,
+            workspaces: listings,
+            live: liveConversationRows().filter { conversations[$0.id]?.isViewSlot != true },
+            tickets: ticketNeedsRows,
+            past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
+            filter: filter,
+            isProduction: { project, env in project == current ? flags.isProduction(env) : EnvironmentProduction.undeclared.isProduction(env) })
+        return homeScreen(input)
+    }
+
+    /// ⌘P's Running group's workspaces (decision 27): every unarchived one of the organisation.
+    func runningWorkspaces() async -> [RunningWorkspace] {
+        let current = projectKey
+        let flags = environmentProduction
+        return await workspaceListings().map(\.workspace).filter { !$0.archived }.map { w in
+            RunningWorkspace(
+                id: w.id, name: w.tickets.first.map { "\($0) \(w.name)" } ?? w.name,
+                place: Place(organization: organization, project: w.project, environment: w.environment),
+                isProduction: w.project == current ? flags.isProduction(w.environment)
+                    : EnvironmentProduction.undeclared.isProduction(w.environment))
+        }
+    }
+}

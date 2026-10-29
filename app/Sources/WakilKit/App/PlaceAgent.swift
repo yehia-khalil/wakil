@@ -150,6 +150,8 @@ public final class PlaceAgent {
     public internal(set) var workspace: Workspace?
     /// What its canvas is filed under: the workspace's view key, else its own lineage root.
     public var canvasRoot: String? { workspace.map { workspaceCanvasRoot($0) } ?? lineageRoot }
+    /// A view with no agent (workspaces, piece 3): opened for its panes, nothing typed yet, no session.
+    public var isViewSlot: Bool { harness == nil && sessionId == nil && firstMessage == nil }
     /// The conversation id minted for this place's work, before or with its first session.
     public internal(set) var assignedSessionId: String? {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }

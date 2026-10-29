@@ -192,7 +192,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
             "ticket_hand_off", "ticket_hand_off_cancel",
             // Workspaces, piece 1: archive, Bring to Main and restore are the operator's (the card's ⋯).
-            "workspace_archive", "workspace_bring_home", "workspace_restore", "workspace_set_environment",
+            "workspace_archive", "workspace_bring_home", "workspace_new_conversation", "workspace_open",
+            "workspace_restore", "workspace_set_environment",
         ])
 
     let reachable = await wiring.registry.all()
