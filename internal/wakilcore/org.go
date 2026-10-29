@@ -73,6 +73,8 @@ type Org struct {
 	AgentGeneral          string `json:"agentGeneral,omitempty"`
 	GitCommitInstructions string `json:"gitCommitInstructions,omitempty"`
 	GitPRInstructions     string `json:"gitPRInstructions,omitempty"`
+	// GitBranchInstructions (workspaces, decision 10): how a workspace's branch is named.
+	GitBranchInstructions string `json:"gitBranchInstructions,omitempty"`
 }
 
 const orgFileName = "org.json"

@@ -29,6 +29,8 @@ type OrgPatch struct {
 	AgentGeneral          *string
 	GitCommitInstructions *string
 	GitPRInstructions     *string
+	// Workspaces (decision 10): how a workspace's branch is named.
+	GitBranchInstructions *string
 }
 
 // isEmpty reports whether this patch would change nothing.
@@ -36,7 +38,7 @@ func (p OrgPatch) isEmpty() bool {
 	return p.DisplayName == nil && p.JiraBase == nil && p.DefaultProvider == nil &&
 		p.SpeechProvider == nil && p.QuickProvider == nil && p.GitName == nil && p.GitEmail == nil && p.GhostText == nil && p.FastPath == nil &&
 		p.CommitDrafts == nil && p.ConversationNames == nil && p.PullStrategy == nil &&
-		p.AgentGeneral == nil && p.GitCommitInstructions == nil && p.GitPRInstructions == nil
+		p.AgentGeneral == nil && p.GitCommitInstructions == nil && p.GitPRInstructions == nil && p.GitBranchInstructions == nil
 }
 
 // apply returns o with this patch's named fields replaced.
@@ -78,6 +80,9 @@ func (p OrgPatch) apply(o Org) Org {
 	}
 	if p.GitPRInstructions != nil {
 		o.GitPRInstructions = *p.GitPRInstructions
+	}
+	if p.GitBranchInstructions != nil {
+		o.GitBranchInstructions = *p.GitBranchInstructions
 	}
 	if p.PullStrategy != nil {
 		o.PullStrategy = *p.PullStrategy

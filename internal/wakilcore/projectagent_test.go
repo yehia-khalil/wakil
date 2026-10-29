@@ -74,3 +74,29 @@ func TestConfigTreeCarriesTheTexts(t *testing.T) {
 		t.Fatalf("project texts missing: %+v", tree.Projects)
 	}
 }
+
+// Workspaces, decision 10: the Branches text, beside the other three, at both levels.
+func TestTheBranchesTextIsKeptAtBothLevelsAndInTheTree(t *testing.T) {
+	path := editorProjectFixture(t, "acme")
+	if err := UpdateOrg("acme", OrgPatch{GitBranchInstructions: strp("<KEY>-<short-slug>")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateProjectAgentInstructions(path, ProjectAgentPatch{Branches: strp("feature/<slug>")}); err != nil {
+		t.Fatal(err)
+	}
+	o, _ := LoadOrgFor("acme")
+	if o.GitBranchInstructions != "<KEY>-<short-slug>" {
+		t.Fatalf("org = %+v", o)
+	}
+	p, _ := LoadProject(path)
+	if p.Agent == nil || p.Agent.Branches != "feature/<slug>" {
+		t.Fatalf("agent = %+v", p.Agent)
+	}
+	tree, err := LoadConfigTreeFor("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Org.GitBranchInstructions != "<KEY>-<short-slug>" {
+		t.Fatalf("tree org = %+v", tree.Org)
+	}
+}

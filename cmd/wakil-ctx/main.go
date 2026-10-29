@@ -170,6 +170,7 @@ type updateOrgArgs struct {
 	AgentGeneral          *string `json:"agentGeneral,omitempty" jsonschema:"the organisation's general agent instructions"`
 	GitCommitInstructions *string `json:"gitCommitInstructions,omitempty" jsonschema:"how the agent writes commit messages here"`
 	GitPRInstructions     *string `json:"gitPRInstructions,omitempty" jsonschema:"how the agent writes PR titles and descriptions here"`
+	GitBranchInstructions *string `json:"gitBranchInstructions,omitempty" jsonschema:"how a workspace's branch is named here"`
 }
 
 type setProjectAgentArgs struct {
@@ -177,6 +178,7 @@ type setProjectAgentArgs struct {
 	General      *string `json:"general,omitempty" jsonschema:"the project's general agent instructions"`
 	Commits      *string `json:"commits,omitempty" jsonschema:"the project's commit message instructions"`
 	PullRequests *string `json:"pullRequests,omitempty" jsonschema:"the project's PR instructions"`
+	Branches     *string `json:"branches,omitempty" jsonschema:"the project's branch naming instructions"`
 }
 
 type gitSecretArgs struct {
@@ -779,6 +781,7 @@ func newServer() *mcp.Server {
 				AgentGeneral:          a.AgentGeneral,
 				GitCommitInstructions: a.GitCommitInstructions,
 				GitPRInstructions:     a.GitPRInstructions,
+				GitBranchInstructions: a.GitBranchInstructions,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -1371,7 +1374,7 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests), written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectAgentArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateProjectAgentInstructions(a.ProjectPath, wakilcore.ProjectAgentPatch{
-				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests,
+				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests, Branches: a.Branches,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

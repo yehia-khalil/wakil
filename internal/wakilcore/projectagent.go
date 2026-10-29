@@ -8,11 +8,13 @@ type ProjectAgentInstructions struct {
 	General      string `json:"general,omitempty"`
 	Commits      string `json:"commits,omitempty"`
 	PullRequests string `json:"pullRequests,omitempty"`
+	// Branches (workspaces, decision 10): how a workspace's branch is named.
+	Branches string `json:"branches,omitempty"`
 }
 
 // ProjectAgentPatch names the texts to change; nil leaves one as it is, "" clears it.
 type ProjectAgentPatch struct {
-	General, Commits, PullRequests *string
+	General, Commits, PullRequests, Branches *string
 }
 
 func (p *Project) agentTexts() ProjectAgentInstructions {
@@ -26,7 +28,7 @@ func (p *Project) agentTexts() ProjectAgentInstructions {
 // now (read-modify-write, as UpdateProjectEditorSettings). A project of another organisation is
 // read-only here.
 func UpdateProjectAgentInstructions(projectPath string, patch ProjectAgentPatch) error {
-	if patch.General == nil && patch.Commits == nil && patch.PullRequests == nil {
+	if patch.General == nil && patch.Commits == nil && patch.PullRequests == nil && patch.Branches == nil {
 		return nil
 	}
 	org, err := CurrentOrg()
@@ -50,6 +52,9 @@ func UpdateProjectAgentInstructions(projectPath string, patch ProjectAgentPatch)
 	}
 	if patch.PullRequests != nil {
 		a.PullRequests = *patch.PullRequests
+	}
+	if patch.Branches != nil {
+		a.Branches = *patch.Branches
 	}
 	if a == (ProjectAgentInstructions{}) {
 		project.Agent = nil
