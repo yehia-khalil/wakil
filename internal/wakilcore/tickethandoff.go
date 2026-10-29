@@ -458,6 +458,34 @@ func OpenTicketHandoffs(org string) (map[string][]TicketHandoff, error) {
 	return out, nil
 }
 
+// HandoffTitles are the organisation's hand-off titles by conversation, ended ones included — the
+// newest where a conversation has several. For display only: a record or file that cannot be
+// read is passed over.
+func HandoffTitles(org string) map[string]string {
+	out, at := map[string]string{}, map[string]string{}
+	add := func(hs []TicketHandoff) {
+		for _, h := range hs {
+			if h.Conversation != "" && h.Title != "" && h.At >= at[h.Conversation] {
+				out[h.Conversation], at[h.Conversation] = h.Title, h.At
+			}
+		}
+	}
+	keys, _ := ticketRecordKeys(org)
+	for _, key := range keys {
+		if r, err := ReadTicketRecord(org, key); err == nil {
+			add(r.Handoffs)
+		}
+	}
+	if path, _, _, err := prHandoffPaths(org); err == nil {
+		if m, err := readPRHandoffsFile(path); err == nil {
+			for _, hs := range m {
+				add(hs)
+			}
+		}
+	}
+	return out
+}
+
 // conversationHandoffs are every hand-off of conversation, ended or not, across the
 // organisation's records and PRs. Any file it cannot read is an error: a hand-off in it may be
 // the conversation's.

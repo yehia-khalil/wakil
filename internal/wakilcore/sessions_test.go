@@ -1188,6 +1188,40 @@ func TestListSessions_ReportsCwdAndTitle(t *testing.T) {
 	}
 }
 
+// A handed session is titled as its hand-off's chip — `INI-142 · <the first line>` — over the
+// CLI's own title, and so is a session resumed from it (its lineage root's hand-off).
+func TestListSessions_HandedSessionTakesItsHandoffTitle(t *testing.T) {
+	home, claudeConfigDir := setupHome(t)
+	projDir := filepath.Join(home, "proj")
+	projPath := writeProjectWithRoots(t, projDir, "proj", "initech", []Root{{Path: "."}})
+	activateProject(t, "proj", projPath)
+	for _, id := range []string{"s1", "s2", "s3"} {
+		writeSessionFile(t, claudeConfigDir, EncodeRootPath(projDir), id, []map[string]any{
+			{"type": "user", "cwd": projDir, "message": map[string]any{"content": "Work toward Next"}},
+			{"type": "ai-title", "aiTitle": "cli title", "sessionId": id},
+		})
+	}
+	if _, err := AddTicketHandoff("initech", "INI-142", handoff("s1"), false, ticketNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordSessionParent("s2", "s1"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	titles := map[string]string{}
+	for _, s := range got.Sessions {
+		titles[s.ID] = s.Title
+	}
+	want := handoff("s1").Title
+	if titles["s1"] != want || titles["s2"] != want || titles["s3"] != "cli title" {
+		t.Errorf("titles = %v, want s1 and s2 %q, s3 %q", titles, want, "cli title")
+	}
+}
+
 func TestListSessions_TitleAbsentIsEmptyNotAnError(t *testing.T) {
 	home, claudeConfigDir := setupHome(t)
 	projDir := filepath.Join(home, "proj")

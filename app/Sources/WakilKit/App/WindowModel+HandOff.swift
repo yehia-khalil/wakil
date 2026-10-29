@@ -138,6 +138,8 @@ extension WindowModel {
             agent.handoff = PlaceAgentHandoff(
                 key: pr == nil ? key : nil, pr: pr?.number, thread: h["thread"].flatMap { if case .string(let t) = $0, !t.isEmpty { t } else { nil } },
                 root: root, branch: "", mayPush: h["mayPush"] == .bool(true))
+            // Named as its chip was (`INI-142 · …`), on Running as on Continue (walk 2026-10-29).
+            if case .string(let title)? = h["title"], !title.isEmpty { agent.title = conversationTitle(title) }
         } catch {
             agent.handoff = PlaceAgentHandoff(key: nil, pr: nil, thread: nil, root: root, branch: "", mayPush: false)
             noteHandOffFailure(

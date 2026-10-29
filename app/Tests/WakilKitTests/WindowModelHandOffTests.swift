@@ -345,12 +345,14 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         await fake.set("ticket_handoff_write", .object([
             "carried": .bool(true), "key": .string("INI-142"),
             "handoff": .object(["id": .string("h2"), "conversation": .string("new"), "thread": .string("PRRT_1"),
-                                "mayPush": .bool(true)]),
+                                "title": .string("INI-142 · keep the org"), "mayPush": .bool(true)]),
         ]))
         await fake.set("ticket_handoff_may_push", .object(["mayPush": .bool(true)]))
         await window.resume(sessionId: "s-of-\(handed)")
         let resumed = try #require(window.currentAgent)
         #expect(resumed.id != handed)
+        // Running names it as its chip did (walk 2026-10-29).
+        #expect(resumed.title == "INI-142 · keep the org")
         let carry = try #require(await writes(fake, op: "carry").last)
         #expect(carry["from"] == .string(handed))
         #expect(carry["to"] == .string(resumed.id))
