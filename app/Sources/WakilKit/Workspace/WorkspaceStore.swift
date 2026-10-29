@@ -108,7 +108,10 @@ public actor WorkspaceStore {
         workspace(ofConversation: conversation, root: root)?.id
     }
 
-    /// Adds a workspace to the record (in memory; `save` writes it).
+    /// Whether `conversation` is placed in a workspace this session (not only found by its root).
+    public func isMember(_ conversation: String) -> Bool { members[conversation] != nil }
+
+        /// Adds a workspace to the record (in memory; `save` writes it).
     public func add(_ w: Workspace) {
         file.workspaces.append(w)
         revision += 1

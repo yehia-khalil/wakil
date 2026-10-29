@@ -189,6 +189,13 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     private func checkout(_ repo: String, conversation c: String, facts: WorkspaceConversationFacts,
                           action: String) async throws -> String {
         let mine = await store.workspace(ofConversation: c, root: facts.lineageRoot)
+        // A resumed conversation found by its lineage root goes back into its workspace, and its
+        // view follows (no canvas carried: the workspace's own is read).
+        let member = await store.isMember(c)
+        if let mine, !member {
+            await store.move(c, root: facts.lineageRoot, to: mine.id)
+            await hooks?.moved(c, mine, mine)
+        }
         var mainBranch: String?
         if mine != nil, mine?.checkout(of: repo)?.path == nil {
             mainBranch = await mainState(repo)?.branch

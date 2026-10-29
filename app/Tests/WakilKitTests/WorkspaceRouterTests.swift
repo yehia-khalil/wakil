@@ -335,3 +335,26 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     #expect(try await r.setEnvironment(id, to: "qa").environment == "qa")
     await #expect(throws: WorkspaceWriteError.self) { try await r.setEnvironment(id, to: " ") }
 }
+
+@Test func aResumedConversationGoesBackToItsWorkspaceByItsLineageRoot() async throws {
+    let git = gitWithSnapshot()
+    let said = Said()
+    let r = await router(git: git, said: said)
+    await r.store.add(Workspace(id: "w", name: "Earlier work", slug: "earlier", project: "estate", environment: "staging",
+                                branch: "earlier", checkouts: [WorkspaceCheckout(repo: "/p/core", path: "/h/ws/estate/earlier/core", branch: "earlier")],
+                                conversations: ["root-c9"]))
+    let path = try await asAgent("c9") { try await r.routePath("/p/core/a", action: "editor_save") }
+    #expect(path == "/h/ws/estate/earlier/core/a")
+    #expect(await r.store.isMember("c9"))
+    #expect(await said.moves.map(\.2) == ["w"])
+    #expect(await git.calls.filter { $0.name == "git_worktree_add" }.isEmpty)
+}
+
+@Test func aClosedConversationHoldsNothing() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    #expect(await r.store.holdsAny("c1"))
+    await r.store.release("c1")
+    #expect(!(await r.store.holdsAny("c1")))
+}

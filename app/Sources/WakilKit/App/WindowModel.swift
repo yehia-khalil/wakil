@@ -9837,6 +9837,8 @@ public final class WindowModel {
         }
         conversations[agent.id] = nil
         conversationOrder.removeAll { $0 == agent.id }
+        // Workspaces, piece 1: a closed conversation holds nothing; its record keeps it as last holder.
+        await workspaceRouter?.store.release(agent.id)
         // 3c-ii: the sites it allowed die with it, and no other conversation's.
         await panes.browserForget(conversation: agent.id)
         if shown, placeRemoved {
