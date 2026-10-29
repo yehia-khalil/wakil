@@ -160,6 +160,11 @@
     {
       "match": "say the instructions marker",
       "reply": "the instructions marker turn answered"
+    },
+    {
+      "match": "write the workspace note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/ws-note.txt", "kind": "file" } },
+      "reply": "wrote the workspace note"
     }
   ]
 }

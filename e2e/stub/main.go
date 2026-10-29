@@ -249,7 +249,7 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 					return "", err
 				}
 			}
-			result, err := client.Call(rule.Call.Action, rule.Call.Params)
+			result, err := client.Call(rule.Call.Action, expandCwd(rule.Call.Params))
 			if err != nil {
 				said := driver.RefusalText(err)
 				if echo != nil {
@@ -473,4 +473,27 @@ func (e *echoedCall) result(text string, isError bool) error {
 		"type":    "user",
 		"message": map[string]interface{}{"role": "user", "content": []interface{}{block}},
 	})
+}
+
+// cwdToken in a call's string params is the agent's working directory: the project's root it was
+// started in, which a script cannot name ahead of the launch (workspaces: a write in Main's folder).
+const cwdToken = "{cwd}"
+
+// expandCwd is params with every string's cwdToken replaced by the working directory.
+func expandCwd(params map[string]interface{}) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return params
+	}
+	out := make(map[string]interface{}, len(params))
+	for k, v := range params {
+		if s, ok := v.(string); ok {
+			v = strings.ReplaceAll(s, cwdToken, dir)
+		}
+		out[k] = v
+	}
+	return out
 }

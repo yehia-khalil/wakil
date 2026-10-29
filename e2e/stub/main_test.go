@@ -315,3 +315,14 @@ func TestACallWithoutEchoWritesNoToolFrames(t *testing.T) {
 		t.Errorf("got %d frames, want 3 (init, reply, result)", got)
 	}
 }
+
+func TestACallsCwdTokenIsTheAgentsWorkingDirectory(t *testing.T) {
+	dir, _ := os.Getwd()
+	got := expandCwd(map[string]interface{}{"path": "{cwd}/note.txt", "kind": "file", "n": 1})
+	if got["path"] != dir+"/note.txt" || got["kind"] != "file" || got["n"] != 1 {
+		t.Fatalf("%v", got)
+	}
+	if expandCwd(nil) != nil {
+		t.Fatal("nil params grew")
+	}
+}

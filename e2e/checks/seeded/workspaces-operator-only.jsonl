@@ -1,0 +1,12 @@
+{"dispatch":{"action":"workspace_list","params":{}}}
+{"expect":{"journal":{"contains":"\"action\":\"workspace_list\""}}}
+{"dispatch":{"action":"workspace_archive","params":{"workspace":"w"},"refuses":"only the operator archives"}}
+{"dispatch":{"action":"workspace_restore","params":{"workspace":"w"},"refuses":"only the operator archives"}}
+{"dispatch":{"action":"workspace_bring_home","params":{"workspace":"w","repo":"e2e-api"},"refuses":"only the operator archives"}}
+{"dispatch":{"action":"workspace_set_environment","params":{"workspace":"w","environment":"qa"},"refuses":"only the operator archives"}}
+{"dispatch":{"action":"conversation_move","params":{"conversation":"c","workspace":"main"},"refuses":"only the operator archives"}}
+{"dispatch":{"action":"workspace_archive","params":{"workspace":"nope"},"refuses":"There is no workspace nope"}}
+{"dispatch":{"action":"workspace_restore","params":{"workspace":"nope"},"refuses":"There is no workspace nope"}}
+{"dispatch":{"action":"workspace_bring_home","params":{"workspace":"nope","repo":"e2e-api"},"refuses":"There is no workspace nope"}}
+{"dispatch":{"action":"workspace_set_environment","params":{"workspace":"nope","environment":"qa"},"refuses":"There is no workspace nope"}}
+{"dispatch":{"action":"conversation_move","params":{"conversation":"nope","workspace":"main"},"refuses":"There is no live conversation nope"}}
