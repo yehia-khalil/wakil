@@ -5,12 +5,11 @@
 Each entry: the call, why, and what would change our mind. The charter carries a
 one-line index of these in its §6 and links here; this file carries them in full.
 
-**Entries are cited by number, never by location** — "Decision 20" is the address, and
-that is why moving them here broke nothing. 108 such citations exist across the specs,
-plans and acceptance documents.
+**Only decisions that still stand are here, in short form:** the call, one line of why,
+one line of what would reverse it, the commit. Git keeps amendment history.
 
-**Numbers are permanent.** A superseded decision is amended in place with a dated note,
-never renumbered and never deleted — the history is the point.
+**Numbers are permanent** and cited as "Decision N". A replaced decision becomes a
+one-line tombstone, *Replaced by Decision M (commit)*, so citations still resolve.
 
 **15 of 32 entries state no reversal condition**, including Decision 9, which is
 self-described as costing *"~1.5–2× a plain UI pane and cannot be retrofitted."* A

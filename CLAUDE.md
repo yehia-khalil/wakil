@@ -16,7 +16,8 @@ binding; §9 is the glossary.
 Five rungs — **Design → Plan → Build → Cover → Walk** — driven by
 `superpowers:brainstorming`, `superpowers:writing-plans` and
 `superpowers:executing-plans`, then the repo's own e2e auditor, then the operator.
-Two files per sub-phase: a spec and a plan, both under `docs/superpowers/`.
+Two files per sub-phase: a spec and a plan, both under `docs/superpowers/`. Feature documents
+(specs, plans, runbooks) live on the feature's branch and leave `main` with it.
 
 **End every turn that finished a unit of work by naming the next step and its tool.**
 

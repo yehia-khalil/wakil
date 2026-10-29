@@ -11,9 +11,9 @@ of the charter, and it is append-only by nature: every walk adds a record. A doc
 that grows on every commit cannot also be the one you re-read to decide what is true.
 Keeping the status table there and the narrative here lets both do their job.
 
-**This is a log.** Entries are historical records. Correct them when they are wrong, but
-do not tidy them into a summary — the walk narratives are the most-cited evidence in the
-repository precisely because they say what actually happened.
+**Only sub-phases not yet merged are here.** The entry is written on the branch and its
+merge PR deletes it. Anything still owed moves to `parked.md`. The walk record is the
+runbook, which git keeps.
 
 ---
 

@@ -68,7 +68,7 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 
 ## Acceptance runbooks
 
-`docs/wakil/*-acceptance.md`, one per sub-phase: what the operator walks by hand (the Walk rung).
+`docs/wakil/*-acceptance.md`, one per sub-phase, on its branch until the feature merges: what the operator walks by hand (the Walk rung).
 `make e2e-runbook` renders the machine half (the e2e records) into a runbook between its markers.
 
 ## Make targets

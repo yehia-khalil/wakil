@@ -16,12 +16,11 @@ this setup, are actively maintained, and are where the binding material lives:
 - **`docs/wakil/open-questions.md`** — numbered open questions, some already
   ruled on. Check here before proposing something that looks novel; it may be
   a question that was asked and settled.
-- **`docs/wakil/*-acceptance.md`** — one acceptance runbook per phase. A phase
-  is not met until an operator has walked its runbook; writing one is not
-  walking it.
-- **`docs/superpowers/specs/`** — per-sub-phase design specs. A spec is binding
-  authority for its own sub-phase, and the plan beside it in
-  `docs/superpowers/plans/` argues from it.
+- **`docs/wakil/*-acceptance.md`**, **`docs/superpowers/specs/`** and
+  **`docs/superpowers/plans/`** — a feature's runbook, spec and plan. They are on its
+  branch while it is built and leave `main` with it. A phase is not met until an
+  operator has walked its runbook. A cited path that no longer exists:
+  `git log --all -- <path>`.
 - **`PRODUCT.md`** (repository root) — the product record the Impeccable design
   skill reads, at the one path its tooling resolves. It is a **pointer, not an
   authority**: it cites the charter and `design-language.md` by section rather

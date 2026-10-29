@@ -1,7 +1,7 @@
 # Workflow
 
 How a sub-phase travels from a row in `north-star.md` §8 to a walked acceptance
-runbook, and which tool drives each leg.
+runbook (all three files live on its branch), and which tool drives each leg.
 
 **Five rungs, three tools, two files.** Set 2026-09-26, replacing a ten-rung ladder
 whose Fog / Spec / Probe / Tickets front end cost four tools and a sub-phase's worth
@@ -33,11 +33,11 @@ place to put it.
 
 | Rung | Done when this exists | Next step | Tool |
 |---|---|---|---|
-| **Design** | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, committed and reviewed by the operator, and, if it touches UI, saying how it meets each `PRODUCT.md` §Interaction Rules rule it could break | Interrogate the design in one session — purpose, constraints, 2–3 approaches, then sections approved one at a time | `superpowers:brainstorming` |
-| **Plan** | `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` | Decompose the spec into phases of tasks, each demoable, each test-first | `superpowers:writing-plans` |
+| **Design** | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, committed on the branch and reviewed by the operator, and, if it touches UI, saying how it meets each `PRODUCT.md` §Interaction Rules rule it could break | Interrogate the design in one session — purpose, constraints, 2–3 approaches, then sections approved one at a time | `superpowers:brainstorming` |
+| **Plan** | `docs/superpowers/plans/YYYY-MM-DD-<topic>.md`, on the branch | Decompose the spec into phases of tasks, each demoable, each test-first | `superpowers:writing-plans` |
 | **Build** | the plan's tasks checked off, `make test` and `make app-test` green | Work the plan top to bottom | `superpowers:executing-plans`, which calls `superpowers:test-driven-development` per task and ends a phase at `superpowers:requesting-code-review` |
 | **Cover** | every action and identifier the branch touched carries a check, `make e2e` green (the checks the diff reaches), `make e2e-new` red against the merge-base | An agent reads the branch, writes the missing checks, proves each red then green, and reports only what it could not cover | The e2e auditor, `docs/agents/e2e.md`; `make e2e-new`, `make e2e`, `make e2e-runbook` |
-| **Walk** | `docs/wakil/phase-<sub-phase>-acceptance.md` written, its checks marked and dated, an entry in `phase-log.md`, and `Met` filled in §8. The full suite runs after the merge, in the night run on `main` | The machine half is `make e2e-runbook`'s; write the human half from what Cover could not reach. Then **the operator walks it — never an agent** | `make e2e-runbook E2E_RUNBOOK=<the document>`; prose for the rest |
+| **Walk** | `docs/wakil/phase-<sub-phase>-acceptance.md` written, its checks marked and dated, an entry in `phase-log.md` (for an unmerged sub-phase), all on the branch, and `Met` filled in §8. The full suite runs after the merge, in the night run on `main` | The machine half is `make e2e-runbook`'s; write the human half from what Cover could not reach. Then **the operator walks it — never an agent** | `make e2e-runbook E2E_RUNBOOK=<the document>`; prose for the rest |
 
 **Probe and Review are tasks, not rungs.** A sub-phase with something to measure gets
 a measurement task in its plan, and its findings amend the spec. A plan phase ends at
@@ -66,7 +66,7 @@ Three labels: `bug`, `needs-triage`, `wontfix`. See `docs/agents/issue-tracker.m
   walking it. `Met` says *walked* or *accepted*, and the difference is the whole point
   of the column.
 - **Where a spec and the shipped code disagree, the code is what ships.** Say so, and
-  correct the spec — never quietly match it. The correction is a **dated amendment
+  correct the spec on the branch — never quietly match it. The correction is a **dated amendment
   section** in the spec file, with the body edited to match it. A probe that
   contradicts the spec is the same move, made before any code exists.
 - **A design question reopened mid-build is a dated amendment to the spec file**, not
@@ -138,7 +138,16 @@ The prohibition on `superpowers:brainstorming` that stood in this file until
 2026-09-26 is **lifted**. Its stated reason — *"it writes the spec file that no longer
 has a rung"* — is void: the rung is back, and it is the first one.
 
-**The historical artefacts stay where they are.** The nineteen files in
-`docs/superpowers/specs/` and the five in `docs/superpowers/plans/` are binding for the
-sub-phases that shipped under them and are cited by path across the repo. They are now
-joined rather than frozen. The parked issues are indexed in `docs/wakil/parked.md`.
+## Feature documents leave with the feature
+
+Specs, plans and acceptance runbooks live on the feature's branch and nowhere else.
+
+- The branch's last commit deletes them, **after the walk passes**. Git keeps them.
+- Before that, each spec decision that still governs the code becomes a short entry in
+  `decisions.md`: the call, one line of why, the commit. The operator reviews it in the PR.
+- A spec or plan never merges alone. No separate design or plan PRs.
+- In a stack, each PR deletes only its own feature's files.
+- `make merge-check` fails while any remain. Run it on the PR that targets `main`; a PR can
+  open before it passes, but cannot merge.
+
+The parked issues are indexed in `docs/wakil/parked.md`.
