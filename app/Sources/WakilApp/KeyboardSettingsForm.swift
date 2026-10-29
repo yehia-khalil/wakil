@@ -316,6 +316,8 @@ struct KeyboardSettingsForm: View {
     }
 
     /// A key-down while `id` records; the recorder swallows every one, so no menu or pane sees it.
+    /// The chord is the key as the layout types it (`KeyChord(event:)`): AZERTY's ⌘A records ⌘A,
+    /// the chord the menu bar will then match.
     private func recorded(_ event: NSEvent, for id: String) {
         guard !event.isARepeat, let chord = KeyChord(event: event) else { return }
         if chord.key == .escape {

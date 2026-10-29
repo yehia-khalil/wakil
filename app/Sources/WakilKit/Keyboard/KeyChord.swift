@@ -77,8 +77,11 @@ public struct KeyChord: Hashable, Sendable {
 
     // MARK: Events
 
-    /// The chord an event is: the key by its ANSI key code first, so ⌘R is ⌘R on every layout
-    /// (as `QueryLineKeys` does), then by character for keys the table doesn't hold.
+    /// The chord an event is. A key that types a Latin (ASCII) character is that character, so
+    /// AZERTY's ⌘W is ⌘W, as the menu bar matches it. Only a key whose character would differ on
+    /// a non-Latin layout goes by its ANSI key code, so ⌘R is ⌘R in Cyrillic too (as
+    /// `QueryLineKeys` does). Named keys, F-keys and the digit row (AZERTY types & for 1) go by
+    /// key code; so does a shifted symbol, whose character is shift's (`}` for ⇧]).
     /// Nil for anything but a key event: AppKit raises on a mouse event's key code.
     public init?(event: NSEvent) {
         guard event.type == .keyDown || event.type == .keyUp else { return nil }
@@ -88,15 +91,36 @@ public struct KeyChord: Hashable, Sendable {
         if flags.contains(.option) { modifiers.insert(.option) }
         if flags.contains(.shift) { modifiers.insert(.shift) }
         if flags.contains(.command) { modifiers.insert(.command) }
-        if let key = Self.keysByCode[event.keyCode] {
-            self.init(modifiers: modifiers, key: key)
-        } else if let c = event.charactersIgnoringModifiers, c.count == 1, let ch = c.first,
-                  !ch.isWhitespace, !ch.isNewline, ch.unicodeScalars.allSatisfy({ $0.value >= 0x20 && !(0xF700...0xF8FF).contains($0.value) }) {
-            self.init(modifiers: modifiers, key: .character(ch))
+        let byCode = Self.keysByCode[event.keyCode]
+        var typed: Character?
+        if let c = event.charactersIgnoringModifiers, c.count == 1, let ch = c.first,
+           !ch.isWhitespace, !ch.isNewline,
+           ch.unicodeScalars.allSatisfy({ $0.value >= 0x20 && !(0xF700...0xF8FF).contains($0.value) }) {
+            typed = ch
+        }
+        if let byCode, !Self.byCharacter(byCode) {
+            self.init(modifiers: modifiers, key: byCode)
+        } else if let typed, typed.isASCII, !Self.digitRow.contains(event.keyCode),
+                  !(modifiers.contains(.shift) && !typed.isLetter) {
+            self.init(modifiers: modifiers, key: .character(typed))
+        } else if let byCode {
+            self.init(modifiers: modifiers, key: byCode)
+        } else if let typed {
+            self.init(modifiers: modifiers, key: .character(typed))
         } else {
             return nil
         }
     }
+
+    /// A key the table holds by character, which a layout may move: everything but the named
+    /// keys and F-keys.
+    private static func byCharacter(_ key: KeyName) -> Bool {
+        if case .character = key { return true }
+        return false
+    }
+
+    /// ANSI 1–9 and 0: the digits on every Latin layout, shifted or not.
+    private static let digitRow: Set<UInt16> = [18, 19, 20, 21, 23, 22, 26, 28, 25, 29]
 
     private static let keysByCode: [UInt16: KeyName] = {
         var table: [UInt16: KeyName] = [
