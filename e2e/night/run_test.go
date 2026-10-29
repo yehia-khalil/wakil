@@ -1,6 +1,7 @@
 package night
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ type fakeNight struct {
 	rerunWith []string
 	branch    string
 	dropped   string
+	docs      error
 }
 
 func (f *fakeNight) steps() Steps {
@@ -30,7 +32,11 @@ func (f *fakeNight) steps() Steps {
 			f.calls = append(f.calls, "quiet")
 			return f.quiet, nil
 		},
-		Fetch:     func() (string, error) { f.calls = append(f.calls, "fetch"); return f.main, nil },
+		Fetch: func() (string, error) { f.calls = append(f.calls, "fetch"); return f.main, nil },
+		MergeCheck: func() error {
+			f.calls = append(f.calls, "merge-check")
+			return f.docs
+		},
 		Preflight: func() error { return nil },
 		Prepare: func(commit string) error {
 			f.calls = append(f.calls, "prepare "+commit)
@@ -259,5 +265,23 @@ func TestTheFixBranchIsReleasedAndCleanedBeforeTheRerun(t *testing.T) {
 	got := strings.Join(f.calls, ",")
 	if !strings.Contains(got, "fix,prepare e2e-night/2026-10-27,rerun") {
 		t.Fatalf("calls %s: want the worktree detached and cleaned at the fix branch between fix and rerun", got)
+	}
+}
+
+func TestFeatureDocsOnMainAreReportedAndTheSuiteStillRuns(t *testing.T) {
+	f, store := newFake(t)
+	f.docs = errors.New("docs/superpowers/specs/x.md")
+	r := Run(f.steps(), store)
+	if !strings.Contains(r.MergeCheck, "docs/superpowers/specs/x.md") || !f.called("suite") {
+		t.Fatalf("result %+v, calls %v", r, f.calls)
+	}
+	assertWritten(t, store, r)
+}
+
+func TestCleanMainReportsNoFeatureDocs(t *testing.T) {
+	f, store := newFake(t)
+	r := Run(f.steps(), store)
+	if r.MergeCheck != "" || !f.called("merge-check") {
+		t.Fatalf("result %+v, calls %v", r, f.calls)
 	}
 }

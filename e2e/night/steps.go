@@ -61,8 +61,9 @@ func RealSteps(repo string, store Store, out io.Writer) (Steps, error) {
 			}
 			return gitOut(repo, "rev-parse", "origin/main")
 		},
-		Prepare:   func(commit string) error { return PrepareWorktree(repo, wt, commit) },
-		Preflight: func() error { return preflight(wt, out) },
+		Prepare:    func(commit string) error { return PrepareWorktree(repo, wt, commit) },
+		MergeCheck: func() error { return mergeCheck(wt) },
+		Preflight:  func() error { return preflight(wt, out) },
 		Suite: func(deadline time.Time) (SuiteRun, error) {
 			return suite(wt, deadline, out, []string{"e2e-full", "E2E_KEEP_GOING=1"})
 		},
@@ -106,6 +107,20 @@ func RealSteps(repo string, store Store, out io.Writer) (Steps, error) {
 			return suite(wt, deadline, out, []string{"e2e", "E2E_ONLY=" + strings.Join(files, " "), "E2E_KEEP_GOING=1"})
 		},
 	}, nil
+}
+
+// mergeCheck runs `make merge-check` in wt and, when it exits 1, returns an
+// error whose text is the files it listed.
+func mergeCheck(wt string) error {
+	var buf bytes.Buffer
+	timedOut, _, err := runUntil(command(wt, &buf, "make", "--no-print-directory", "merge-check"), time.Now().Add(2*time.Minute))
+	if err == nil && !timedOut {
+		return nil
+	}
+	if text := strings.TrimSpace(buf.String()); text != "" && !timedOut {
+		return errors.New(text)
+	}
+	return fmt.Errorf("make merge-check did not finish: %w", err)
 }
 
 // suite runs one make target over the checks in wt until deadline and reads
