@@ -10,6 +10,7 @@ public enum WorkspaceLine: Equatable, Sendable {
     case addFailed(repo: String, message: String)
     case madeCheckout(repo: String, branch: String, note: String?)
     case moved(name: String)
+    case switchBranchedOff(branch: String, holder: String, fresh: String)
 
     public var text: String {
         switch self {
@@ -35,6 +36,8 @@ public enum WorkspaceLine: Equatable, Sendable {
             return note.map { "\(base) \($0)." } ?? base
         case .moved(let name):
             return "Moved to workspace ‘\(name)’."
+        case .switchBranchedOff(let branch, let holder, let fresh):
+            return "‘\(holder)’ is working on `\(branch)`, so this copy switched to a new branch `\(fresh)` off its tip."
         }
     }
 }

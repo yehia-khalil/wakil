@@ -730,9 +730,14 @@ an agent's write finds its checkout.
 - `WorkspacePaths.swift` — `workspacePath` / `mainPath` (Main ↔ checkout), `confinementRefusal` (call 13).
 - `BranchNames.swift` — `branchSlug`, `fallbackBranchName`, `childBranchName`, `uniqueSlug`.
 - `WorkspaceLines.swift` — `WorkspaceLine`: the thread's sentences.
+- `WorkspaceStore.swift` — `WorkspaceStore` (actor): the record in memory, live holds, which workspace each
+  conversation is in; `reload` keeps an unreadable record's failure whole and `save` refuses over it.
+- `WorkspaceRouter.swift` — `WorkspaceRouter` (actor), the one `WorkspaceWriteRouting` (`Core/`): every
+  agent write action asks it at its head; it carries out `decideWrite` through wakil-git, moves the
+  conversation, and tells the thread through `WorkspaceRouterHooks` (installed by `WindowModel`).
 
-Uses: nothing but `Core/`.
-Tests: `WorkspaceModelTests`.
+Uses: `MCP`, `Registry`.
+Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`.
 
 ### Visual/ — design-language values
 
