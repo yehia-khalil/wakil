@@ -263,8 +263,8 @@ struct HeavyFoldersSettingRow: View {
         VStack(alignment: .leading, spacing: 4) {
             FormHint("Big folders git ignores, like vendor or node_modules, matched by name at any depth. "
                      + "Each shows as one row and loads only when you open it, so the tree and "
-                     + "\(keymap.help("Open…", "window.open")) stay fast; project search skips them. Remove a name to list its files like any "
-                     + "ignored file.")
+                     + "\(keymap.help("Open…", "window.open")) stay fast; project search skips them. "
+                     + "Remove a name to list its files like any ignored file.")
                 .padding(.bottom, 4)
             HStack(spacing: 8) {
                 Text(".git")
