@@ -342,34 +342,37 @@ struct EditorTicketView: View {
     @ViewBuilder
     private var longLived: some View {
         if let s = state.inFlight {
-            inFlightList("Waiting on you", s.waitingOnYou, id: "waiting")
-            inFlightList("In flight", ticketInFlightNotWaiting(s), id: "inflight")
+            let lists = ticketViewLists(s, handoffs: state.handOffLive, drafts: reviews.reads.draftRecords)
+            inFlightList("Waiting on you", lists.waiting, id: "waiting")
+            inFlightList("In flight", lists.inFlight, id: "inflight")
             ForEach(ticketPartialLine(s.partial), id: \.self) { whole($0, id: "editor.ticket.partial") }
         } else {
             Text("Reading In flight…").dimmed().accessibilityIdentifier("editor.ticket.inflightLoading")
         }
     }
 
-    private func inFlightList(_ title: String, _ rows: [InFlightRowState], id: String) -> some View {
+    /// One row per ticket (walk 2026-10-29), as the Landing's: its key and title, then its status and
+    /// its most urgent state in words. Picking it shows the ticket — every PR of it — read from its
+    /// first row's root and branch.
+    private func inFlightList(_ title: String, _ rows: [TicketNeedsRow], id: String) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Text(title).microLabel()
             if rows.isEmpty { Text("None").font(.system(size: 11)).dimmed() }
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+            ForEach(rows) { row in
+                let first = row.rows.first { !$0.root.isEmpty } ?? row.rows.first
                 Button {
-                    // The row's own root and branch: two rows can carry one key.
-                    Task { await dispatch("ticket_show", ["key": .string(r.key), "root": .string(r.root), "branch": .string(r.branch)]) }
+                    Task { await dispatch("ticket_show", ["key": row.key.map { .string($0) } ?? .null,
+                                                          "root": .string(first?.root ?? ""), "branch": .string(first?.branch ?? "")]) }
                 } label: {
-                    // Two lines so a narrow column never breaks the key (walk, 2026-10-27): the key
-                    // whole and the title truncating, then the status pill and Go's state words.
+                    // Two lines so a narrow column never breaks the key (walk, 2026-10-27).
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                            Text(ticketInFlightRowLabel(r)).ticketKey().fixedSize(horizontal: false, vertical: true)
-                            Text(r.title).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                            Text(ticketNeedsRowName(row)).ticketKey().fixedSize(horizontal: false, vertical: true)
+                            Text(row.title).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                         }
-                        HStack(spacing: Space.s) {
-                            TicketPill(label: r.status, hue: ticketStatusHue(r.status))
-                            // Go composes the row's one state in words; it shows as it came.
-                            Text(r.state).font(.system(size: 10.5, design: .monospaced)).dimmed()
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                            if let status = first?.status, !status.isEmpty { TicketPill(label: status, hue: ticketStatusHue(status)) }
+                            Text(landingTicketState(row).words).font(.system(size: 10.5, design: .monospaced)).dimmed()
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -378,7 +381,7 @@ struct EditorTicketView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("editor.ticket.\(id):\(ticketInFlightRowName(r))")
+                .accessibilityIdentifier("editor.ticket.\(id):\(row.id)")
             }
         }
     }

@@ -825,19 +825,18 @@ public func ticketShownRecord(_ state: EditorTicketViewState, key: String, ref: 
     return .none
 }
 
+/// The Ticket view's two lists on a long-lived branch (walk 2026-10-29): tickets, not branches or PRs —
+/// one row per ticket, as the Landing's (`ticketNeedsRows`, with every PR and branch of it) — under
+/// **Waiting on you** when its most urgent state needs the operator, else under **In flight**.
+public func ticketViewLists(_ s: InFlightState, handoffs: [String: TicketHandOffLive],
+                            drafts: [String: TicketDraftState]) -> (waiting: [TicketNeedsRow], inFlight: [TicketNeedsRow]) {
+    let rows = ticketNeedsRows(s, handoffs: handoffs, drafts: drafts)
+    return (rows.filter(\.urgent.needsYou), rows.filter { !$0.urgent.needsYou })
+}
+
 /// An In flight or Waiting on you row's name, for its accessibility identifier: `<key>:<root>:<branch>`,
 /// the root by its last component. A key alone is not one row — two branches can carry one ticket —
 /// and the root's last component, unlike its path, is the same on every run.
-/// In flight without what Waiting on you already lists: a ticket that needs the operator is drawn
-/// once, under Waiting on you, not again under In flight (walk, 2026-10-28). A row is the same one
-/// when its key, root, branch, repository and PR all match.
-public func ticketInFlightNotWaiting(_ s: InFlightState) -> [InFlightRowState] {
-    func same(_ a: InFlightRowState, _ b: InFlightRowState) -> Bool {
-        a.key == b.key && a.root == b.root && a.branch == b.branch && a.repo == b.repo && a.pr == b.pr
-    }
-    return s.inFlight.filter { row in !s.waitingOnYou.contains { same($0, row) } }
-}
-
 public func ticketInFlightRowName(_ r: InFlightRowState) -> String {
     "\(r.key):\((r.root as NSString).lastPathComponent):\(r.branch)"
 }

@@ -645,12 +645,19 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
 }
 
 /// A ticket that needs the operator is listed once, under Waiting on you (walk, 2026-10-28).
-@Test func aTicketWaitingOnYouIsNotListedAgainInFlight() {
-        let waiting = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-login")
-        let other = InFlightRowState(key: "INI-150", root: "/r/api", branch: "ini-150-search")
-        let s = InFlightState(waitingOnYou: [waiting], inFlight: [waiting, other])
-        #expect(ticketInFlightNotWaiting(s) == [other])
-        // The same key on another branch is another row, and stays.
-        let elsewhere = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-hotfix")
-    #expect(ticketInFlightNotWaiting(InFlightState(waitingOnYou: [waiting], inFlight: [elsewhere])) == [elsewhere])
+/// Walk 2026-10-29: the Ticket view's lists are tickets, not branches or PRs — one row per ticket, as
+/// the Landing's: Waiting on you when its most urgent state needs the operator, else In flight.
+@Test func theTicketViewListsEachTicketOnce() {
+    let failing = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-login", pr: 1, failing: ["unit"])
+    let second = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-hotfix", pr: 2)
+    let otherRepo = InFlightRowState(key: "INI-142", root: "/r/web", branch: "ini-142-web", pr: 1, repo: "github.com/initech/web")
+    let quiet = InFlightRowState(key: "INI-150", root: "/r/api", branch: "ini-150-search", pr: 3)
+    let s = InFlightState(waitingOnYou: [failing], inFlight: [failing, second, otherRepo, quiet])
+    let lists = ticketViewLists(s, handoffs: [:], drafts: [:])
+    #expect(lists.waiting.map(\.id) == ["INI-142"])
+    // The failing row Go lists twice counts once: no "· +1 more" for itself.
+    #expect(lists.waiting.first?.urgent.words == "#1 · unit failing")
+    #expect(lists.waiting.first?.rows.count == 3)
+    #expect(lists.inFlight.map(\.id) == ["INI-150"])
+    #expect(lists.inFlight.first?.urgent.words == "#3 · open")
 }

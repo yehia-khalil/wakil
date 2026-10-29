@@ -91,6 +91,10 @@ public func ticketNeedsRows(_ s: InFlightState, handoffs: [String: TicketHandOff
     var grouped: [String: [InFlightRowState]] = [:]
     for r in s.waitingOnYou + s.inFlight {
         let id = r.key.isEmpty ? "\(r.repo)#\(r.pr)" : r.key
+        // A row Go lists under both Waiting on you and In flight is one row: its reasons count once.
+        if grouped[id]?.contains(where: { $0.root == r.root && $0.branch == r.branch && $0.repo == r.repo && $0.pr == r.pr }) == true {
+            continue
+        }
         if grouped[id] == nil { order.append(id) }
         grouped[id, default: []].append(r)
     }
