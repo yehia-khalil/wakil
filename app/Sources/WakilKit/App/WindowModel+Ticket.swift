@@ -58,6 +58,19 @@ extension WindowModel {
         return wanted
     }
 
+    /// The tickets the editor panes' Ticket views show picked from In flight or the Landing — a key,
+    /// or a keyless row on a root — once each: what ↻ reads again beside the branch's own.
+    func ticketShownKeys() async -> [String] {
+        var keys: [String] = []
+        for pane in editorPaneIds {
+            guard let c = await editorSnapshot(pane: pane).column, c.shown, c.view == EditorColumnView.ticket,
+                  let key = c.ticketShown ?? c.ticketShownAt.flatMap({ $0.root.isEmpty ? nil : $0.id }),
+                  !key.isEmpty, !keys.contains(key) else { continue }
+            keys.append(key)
+        }
+        return keys
+    }
+
     /// Reads the head texts each editor pane's front file needs to place its review boxes
     /// (`git_show` rev `commit:<sha>`), once each: started, not awaited. A commit that is not local,
     /// or a file not in it, lands with no text, and its boxes draw at GitHub's line ("line may differ").

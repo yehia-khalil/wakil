@@ -291,6 +291,31 @@ private func pickWindow() async throws -> (WindowModel, String) {
         window.stopTicketPoll()
     }
 
+    /// Walk 2026-10-29: the 2-minute read reads a picked ticket's own branch again too, as ↻ does —
+    /// a PR retitled on GitHub shows without a click.
+    @Test func thePollReadsAPickedTicketsBranch() async throws {
+        let (window, editor) = try await pickWindow()
+        await window.dispatchFromSurface("ticket_show", .object(["pane": .string(editor), "key": .string("INI-142")]))
+        let fake = try #require(window.ticket?.ticket as? FakeTicket)
+        let picked: @Sendable () async -> Int = {
+            await fake.calls.filter { c in
+                guard c.name == "ticket_branch", case .object(let a) = c.args else { return false }
+                return a["branch"] == .string("ini-142-login")
+            }.count
+        }
+        await until { await picked() >= 1 }
+        let before = await picked()
+        var ticks = 0
+        window.ticketPollSleep = { _ in
+            ticks += 1
+            if ticks > 1 { try await Task.sleep(for: .seconds(3600)) }
+        }
+        window.updateTicketPoll()
+        await until { await picked() > before }
+        #expect(await picked() == before + 1)
+        window.stopTicketPoll()
+    }
+
     /// The rail's row on a pane showing Files: the column goes to Ticket, the branch's own.
     @Test func theRailRowShowsTheTicketView() async throws {
         let (window, editor) = try await pickWindow()

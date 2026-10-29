@@ -122,10 +122,12 @@ extension WindowModel {
                 do { try await self.ticketPollSleep(self.ticketPollInterval) } catch { return }
                 // A resign or a lock that landed during the sleep reads nothing, cancelled or not.
                 guard !Task.isCancelled, self.ticketPollWantedNow else { return }
-                // In flight, and each shown Ticket view's branch, with no staleness check.
-                let roots = await self.ticketViewRoots()
-                guard !Task.isCancelled, self.ticketPollWantedNow else { return }
+                // In flight, and each shown Ticket view's branch — a picked ticket's own too, as ↻
+                // reads it (walk 2026-10-29) — with no staleness check.
+                let roots = await self.ticketViewRoots(), shown = await self.ticketShownKeys()
+                guard !Task.isCancelled, self.ticketPollWantedNow, let ticket = self.ticket else { return }
                 for root in roots { self.ticketRead(root) }
+                for key in shown { Task { await ticket.refreshShown(key: key) } }
                 await self.ticketNeedsRead(force: true)
             }
         }
