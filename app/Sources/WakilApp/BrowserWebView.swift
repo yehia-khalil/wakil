@@ -7,8 +7,9 @@ import WebKit
 ///
 /// **The always-Wakil keys reach the window first.** A focused `WKWebView` takes every key
 /// equivalent for the page and hands back only what the page left alone, so ⌘K pressed on a page
-/// that listens for it would never open the palette. These keys are offered to the main menu
-/// before the page sees them; every other key is the page's, as Safari does it.
+/// that listens for it would never open the palette. These keys, `Keymap.beforePage`'s chords in
+/// force, are offered to the main menu before the page sees them; every other key is the page's,
+/// as Safari does it.
 final class BrowserWebView: WKWebView {
     /// Esc while the page loads: the tab's `browser_stop` (Rule 4). Answers whether it was used.
     var stopOnEscape: (@MainActor () -> Bool)?
@@ -31,25 +32,21 @@ final class BrowserWebView: WKWebView {
         super.viewWillMove(toWindow: newWindow)
     }
 
-    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W, ⌘⇧C and ⌃⌘R (global constraints), and ⌃⌘S when `tabColumn`,
-    /// **by physical key** (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character
-    /// match fails on a non-Latin one (`QueryLineKeys`' note).
-    static func isWakilKey(_ event: NSEvent, tabColumn: Bool) -> Bool {
-        guard event.type == .keyDown else { return false }
-        let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if mods == .command { return commandKeys.contains(event.keyCode) }
-        if mods == [.command, .shift] { return event.keyCode == 13 || event.keyCode == 8 }   // W; C: Copy Page Address
-        if mods == [.control, .command] {   // R: the rail; S: Toggle Tab Column (3d-i)
-            return event.keyCode == 15 || (tabColumn && event.keyCode == 1)
-        }
-        return false
+    /// The window's keymap, for which presses are Wakil's before the page (`Keymap.beforePage`).
+    var keymap: (@MainActor () -> Keymap?)?
+
+    /// Whether the menu bar sees `event` before the page: the keymap's `takesBeforePage`, by the
+    /// chords in force, so a rebound command moves with its chord. `KeyChord(event:)` falls back to
+    /// the physical key only on a non-Latin layout, where a character match would fail
+    /// (`QueryLineKeys`' note). No key outside the table is held here.
+    static func isWakilKey(_ event: NSEvent, keymap: Keymap, tabColumn: Bool) -> Bool {
+        guard event.type == .keyDown, let chord = KeyChord(event: event) else { return false }
+        return keymap.takesBeforePage(chord, tabColumn: tabColumn)
     }
 
-    /// K P N T W L , D and 1–9.
-    private static let commandKeys: Set<UInt16> = [40, 35, 45, 17, 13, 37, 43, 2, 18, 19, 20, 21, 23, 22, 26, 28, 25]
-
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if Self.isWakilKey(event, tabColumn: tabColumnKey?() ?? false), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        if Self.isWakilKey(event, keymap: keymap?() ?? Keymap(overrides: [:]), tabColumn: tabColumnKey?() ?? false),
+           NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
 
@@ -213,6 +210,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             webView.observe(\.isLoading) { view, _ in report(view) },
         ]
         webView.tabColumnKey = { [weak self] in self?.host?.model?.browserSettings.tabs == "vertical" }
+        webView.keymap = { [weak self] in self?.host?.model?.keymap }
         webView.stopOnEscape = { [weak self] in
             guard let self, !self.tab.isEmpty, self.isShown else { return false }
             self.dispatch("browser_stop")

@@ -273,6 +273,8 @@ struct BrowserTabCount: View {
 /// (`browser_unpin`); `BrowserSnapshot.drop` decides.
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
+    /// The keymap in force, for the pinned tab's close tip that names Close Tab's chord.
+    @Environment(\.keymap) private var keymap
     let mode: BrowserTabListMode
     let favicon: (String) -> NSImage?
     /// Which sites are production and which the active environment's (3c-ii): each tagged entry's dot.
@@ -349,7 +351,7 @@ struct BrowserTabList: View {
             bare: { if case .chip = entries[$0] { true } else { false } },
             tip: closeArmed.flatMap { tab in
                 list.index(ofTab: tab).map {
-                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip, identifier: "browser.tab.\(tab).closeTip")
+                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip(keymap.chord("browser.closeTab")?.text), identifier: "browser.tab.\(tab).closeTip")
                 }
             },
             section: PaneStripSection(
@@ -431,6 +433,8 @@ struct BrowserTabList: View {
 /// `Add Bookmark` (ruling 13); it is not bound here too, so the key has one owner, which acts on the
 /// focused browser pane and passes the key on anywhere else.
 struct BrowserBookmarkMenu: View {
+    /// The keymap in force, for the tooltip that names a chord (keyboard Task 5).
+    @Environment(\.keymap) private var keymap
     let choices: BrowserBookmarkChoices
     let dispatch: (String, [String: JSONValue]) -> Void
 
@@ -460,7 +464,8 @@ struct BrowserBookmarkMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(choices.bookmarked ? "Bookmarked — Remove Bookmark (⌘D)" : "Bookmarks — Bookmark This Page (⌘D)")
+        .help(keymap.help(choices.bookmarked ? "Bookmarked — Remove Bookmark" : "Bookmarks — Bookmark This Page",
+                           "browser.bookmark"))
         .accessibilityLabel("Bookmarks")
         .accessibilityValue(choices.bookmarked ? "bookmarked" : "")
         .accessibilityIdentifier("browser.bookmarks")

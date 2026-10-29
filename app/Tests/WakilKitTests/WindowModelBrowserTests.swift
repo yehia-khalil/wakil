@@ -694,16 +694,18 @@ private func browserWindow(
         #expect(!model.layoutSnapshot.panes.contains { $0.kind == "browser" })
     }
 
+    /// ⌘T and ⌘W reach the browser through the keymap: its New Tab and Close Tab come first in a
+    /// focused browser pane (`keyPressed`), ahead of New Scratch Tab and Close Pane.
     @Test func cmdTInABrowserOpensATab() async throws {
         let (model, pane, _, _) = try await focusedBrowser()
-        await model.newScratch()
+        #expect(await model.keyPressed(try #require(KeyChord("⌘T"))))
         let s = try #require(model.browser(pane))
         #expect(s.tabs.count == 2 && s.active == s.tabs[1].id)
         #expect(s.activeTab?.command?.verb == .focusAddress, "a blank start page focuses the address")
         #expect(!model.layoutSnapshot.panes.contains { $0.kind == "editor" }, "no scratch tab was made")
-        await model.closeFocusedTabOrPane()
+        #expect(await model.keyPressed(try #require(KeyChord("⌘W"))))
         #expect(model.browser(pane)?.tabs.count == 1, "⌘W closed the browser's tab")
-        await model.closeFocusedTabOrPane()
+        #expect(await model.keyPressed(try #require(KeyChord("⌘W"))))
         #expect(!model.layoutSnapshot.panes.contains { $0.id == pane }, "its last tab closed the pane")
     }
 

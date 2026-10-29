@@ -259,3 +259,17 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     #expect(c.params(PaletteContext(focusedPane: browser, browserActiveTab: subject), "New")
         == .object(["pane": .string("browser-1"), "tab": .string("t2"), "name": .string("New")]))
 }
+
+/// Keyboard Task 5: a row that runs a keymap command shows that command's chord in force; a row
+/// with no command shows none. ⌘K has no Save row, so Open settings stands in for it.
+@Test func testPaletteRowsCarryTheirChord() throws {
+    var context = ctx("db")
+    context.keymap = Keymap(overrides: ["window.settings": "⌃⌘S", "pane.close": ""])
+    let rows = CommandCatalog.entries(for: context)
+    #expect(try #require(rows.first { $0.id == "global.settings" }).chord == "⌃⌘S")
+    #expect(try #require(rows.first { $0.id == "global.env" }).chord == nil, "no command, no chord")
+    #expect(try #require(rows.first { $0.id == "db.close" }).chord == nil, "a cleared chord draws none")
+    #expect(CommandCatalog.command(id: "db.close")?.keyCommand == "pane.close")
+    let defaults = CommandCatalog.entries(for: ctx("db"))
+    #expect(try #require(defaults.first { $0.id == "db.close" }).chord == "⌘W")
+}

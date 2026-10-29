@@ -34,6 +34,7 @@ private func repoRoot() -> URL {
     // the org plane's Adopting state, which binds an account that already
     // exists on the machine into another organisation via shared registration.
     // set_local_provider added by 3b-viii for a local model endpoint (Decision 42).
+    // keyboard and set_keys added by keyboard Task 1: the keymap's read and its whole-map write.
     // The pin grows with the server, layer by layer. It is here because
     // the Swift side speaks to whatever binary `bin/` holds, and
     // `make app-test` does not depend on `make build` — so a tool added
@@ -43,12 +44,12 @@ private func repoRoot() -> URL {
                       "create_org", "create_project", "derive_config_dir", "editor_settings", "get_context", "get_session",
                       "git_account_add", "git_account_remove", "git_account_test", "git_device_poll",
                       "git_device_start", "git_gh_import", "git_gh_logins", "git_host_suggestions",
-                      "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set", "github_pull_requests",
+                      "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set", "github_pull_requests", "keyboard",
                       "list_accounts", "list_environments", "list_machine_providers",
                       "list_orgs", "list_projects", "list_providers", "list_sessions",
                       "read_session", "record_capacity", "record_session_parent", "remove_api_entry", "remove_database",
                       "remove_environment", "remove_project", "rename_environment", "rename_project",
-                      "set_api_entry", "set_browser_settings", "set_database_connection", "set_database_dsn", "set_editor_settings", "set_environment", "set_local_provider",
+                      "set_api_entry", "set_browser_settings", "set_database_connection", "set_database_dsn", "set_editor_settings", "set_environment", "set_keys", "set_local_provider",
                       "set_project", "set_project_agent_instructions",
                       "set_project_editor_settings", "set_provider", "unlink_provider", "update_api_entry",
                       "update_database", "update_org"])

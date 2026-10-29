@@ -6,6 +6,8 @@ import WakilKit
 /// this organisation's (Invariant 4).
 struct BrowserSettingsForm: View {
     let browser: SettingsBrowser
+    /// The keymap in force, for the Tabs hint that names Toggle Tab Column's chord.
+    @Environment(\.keymap) private var keymap
     /// What the confirmation names: the organisation's display name.
     let organisation: String
     /// The organisation's id: what Delete passes, so the action refuses if another is active by then.
@@ -109,7 +111,8 @@ struct BrowserSettingsForm: View {
             selected: browser.tabs == "vertical" ? "Vertical" : "Horizontal",
             identifier: { option in let choice = option.lowercased(); return "settings.browser.tabs.\(choice)" },
             refusalIdentifier: "settings.browser.tabs.refusal",
-            hint: "Vertical puts the tabs in a column at the pane's left; ⌃⌘S hides and shows it.",
+            hint: "Vertical puts the tabs in a column at the pane's left"
+                + (keymap.chord("browser.toggleTabColumn").map { "; \($0.text) hides and shows it." } ?? "."),
             save: { option in await save(["tabs": .string(option.lowercased())]) })
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings.browser.tabs")

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A first ⌘W on a pinned tab, waiting for its second (ruling 15). The view draws
-/// `BrowserPinnedClose.tip` while one is set.
+/// `BrowserPinnedClose.tip(_:)` while one is set.
 public struct BrowserCloseArm: Sendable, Equatable {
     public var pane: String
     public var tab: String
@@ -18,7 +18,10 @@ public struct BrowserCloseArm: Sendable, Equatable {
 /// tab, or after the window, arms again instead.
 public enum BrowserPinnedClose {
     public static let window: TimeInterval = 2
-    public static let tip = "Press ⌘W again to close"
+    /// The tip under an armed pinned tab, naming Close Tab's chord in force (`chord`, its text).
+    public static func tip(_ chord: String?) -> String {
+        chord.map { "Press \($0) again to close" } ?? "Choose Close Tab again to close"
+    }
 
     public enum Outcome: Sendable, Equatable { case arm, close }
 
