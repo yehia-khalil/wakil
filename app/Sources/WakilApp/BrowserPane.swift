@@ -11,6 +11,8 @@ import WebKit
 /// each tab's command and reports back through the seam. The page area is the one surface drawn as
 /// the web draws it — not themed.
 struct BrowserPane: View {
+    /// The keymap in force, for the tooltip that names a chord (keyboard Task 5).
+    @Environment(\.keymap) private var keymap
     let snapshot: BrowserSnapshot
     let pane: Pane
     /// The pane's width as drawn, which folds and hides the tab list.
@@ -499,7 +501,7 @@ struct BrowserPane: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Edit the address (⌘L)")
+        .help(keymap.help("Edit the address", "browser.focusAddress"))
         .accessibilityLabel("Address")
         .accessibilityValue(url)
         .accessibilityIdentifier("browser.address")

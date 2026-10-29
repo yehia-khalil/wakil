@@ -42,12 +42,13 @@ flowchart LR
   it. It has no test target, so nothing worth asserting is decided there.
 - **`WakilKit`** (`app/Sources/WakilKit/`) is everything else in Swift: `WindowModel`, the stores,
   `ActionRegistry`, the gate, the MCP client and server, and the harness.
+  `Keyboard/` holds the one keymap: every menu chord is a row there (Decision 50).
 - **`ActionRegistry.dispatch`** is the single path for every state change, whether a control, the
   agent, or a `--dispatch` script asked. It asks `writeGate` first and journals every outcome.
 - **The Go binaries** (`cmd/`, `internal/`) are headless capabilities behind MCP. The window starts
   five of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
   (`agentFacingServers`). `wakil-git` is started by both. `wakil-ticket` is window-owned only: not in `agentFacingServers`, so the agent reaches it through registry actions.
-- **What needs the operator** is counted from the last `ticket_in_flight` read (`ticketNeeds`), never stored; the rail, the Ticket label, the Landing and ⌘P read it. A **handed** conversation (Hand to agent, Decision 50) is an ordinary one started off screen; the registry asks a `handedLookup` beside the production lookup, and `handedAgentPrice` raises its push, sync, publish, merge and rebase.
+- **What needs the operator** is counted from the last `ticket_in_flight` read (`ticketNeeds`), never stored; the rail, the Ticket label, the Landing and ⌘P read it. A **handed** conversation (Hand to agent, Decision 51) is an ordinary one started off screen; the registry asks a `handedLookup` beside the production lookup, and `handedAgentPrice` raises its push, sync, publish, merge and rebase.
 - **`wakil-connect`** is one process per connection of the launching place's organization, started by the agent's
   `claude` process (`AgentConnectionsBox` builds its config). It fronts the organization's own MCP
   server, injects the credentials, and gates every call. See `go.md`.

@@ -69,6 +69,8 @@ public struct PaletteContext: Sendable, Equatable {
     /// Names: the focused browser pane's active tab, which *Rename Tab…* renames; nil with no browser
     /// pane focused, no tab, or a pull-request row (3d-i ruling 18: a listing, never named).
     public var browserActiveTab: PaletteSubject?
+    /// The keymap in force (keyboard Task 5): a row that runs a `KeyCommand` shows its chord.
+    public var keymap: Keymap
 
     public init(
         focusedPane: FocusedPane? = nil, apiSendInFlight: Bool = false,
@@ -77,8 +79,10 @@ public struct PaletteContext: Sendable, Equatable {
         editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
         editorActiveDiff: EditorActiveDiff? = nil, conversationOnScreen: Bool = false,
         activeGitRoot: String? = nil, editorActiveConflicted: Bool = false,
-        currentConversation: PaletteSubject? = nil, browserActiveTab: PaletteSubject? = nil
+        currentConversation: PaletteSubject? = nil, browserActiveTab: PaletteSubject? = nil,
+        keymap: Keymap = Keymap(overrides: [:])
     ) {
+        self.keymap = keymap
         self.currentConversation = currentConversation
         self.browserActiveTab = browserActiveTab
         self.activeGitRoot = activeGitRoot
@@ -149,6 +153,8 @@ public struct CatalogCommand: Sendable {
     public let available: @Sendable (PaletteContext) -> Bool
     /// A `.name` step's subject: what it renames, its name and its fallback. Nil for every other input.
     public var subject: @Sendable (PaletteContext) -> PaletteSubject? = { _ in nil }
+    /// The `KeyCommand` id this row does the same as, whose chord the row shows. Nil for most rows.
+    public var keyCommand: String? = nil
 }
 
 /// The curated ⌘K list. **Raw registry actions never appear**: each row is a verb the
@@ -245,7 +251,7 @@ public enum CommandCatalog {
         CatalogCommand(
             id: "global.settings", label: "Open settings", scope: .global,
             action: "settings_open", input: nil,
-            params: { _, _ in .object([:]) }, available: { _ in true }),
+            params: { _, _ in .object([:]) }, available: { _ in true }, keyCommand: "window.settings"),
         CatalogCommand(
             id: "global.newpane", label: "New pane…", scope: .global, action: "pane_open",
             input: .choice(.paneKinds, placeholder: "Pane kind"),
@@ -255,12 +261,14 @@ public enum CommandCatalog {
         CatalogCommand(
             id: "global.newConversation", label: "New conversation", scope: .global,
             action: "session_new", input: nil,
-            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
+            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen },
+            keyCommand: "conversation.new"),
         // Conversations 3 of 3: File ▸ Close Conversation's row (⌘⇧W), hidden on a Landing (ruling 6).
         CatalogCommand(
             id: "global.closeConversation", label: "Close conversation", scope: .global,
             action: "session_close", input: nil,
-            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
+            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen },
+            keyCommand: "conversation.close"),
         // Names, Calls made 10: the name step for the conversation on screen. Its params name it by
         // id, so the rename lands on it wherever the operator is when it runs; the step adds `name`.
         CatalogCommand(
@@ -283,7 +291,8 @@ public enum CommandCatalog {
         return (paneCommands + globalCommands).filter { $0.available(context) }.map { c in
             PaletteEntry(
                 id: c.id, group: .commands, title: c.label, subtitle: "", kindLabel: "command",
-                verb: c.input == nil ? "run" : "choose", action: action(c, context))
+                verb: c.input == nil ? "run" : "choose", action: action(c, context),
+                chord: c.keyCommand.flatMap { context.keymap.chord($0)?.text })
         }
     }
 
@@ -329,12 +338,13 @@ public enum CommandCatalog {
             available: { $0.editorActiveDiff?.group == group })
     }
 
-    /// Close pane, one per kind the spec offers it on. `pane_close` names its pane `id`.
+    /// Close pane, one per kind the spec offers it on. `pane_close` names its pane `id`. In these
+    /// panes ⌘W closes the pane too, so the row shows Close Pane's chord.
     private static func close(_ kind: String) -> CatalogCommand {
         CatalogCommand(
             id: "\(kind).close", label: "Close pane", scope: .pane(kind), action: "pane_close",
             input: nil, params: { c, _ in .object(["id": .string(c.focusedPane?.id ?? "")]) },
-            available: { $0.focusedPane != nil })
+            available: { $0.focusedPane != nil }, keyCommand: "pane.close")
     }
 
     /// A global command that switches to the chosen value, sent as `name`.

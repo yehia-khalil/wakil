@@ -2302,6 +2302,8 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         "mcp__wakil__ctx_editor_settings",
         // ctx_github_pull_requests, added by 3d-i: `.read`, agent-reachable, active org only.
         "mcp__wakil__ctx_github_pull_requests",
+        // ctx_keyboard: `.read`, agent-reachable; ctx_set_key and ctx_set_keys are operator-only.
+        "mcp__wakil__ctx_keyboard",
         "mcp__wakil__ctx_list_environments",
         "mcp__wakil__ctx_list_projects",
         // ctx_list_providers, added by Phase 2b-vi Task 12, is `.read`

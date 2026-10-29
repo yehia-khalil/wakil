@@ -111,14 +111,18 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
     /// A second action on the row, ⌘R (names, Calls made 11): a Running row's rename. Nil on
     /// every row that offers none.
     public var rename: PaletteRename?
+    /// The chord that does what this row does (keyboard Task 5), drawn at the row's end. Nil on
+    /// every row with no `KeyCommand` behind it, or whose command has no chord.
+    public var chord: String?
 
     public init(
         id: String, group: PaletteGroup, title: String, subtitle: String, kindLabel: String,
         verb: String, action: PaletteAction, isProduction: Bool = false, isError: Bool = false,
         isCaution: Bool = false, isDimmed: Bool = false, state: ConversationState? = nil,
         tier: PaletteTier = .ordinary, altAction: PaletteAction? = nil, altVerb: String? = nil,
-        rename: PaletteRename? = nil
+        rename: PaletteRename? = nil, chord: String? = nil
     ) {
+        self.chord = chord
         self.id = id
         self.group = group
         self.title = title

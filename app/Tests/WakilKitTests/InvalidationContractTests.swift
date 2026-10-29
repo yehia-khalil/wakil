@@ -209,6 +209,10 @@ private let orgIndependent: Set<String> = [
     // 3c-i: the search engine and start page are the operator's, in ~/.wakil/settings.json, across
     // every organisation; the cache is the box the browser actions read them from.
     "browserSettings", "browserSettingsCache",
+    // Keyboard: the keymap is the operator's, in ~/.wakil/settings.json, across every organisation.
+    "keymap", "keymapError",
+    // Keyboard Task 6: whether Settings → Keyboard's recorder holds the keys; the window's, not an org's.
+    "isRecordingKey",
     // 3c-i: the home directory the browser files sit under; the organisation is read from `organization` per use.
     "browserHome",
     // 3a-iii-a: the fetch loop runs for whatever roots the window has; its interval, sleep and the

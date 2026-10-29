@@ -692,6 +692,11 @@ extension WakilWindow {
                     saveBrowserSettings: { fields in await model.saveBrowserSettings(fields) },
                     clearBrowserData: { org in await model.clearBrowserData(org: org) },
                     browserPullRequestsAbsent: model.browserPullRequestsAbsent,
+                    keymap: model.keymap,
+                    keymapError: model.keymapError,
+                    setKey: { id, change in await model.setKey(id, change) },
+                    setKeys: { overrides in await model.setKeys(overrides) },
+                    recordingKey: { model.isRecordingKey = $0 },
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },

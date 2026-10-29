@@ -45,6 +45,22 @@ The folders and what each may use: `docs/architecture/wakilkit.md`.
 
 An action that starts a conversation is operator-only; a handed agent's price is `handedAgentPrice` (`Gate/WriteGate.swift`).
 
+### A new shortcut
+
+1. Add a `KeyCommand` row in `app/Sources/WakilKit/Keyboard/KeyCommands.swift`: stable id, title,
+   `KeyGroup`, `KeyPlace` and default chord. A default Decision 50 refuses, or one already held in the
+   same place, fails `KeymapTests`.
+2. Make `runKeyCommand` (`App/WindowModel+Keyboard.swift`) run it: a `browser.*` command through
+   `browserKeys`, any other by a `case`. Only a pane-bound command returns false, when no pane of its
+   kind has focus, so the key falls through; an anywhere command claims the key even when it does
+   nothing, as its menu item does. A command a focused web page must not keep goes in
+   `Keymap.beforePage`.
+3. The menus build from `KeyCommand.all` by group, so a row in the Pane, Editor, Window or Browser
+   group needs no `AppScene.swift` edit. Only a new `KeyGroup`, or a Conversation row (that menu
+   names its ids), needs a `KeyMenuItems` there. Never write a literal `.keyboardShortcut` or a
+   chord in a tooltip or a hint: read `model.keymap` or `\.keymap`.
+4. An e2e check for the press, or a line in `e2e/checks/uncoverable.tsv`.
+
 ### A new MCP binary
 
 1. `cmd/<name>/main.go`: `newServer()` with `mcp.NewServer` and `mcp.AddTool`, `main()` running it over

@@ -16,6 +16,7 @@ App -> Gate
 App -> Git
 App -> Harness
 App -> Identifiers
+App -> Keyboard
 App -> Layout
 App -> MCP
 App -> Panes
@@ -32,6 +33,7 @@ Command -> Api
 Command -> Context
 Command -> Git
 Command -> Identifiers
+Command -> Keyboard
 Command -> Layout
 Command -> MCP
 Command -> Panes
@@ -63,6 +65,7 @@ MCP -> Registry
 Registry -> Context
 Registry -> Gate
 Registry -> Harness
+Registry -> Keyboard
 Registry -> Layout
 Registry -> MCP
 Registry -> Panes

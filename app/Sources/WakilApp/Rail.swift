@@ -108,7 +108,8 @@ struct Rail: View {
         }
         .buttonStyle(.plain)
         .padding(.trailing, 8)
-        .help(held ? "Keep Panes Open  ⌃⌘R" : "Hide Panes  ⌃⌘R")
+        .help([held ? "Keep Panes Open" : "Hide Panes", model.keymap.chord("window.toggleRail")?.text]
+            .compactMap { $0 }.joined(separator: "  "))
         .accessibilityLabel(held ? "Keep panes open" : "Hide panes")
         .accessibilityIdentifier("rail.collapse")
     }

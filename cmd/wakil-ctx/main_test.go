@@ -1115,6 +1115,49 @@ func TestBrowserSettingsTools(t *testing.T) {
 	}
 }
 
+func TestKeyboardTools(t *testing.T) {
+	setupProject(t, `"local":{"databases":[]}`)
+	ctx := context.Background()
+	srvT, cliT := mcp.NewInMemoryTransports()
+	ss, err := newServer().Connect(ctx, srvT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "0"}, nil).Connect(ctx, cliT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	call := func(name string, args map[string]any) *mcp.CallToolResult {
+		t.Helper()
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool %s: %v", name, err)
+		}
+		return res
+	}
+	if res := call("keyboard", nil); res.IsError {
+		t.Fatalf("keyboard: %s", textOf(t, res))
+	} else if b, _ := json.Marshal(res.StructuredContent); string(b) != `{"appError":"","keys":{}}` {
+		t.Errorf("keyboard before any write = %s", b)
+	}
+	if res := call("set_keys", map[string]any{"keys": map[string]any{"pane.close": "⌃⌘W", "browser.reload": ""}}); res.IsError {
+		t.Fatalf("set_keys: %s", textOf(t, res))
+	}
+	if res := call("set_keys", map[string]any{"keys": map[string]any{"x": "R"}}); !res.IsError {
+		t.Fatal("a chord with no modifier and a letter key was accepted")
+	}
+	res := call("keyboard", nil)
+	if res.IsError {
+		t.Fatalf("keyboard: %s", textOf(t, res))
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if string(b) != `{"appError":"","keys":{"browser.reload":"","pane.close":"⌃⌘W"}}` {
+		t.Errorf("keyboard = %s", b)
+	}
+}
+
 func TestSetEnvironmentRefusedWhenPinned(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]},"local":{"databases":[]}`)
 	for _, pin := range []string{"WAKIL_PROJECT", "WAKIL_ENVIRONMENT"} {

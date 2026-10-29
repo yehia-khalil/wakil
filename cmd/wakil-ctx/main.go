@@ -330,6 +330,12 @@ type setEditorSettingsArgs struct {
 	GhostText   *bool   `json:"ghostText,omitempty" jsonschema:"false turns AI ghost-text off in every editor and query line; omit to leave unchanged"`
 }
 
+// setKeysArgs is the keymap's whole override map; no pointer, because an empty map is a value
+// (every default back).
+type setKeysArgs struct {
+	Keys map[string]string `json:"keys" jsonschema:"command id to chord, or to empty for unbound; replaces every stored override"`
+}
+
 // setBrowserSettingsArgs is the app-wide browser setting's edit (3c-i), pointers for the same
 // reason as setEditorSettingsArgs.
 type setBrowserSettingsArgs struct {
@@ -805,6 +811,15 @@ func newServer() *mcp.Server {
 			return nil, v, nil
 		})
 
+	// The keymap's overrides, beside the other app-wide settings in settings.json. The Swift
+	// keymap owns the ids, the defaults and the conflict rules; Go stores the map and checks only
+	// that each chord is well formed.
+	mcp.AddTool(s, &mcp.Tool{Name: "keyboard", Description: "Read the keyboard overrides: keys maps a command id to its chord (a modifier run in the order ⌃⌥⇧⌘ then one key, such as ⌃⌘W), or to empty when the command is unbound. A command absent from keys keeps its default. appError carries settings.json's error, whole, when it cannot be read; keys is then empty."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.KeyboardSettings, error) {
+			keys, appError := wakilcore.ReadKeys()
+			return nil, wakilcore.KeyboardSettings{Keys: keys, AppError: appError}, nil
+		})
+
 	// Added by 3d-i (Ruling 17): the active organisation's open pull requests, read only. It takes
 	// no organisation and returns no credential.
 	mcp.AddTool(s, &mcp.Tool{Name: "github_pull_requests", Description: "Read the active organisation's open GitHub pull requests: those it wrote (reason author) and those awaiting its review (reason review-requested), newest update first, from the organisation's GitHub account (github.com first). absent says why there is no list (no GitHub account, an SSH account, no token kept); a refusal or an unreachable host is an error. Read only; no credential is returned."},
@@ -823,6 +838,14 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi), startPage (an http or https URL, or empty for a blank page), searchSuggestions (true or false; off by default), tabs (horizontal or vertical), nameGroups (true or false; on by default), and pictureInPicture (true or false; on by default — a playing video floats when you leave its tab). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine, a tabs value other than horizontal or vertical, or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setBrowserSettingsArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage, SearchSuggestions: a.SearchSuggestions, Tabs: a.Tabs, NameGroups: a.NameGroups, PictureInPicture: a.PictureInPicture}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_keys", Description: "Replace the whole keyboard override map: keys maps a command id to its chord (a modifier run in the order ⌃⌥⇧⌘ then one key — a character, ↩ Tab Space Esc ⌫ ↑ ↓ ← →, or F1 to F19) or to empty for unbound. Whatever was stored before is dropped, so send every override. Refuses a malformed chord, naming the id and chord, and refuses to write over a settings.json that does not parse."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setKeysArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.WriteKeys(a.Keys); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

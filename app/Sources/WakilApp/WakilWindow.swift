@@ -564,6 +564,8 @@ struct WakilWindow: View {
                 palette.refresh()
             }
         }
+        // Keyboard Task 5: tooltips name the chord in force, from the window's keymap.
+        .environment(\.keymap, session?.model.keymap ?? Keymap(overrides: [:]))
         .onChange(of: session?.model.thoughts.count ?? 0) { _, new in
             if new > lastRowCount { lastRowAt = Date() }
             lastRowCount = new
