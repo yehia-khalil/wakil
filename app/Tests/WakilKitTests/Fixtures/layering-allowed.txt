@@ -33,6 +33,7 @@ Command -> Api
 Command -> Context
 Command -> Git
 Command -> Identifiers
+Command -> Keyboard
 Command -> Layout
 Command -> MCP
 Command -> Panes

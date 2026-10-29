@@ -19,6 +19,8 @@ import WakilKit
 /// takes the keyboard from the page or the address field (Rule 6) — but *New Group…* and a rename,
 /// whose name field arrives focused (Rule 3).
 struct BrowserTabColumn: View {
+    /// The keymap in force, for the tooltip that names a chord (keyboard Task 5).
+    @Environment(\.keymap) private var keymap
     let snapshot: BrowserSnapshot
     let favicon: (String) -> NSImage?
     /// Which sites are production and which the active environment's (3c-ii): each tagged tab's dot.
@@ -410,7 +412,7 @@ struct BrowserTabColumn: View {
         .focusable(false)
         .animation(.easeOut(duration: PaneStripStyle.hoverDuration), value: newTabHovered)
         .onHover { newTabHovered = $0 }
-        .help("New Tab (⌘T)")
+        .help(keymap.help("New Tab", "browser.newTab"))
         .accessibilityLabel("New Tab")
         .accessibilityIdentifier("browser.newTab")
     }

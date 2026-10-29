@@ -431,6 +431,8 @@ struct BrowserTabList: View {
 /// `Add Bookmark` (ruling 13); it is not bound here too, so the key has one owner, which acts on the
 /// focused browser pane and passes the key on anywhere else.
 struct BrowserBookmarkMenu: View {
+    /// The keymap in force, for the tooltip that names a chord (keyboard Task 5).
+    @Environment(\.keymap) private var keymap
     let choices: BrowserBookmarkChoices
     let dispatch: (String, [String: JSONValue]) -> Void
 
@@ -460,7 +462,8 @@ struct BrowserBookmarkMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(choices.bookmarked ? "Bookmarked — Remove Bookmark (⌘D)" : "Bookmarks — Bookmark This Page (⌘D)")
+        .help(keymap.help(choices.bookmarked ? "Bookmarked — Remove Bookmark" : "Bookmarks — Bookmark This Page",
+                           "browser.bookmark"))
         .accessibilityLabel("Bookmarks")
         .accessibilityValue(choices.bookmarked ? "bookmarked" : "")
         .accessibilityIdentifier("browser.bookmarks")

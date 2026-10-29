@@ -42,7 +42,31 @@ final class WakilAppDelegate: NSObject, NSApplicationDelegate {
     /// The one window's startup, from the moment it begins rather than the
     /// moment it completes. `nil` only before the scene's `.task` has run at
     /// all, when nothing has been created and there is nothing to tear down.
-    var startup: Task<WindowSession, Never>?
+    var startup: Task<WindowSession, Never>? {
+        didSet {
+            guard let startup, oldValue == nil else { return }
+            Task { menu.model = await startup.value.model }
+        }
+    }
+
+    /// The window's model once started, which the menu bar draws its chords from (keyboard Task 5).
+    let menu = MenuModel()
+
+    /// The keys the menu bar cannot carry (an F-key with no modifier), sent through `keyPressed`.
+    private var keyMonitor: Any?
+
+    /// A key-down the menu bar could not hold as a shortcut, when the keymap gives it a command:
+    /// taken here and pressed, and passed on if every command holding it declines. Every other
+    /// key goes on untouched, to the menu bar and the first responder as before.
+    private func takeUnmenuedKey(_ event: NSEvent) -> Bool {
+        guard let model = menu.model, let chord = KeyChord(event: event), KeyboardShortcut(chord: chord) == nil,
+              model.keymap.menuHolder(of: chord) != nil,
+              let startup else { return false }
+        Task { @MainActor in
+            if await !startup.value.model.keyPressed(chord) { WakilApplication.passOn(event) }
+        }
+        return true
+    }
 
     /// **Unsaved editor tabs ask first** (3b-i Task 9). `requestQuit()` answers true when nothing
     /// is unsaved and the quit goes on; otherwise the window draws Save / Don't Save / Cancel and
@@ -240,6 +264,11 @@ final class WakilAppDelegate: NSObject, NSApplicationDelegate {
         // the doc block for this method. Set before the window is touched so
         // no surface is ever configured under the system's appearance.
         NSApp.appearance = NSAppearance(named: .darkAqua)
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // `NSEvent` is not `Sendable`: the closure answers only whether it took the key.
+            let taken: Bool = MainActor.assumeIsolated { self?.takeUnmenuedKey(event) ?? false }
+            return taken ? nil : event
+        }
         if let window = NSApp.windows.first {
             configureWindow(window)
             return
@@ -367,221 +396,52 @@ struct WakilApplication: App {
         // It matches what the runbooks already assume: one window, opened
         // once, quit once.
         .commands {
+            // **Every item is a `KeyCommand`** (keyboard Task 5): the menus are built from the
+            // keymap's table and draw the chords in force, so a rebinding in Settings → Keyboard
+            // shows here at once. An item reaches the model the way `applicationShouldTerminate`
+            // does, through the delegate's startup task, so a press during launch waits for the
+            // session rather than being dropped. A menu command is also the one place a shortcut
+            // fires whatever holds focus: the composer, a query line, a terminal, the diff.
+            //
             // **⌘N is New Conversation** (conversations 2 of 3), in the slot New Window held:
-            // replacing `.newItem` still removes New Window. It reaches the model as the pane
-            // commands below do, so it cannot read whether a conversation is on screen and stays
-            // enabled; on a Landing `session_new` does nothing visible (ruling 5).
+            // replacing `.newItem` still removes New Window. It cannot read whether a
+            // conversation is on screen, so it stays enabled; on a Landing it does nothing.
             CommandGroup(replacing: .newItem) {
-                Button("New Conversation") {
-                    withModel { model in Task { await model.dispatchSessionNew() } }
-                }
-                .keyboardShortcut("n", modifiers: .command)
+                KeyMenuItems(delegate: delegate, commands: ["conversation.new"])
             }
             // This materialises the File menu, which SwiftUI fills with Close and Close All —
-            // either shuts the only window (see the Window menu's comment below). Replacing
-            // `.saveItem` keeps them out (plan 2, ruling 6), and its slot holds **Close
-            // Conversation ⇧⌘W** (conversations 3 of 3, ruling 6): `session_close` through the
-            // registry, pinned to the conversation on screen at the press. Like ⌘N it cannot read
-            // the screen, so it stays enabled, and on a Landing it does nothing.
+            // either shuts the only window. Replacing `.saveItem` keeps them out (plan 2, ruling
+            // 6), and its slot holds Close Conversation (conversations 3 of 3).
             CommandGroup(replacing: .saveItem) {
-                Button("Close Conversation") {
-                    withModel { model in Task { await model.dispatchSessionClose() } }
-                }
-                .keyboardShortcut("w", modifiers: [.command, .shift])
+                KeyMenuItems(delegate: delegate, commands: ["conversation.close"])
             }
-            // The two pane commands: ⌘⏎ toggles maximize on the focused
-            // pane and ⌘W closes it.
-            //
-            // They live in the scene rather than as buttons in the view
-            // because a menu command is the only place a shortcut can
-            // fire while focus is inside a text field. They reach the
-            // model the same way `applicationShouldTerminate` does:
-            // through the delegate's startup task, which exists from
-            // before the session does. A command pressed during launch
-            // therefore waits for the session rather than being dropped.
-            //
-            // In the **Window** menu, not File. Measured, not assumed: with
-            // `.newItem` removed and nothing else added, this app has no
-            // File menu at all — so putting the pane commands there
-            // materialises one, and SwiftUI fills it out with *Close* and
-            // *Close All* (⇧⌘W), either of which shuts the only window and
-            // leaves the app running with nothing on screen. Placed here
-            // the File menu holds New and Close Conversation alone, ⌘W belongs to *Close Pane*
-            // uniquely, and a pane command sits next to the other things
-            // that act on what is on screen.
+            // Pane, Editor and Window go in the **Window** menu, not File: with `.newItem` removed
+            // and nothing else added this app has no File menu of its own, and one materialised
+            // for them would gain *Close* and *Close All*, either of which shuts the only window.
+            // Here they sit next to the other things that act on what is on screen.
             CommandGroup(after: .windowArrangement) {
-                // In a focused editor pane on a diff tab, ⌘⏎ opens the diff's file instead (3b-iii).
-                Button("Maximize Pane") {
-                    withModel { model in Task { await model.commandReturn() } }
-                }
-                .keyboardShortcut(.return, modifiers: .command)
-                // 3b-i: in a focused editor pane ⌘W closes the active tab first, the pane once
-                // none is left; anywhere else it closes the pane, as before.
-                Button("Close Pane") {
-                    focusedPane { model, _ in await model.closeFocusedTabOrPane() }
-                }
-                .keyboardShortcut("w", modifiers: .command)
-                // 3b-i. ⌘T needs no focused pane: with no editor focused it opens a scratch tab in
-                // the first editor pane, or a new one.
-                Button("New Scratch Tab") {
-                    withModel { model in Task { await model.newScratch() } }
-                }
-                .keyboardShortcut("t", modifiers: .command)
-                // 3b-ii. ⌘B shows or hides the focused editor's Files; ⌘⇧F its Search. With no editor
-                // focused, the first editor pane, else a new one (editor_tree's own rule).
-                Button("Show Files") {
-                    withModel { model in Task { await model.toggleEditorColumn(.files) } }
-                }
-                .keyboardShortcut("b", modifiers: .command)
-                Button("Search Files") {
-                    withModel { model in Task { await model.toggleEditorColumn(.search) } }
-                }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
-                // 3b-iii. ⌘⇧G shows or hides the focused editor's Changes, on ⌘B's terms.
-                // 3c-i: in a focused browser pane ⌘⇧G is Find Previous; anywhere else, as before.
-                Button("Show Changes") {
-                    browserKey(.findPrevious) { model in await model.toggleEditorColumn(.changes) }
-                }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-                // 3b-i. ⌘S saves the focused editor's active tab; a scratch tab asks for a path.
-                Button("Save") {
-                    focusedPane { model, _ in await model.saveFocusedEditor() }
-                }
-                .keyboardShortcut("s", modifiers: .command)
-                Button("Toggle Density") {
-                    focusedPane { model, id in await model.toggleDensity(id: id) }
-                }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
-                // Task 14: ⌘⇧O opens the org plane. Verified free — the
-                // window binds ⌘↩, ⌘W, ⌘T, ⌘B, ⌘⇧F, ⌘⇧G, ⌘S, ⌘⇧D, ⌘P and ⌘K here — and, unlike the two pane commands
-                // above, this needs no focused pane: it must work from an
-                // org-less window with no canvas and nothing focused at
-                // all, which is exactly the state ⌘⇧O also opens into on
-                // its own (spec §8.5).
-                Button("Organisation…") {
-                    withModel { model in model.showOrgPlane = true }
-                }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-                // The palette: ⌘P opens or switches to, ⌘K runs a command.
-                // **Menu commands, not buttons in the window**, for the reason
-                // the pane commands above are: a menu command is the one place
-                // a shortcut fires whatever holds focus — the composer, a query
-                // line, a terminal, the diff. They used to be the window's
-                // `Open…` / `Actions…` buttons, which drew a control for a key;
-                // those are gone with the 2b-i stopgap. Pressed while the
-                // palette is open, either switches its mode (`modeKey`).
-                Button("Open…") {
-                    withModel { model in model.paletteKey(.open) }
-                }
-                .keyboardShortcut("p", modifiers: .command)
-                Button("Run a Command…") {
-                    withModel { model in model.paletteKey(.commands) }
-                }
-                .keyboardShortcut("k", modifiers: .command)
-                // 2e (#198). ⌘, is the platform's settings key and is
-                // free here: this app declares no `Settings` scene, which
-                // is what would otherwise claim it — and deliberately
-                // does not, because settings are a PANE on the canvas,
-                // not a separate window (Decision 30).
-                //
-                // Like *Organisation…* and unlike the two pane commands
-                // above, this needs no focused pane: it must work from a
-                // window with no canvas at all.
-                //
-                // It reaches the canvas through `openSettings`, which
-                // dispatches `settings_open` — Invariant 2 admits no
-                // second path to a state change, and a menu item that
-                // touched `LayoutStore` directly would be exactly that.
-                // Pressing it twice focuses the one pane rather than
-                // opening a second; that singleton lives in
-                // `LayoutStore.openSettings`, so `--dispatch` gets it too.
-                Button("Settings…") {
-                    withModel { model in Task { await model.openSettings() } }
-                }
-                .keyboardShortcut(",", modifiers: .command)
-                // §10's collapsible rail. ⌃⌘R is free (⌘R is Reload Page, a different chord; the
-                // system claims neither) and, like ⌘P, needs no focused pane. It dispatches
-                // `rail_set` through the model, so the agent's call and this press are one path.
-                Button("Toggle Rail") {
-                    withModel { model in Task { await model.toggleRail() } }
-                }
-                .keyboardShortcut("r", modifiers: [.control, .command])
+                KeyMenuItems(delegate: delegate, group: .pane)
+                Divider()
+                KeyMenuItems(delegate: delegate, group: .editor)
+                Divider()
+                KeyMenuItems(delegate: delegate, group: .window)
             }
-            // 3c-i. The browser's keys: each is the focused browser pane's action (`browserKey`), and
-            // anywhere else the key goes on to whatever holds the keyboard, as if this menu were not
-            // here — so every key keeps today's meaning outside a browser pane. ⌘T, ⌘W and ⌘⇧G are
-            // the items above (New Scratch Tab, Close Pane, Show Changes), which ask the browser first.
-            CommandMenu("Browser") {
-                Button("Reopen Closed Tab") { browserKey(.reopenTab) }
-                    .keyboardShortcut("t", modifiers: [.command, .shift])
-                Button("Open Location") { browserKey(.focusAddress) }
-                    .keyboardShortcut("l", modifiers: .command)
-                Button("Reload Page") { browserKey(.reload) }
-                    .keyboardShortcut("r", modifiers: .command)
-                Button("Back") { browserKey(.back) }
-                    .keyboardShortcut("[", modifiers: .command)
-                Button("Forward") { browserKey(.forward) }
-                    .keyboardShortcut("]", modifiers: .command)
-                Divider()
-                // Outside a browser pane ⌘D goes on to what holds the keyboard (the editor's own
-                // ⌘D, select the next match), as the other browser keys do (ruling 13).
-                Button("Add Bookmark") { browserKey(.bookmark) }
-                    .keyboardShortcut("d", modifiers: .command)
-                // The active tab's address, with a `Copied` tip; outside a browser pane the key goes
-                // on to what holds it (the editor's and the terminal's own ⌘⇧C stay theirs).
-                Button("Copy Page Address") { browserKey(.copyURL) }
-                    .keyboardShortcut("c", modifiers: [.command, .shift])
-                Divider()
-                Button("Find…") { browserKey(.find) }
-                    .keyboardShortcut("f", modifiers: .command)
-                Button("Find Next") { browserKey(.findNext) }
-                    .keyboardShortcut("g", modifiers: .command)
-                Divider()
-                Button("Zoom In") { browserKey(.zoomIn) }
-                    .keyboardShortcut("=", modifiers: .command)
-                Button("Zoom Out") { browserKey(.zoomOut) }
-                    .keyboardShortcut("-", modifiers: .command)
-                Button("Actual Size") { browserKey(.zoomReset) }
-                    .keyboardShortcut("0", modifiers: .command)
-                Divider()
-                Button("Show Next Tab") { browserKey(.nextTab) }
-                    .keyboardShortcut(.tab, modifiers: .control)
-                Button("Show Previous Tab") { browserKey(.previousTab) }
-                    .keyboardShortcut(.tab, modifiers: [.control, .shift])
-                Button("Next Tab") { browserKey(.nextTab) }
-                    .keyboardShortcut("]", modifiers: [.command, .shift])
-                Button("Previous Tab") { browserKey(.previousTab) }
-                    .keyboardShortcut("[", modifiers: [.command, .shift])
-                ForEach(1...8, id: \.self) { n in
-                    Button("Tab \(n)") { browserKey(.tab(n)) }
-                        .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
-                }
-                Button("Last Tab") { browserKey(.tab(9)) }
-                    .keyboardShortcut("9", modifiers: .command)
-                Divider()
-                Button("Toggle Tab Column") { browserKey(.toggleTabColumn) }
-                    .keyboardShortcut("s", modifiers: [.control, .command])
+            // 3c-i. The browser's keys, each the focused browser pane's. Anywhere else a key goes
+            // on to the next command holding it, then to whatever holds the keyboard (`press`).
+            CommandMenu(KeyGroup.browser.title) {
+                KeyMenuItems(delegate: delegate, group: .browser, breaks: Self.browserBreaks)
             }
         }
     }
 
-    /// A browser key (3c-i): the focused browser pane's, through `WindowModel.browserKey`. Anywhere
-    /// else it is `otherwise`, the key's meaning before 3c-i, or — for a key that had none of its
-    /// own in this menu bar — the key goes on to whatever holds the keyboard, as it would have with
-    /// no menu item to claim it (⌃Tab moving focus out of a text view, say).
-    private func browserKey(_ key: BrowserKey, otherwise: (@MainActor (WindowModel) async -> Void)? = nil) {
-        let event = NSApp.currentEvent
-        guard let startup = delegate.startup else { return }
-        Task { @MainActor in
-            let model = await startup.value.model
-            if await model.browserKey(key) { return }
-            if let otherwise { await otherwise(model) } else { Self.passOn(event) }
-        }
-    }
+    /// The Browser menu's separators, before these items: as it was drawn before the keymap.
+    private static let browserBreaks: Set<String> = [
+        "browser.bookmark", "browser.find", "browser.zoomIn", "browser.showNextTab", "browser.toggleTabColumn",
+    ]
 
     /// The key a menu item claimed, to the window's first responder. Not to a web view: one that
     /// holds the keyboard already offered the key to its page before the menu saw it.
-    @MainActor private static func passOn(_ event: NSEvent?) {
+    @MainActor static func passOn(_ event: NSEvent?) {
         guard let event, event.type == .keyDown, let window = event.window, window.isKeyWindow,
               let responder = window.firstResponder else { return }
         var view = responder as? NSView
@@ -591,31 +451,113 @@ struct WakilApplication: App {
         }
         responder.keyDown(with: event)
     }
+}
 
-    /// Runs `body` against the window's model, once it exists — the same
-    /// "reach the model through the delegate's startup task" plumbing
-    /// `focusedPane` below uses, minus that method's focused-pane
-    /// requirement, which this command has no use for.
-    private func withModel(_ body: @escaping @MainActor (WindowModel) -> Void) {
-        guard let startup = delegate.startup else { return }
-        Task { @MainActor in
-            let model = await startup.value.model
-            body(model)
+/// One menu's items, from the keymap's table: a `KeyGroup`'s commands, or the ids named. A view,
+/// not inline in `.commands`, so its body reads the keymap and is drawn again when it changes.
+private struct KeyMenuItems: View {
+    let delegate: WakilAppDelegate
+    let commands: [KeyCommand]
+    var breaks: Set<String> = []
+
+    init(delegate: WakilAppDelegate, group: KeyGroup, breaks: Set<String> = []) {
+        self.delegate = delegate
+        self.commands = KeyCommand.all.filter { $0.group == group }
+        self.breaks = breaks
+    }
+
+    init(delegate: WakilAppDelegate, commands ids: [String]) {
+        self.delegate = delegate
+        self.commands = KeyCommand.all.filter { ids.contains($0.id) }
+    }
+
+    var body: some View {
+        // The window's keymap once it has started, the defaults before.
+        let keymap = delegate.menu.model?.keymap ?? Keymap(overrides: [:])
+        ForEach(commands, id: \.id) { command in
+            if breaks.contains(command.id) { Divider() }
+            item(command, keymap: keymap)
         }
     }
 
-    /// Runs `body` against the focused pane, or does nothing when no pane
-    /// is focused. Both pane commands are "do this to whatever is focused",
-    /// and `layoutSnapshot.focusedId` is the single answer to that — read
-    /// at the moment the command fires rather than captured when the menu
-    /// was built, which would go stale the first time focus moved.
-    private func focusedPane(_ body: @escaping @MainActor (WindowModel, String) async -> Void) {
+    /// The menu bar's item for `command` (keyboard Task 5). The one item holding `chord` carries
+    /// it as its shortcut; any other item sharing it shows it as text in its title instead, since
+    /// SwiftUI gives a chord to one menu item only. A key press then resolves at the press
+    /// (`WindowModel.keyPressed`), so the shortcut works for every command holding the chord.
+    private func item(_ command: KeyCommand, keymap: Keymap) -> some View {
+        let chord = keymap.chord(command.id)
+        let holder = chord.map { keymap.menuHolder(of: $0) == command.id } ?? false
+        let shortcut = holder ? chord.flatMap(KeyboardShortcut.init(chord:)) : nil
+        let title = chord.map { shortcut == nil ? "\(command.title)\t\($0.text)" : command.title } ?? command.title
+        return Button(title) { press(command.id, chord: shortcut == nil ? nil : chord) }
+            .keyboardShortcut(shortcut)
+    }
+
+    /// An item chosen. Its key pressed (`chord`, on the item carrying it) resolves pane-first
+    /// through `keyPressed`; a click runs the item's own command. Either one declined, the key
+    /// goes on to whatever holds the keyboard, as if this menu were not here.
+    private func press(_ id: String, chord: KeyChord?) {
+        let event = NSApp.currentEvent
+        let typed = chord.flatMap { chord in event?.type == .keyDown ? chord : nil }
         guard let startup = delegate.startup else { return }
         Task { @MainActor in
             let model = await startup.value.model
-            guard let id = model.layoutSnapshot.focusedId else { return }
-            await body(model, id)
+            let acted = if let typed { await model.keyPressed(typed) } else { await model.runKeyCommand(id) }
+            if !acted { WakilApplication.passOn(event) }
         }
+    }
+}
+
+/// The window's model, for what the app delegate and the menu bar draw before a press reaches it:
+/// the keymap. Nil until the startup task has finished. Observable, so the menu bar follows it.
+@MainActor @Observable
+final class MenuModel {
+    var model: WindowModel?
+}
+
+extension KeyboardShortcut {
+    /// The menu bar's form of a chord, or nil for one it cannot draw (an F-key), which the
+    /// delegate's key monitor takes instead.
+    init?(chord: KeyChord) {
+        let key: KeyEquivalent
+        switch chord.key {
+        case .character(let c): key = KeyEquivalent(c)
+        case .returnKey: key = .return
+        case .tab: key = .tab
+        case .space: key = .space
+        case .escape: key = .escape
+        case .delete: key = .delete
+        case .up: key = .upArrow
+        case .down: key = .downArrow
+        case .left: key = .leftArrow
+        case .right: key = .rightArrow
+        case .function: return nil
+        }
+        var modifiers: EventModifiers = []
+        if chord.modifiers.contains(.control) { modifiers.insert(.control) }
+        if chord.modifiers.contains(.option) { modifiers.insert(.option) }
+        if chord.modifiers.contains(.shift) { modifiers.insert(.shift) }
+        if chord.modifiers.contains(.command) { modifiers.insert(.command) }
+        self.init(key, modifiers: modifiers)
+    }
+}
+
+private struct KeymapKey: EnvironmentKey {
+    static let defaultValue = Keymap(overrides: [:])
+}
+
+extension EnvironmentValues {
+    /// The keymap in force, for a view that names a chord without holding the model (keyboard Task 5).
+    var keymap: Keymap {
+        get { self[KeymapKey.self] }
+        set { self[KeymapKey.self] = newValue }
+    }
+}
+
+extension Keymap {
+    /// A tooltip naming a command's chord, `New Tab (⌘T)`; the label alone when it has none.
+    func help(_ label: String, _ id: String) -> String {
+        chord(id).map { "\(label) (\($0.text))" } ?? label
     }
 }
 

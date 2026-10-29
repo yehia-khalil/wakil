@@ -19,6 +19,15 @@ import Testing
         }
     }
 
+    /// The menu bar's one item per chord: the anywhere command's, else the first pane command's.
+    @Test func menuHolderPrefersTheAnywhereCommand() {
+        #expect(plain.menuHolder(of: c("⌘T")) == "editor.newScratch")
+        #expect(plain.menuHolder(of: c("⌘L")) == "browser.focusAddress", "no anywhere command holds ⌘L")
+        #expect(plain.menuHolder(of: c("⌃⌘J")) == nil)
+        let moved = Keymap(overrides: ["editor.newScratch": ""])
+        #expect(moved.menuHolder(of: c("⌘T")) == "browser.newTab", "the browser item takes it back")
+    }
+
     @Test func sharedChordResolvesPaneFirst() {
         #expect(plain.resolve(c("⌘T"), paneKind: "browser") == ["browser.newTab", "editor.newScratch"])
         #expect(plain.resolve(c("⌘T"), paneKind: "editor") == ["editor.newScratch"])

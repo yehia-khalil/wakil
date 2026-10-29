@@ -503,6 +503,13 @@ struct PalettePlane: View {
                         .foregroundStyle(tone.opacity(entry.isProduction ? 0.72 : 0.52))
                         .fixedSize()
                 }
+                // The command's chord (keyboard Task 5), in the subtitle's dimmed type.
+                if let chord = entry.chord {
+                    Text(chord)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(tone.opacity(dim ? 0.38 : 0.50))
+                        .fixedSize()
+                }
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 11)
@@ -533,7 +540,8 @@ struct PalettePlane: View {
     }
 
     private func accessibilityHint(_ entry: PaletteEntry, showsKind: Bool) -> String {
-        [entry.subtitle, showsKind ? entry.kindLabel : ""].filter { !$0.isEmpty }.joined(separator: ", ")
+        [entry.subtitle, showsKind ? entry.kindLabel : "", entry.chord ?? ""].filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 
     /// The title with the query's matched letters bright and the rest dim; with no query, the

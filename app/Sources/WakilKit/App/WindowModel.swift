@@ -5685,8 +5685,6 @@ public final class WindowModel {
     /// ⌘T: a scratch tab in the focused editor pane, else the first, else a new one — which then
     /// takes focus. Opening a pane opens it into the conversation, as `openPane` does.
     public func newScratch() async {
-        // 3c-i: in a focused browser pane ⌘T is a new tab; everywhere else, a scratch tab as before.
-        if await browserKey(.newTab) { return }
         var params: [String: JSONValue] = [:]
         if let pane = focusedEditor { params["pane"] = .string(pane) }
         let before = paneIds
@@ -5784,8 +5782,6 @@ public final class WindowModel {
     /// ⌘W: the active tab of a focused editor pane, else the pane, as before. A tab with unsaved
     /// edits asks first (`askUnsaved`, Task 9).
     public func closeFocusedTabOrPane() async {
-        // 3c-i: in a focused browser pane ⌘W closes its tab (the last one closes the pane).
-        if await browserKey(.closeTab) { return }
         guard let id = layoutSnapshot.focusedId else { return }
         let s = focusedEditor.flatMap { editor($0) } ?? .empty
         guard let pane = focusedEditor, editorCloseTarget(tabs: s.tabs.count) == .tab,
@@ -6912,7 +6908,8 @@ public final class WindowModel {
             browserActiveTab: focused.flatMap { f -> PaletteSubject? in
                 guard f.kind == "browser", let tab = browser(f.id)?.activeTab, tab.pullRequest == nil else { return nil }
                 return PaletteSubject(id: tab.id, name: tab.label, fallback: tab.pageLabel)
-            })
+            },
+            keymap: keymap)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.

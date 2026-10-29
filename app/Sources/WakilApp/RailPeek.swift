@@ -84,7 +84,7 @@ struct RailPeek: View {
         // is set before it and travels with it.
         .contentShape(Rectangle())
         .onTapGesture { Task { await model.setRailCollapsed(false) } }
-        .help("Show Panes  ⌃⌘R")
+        .help(["Show Panes", model.keymap.chord("window.toggleRail")?.text].compactMap { $0 }.joined(separator: "  "))
         .onHover { move(.spine, $0) }
         .offset(x: parallax.x - 6, y: parallax.y - CGFloat(RailSpine.lift))
         // One element, whatever the marks are: colour and length are not in the accessibility tree.

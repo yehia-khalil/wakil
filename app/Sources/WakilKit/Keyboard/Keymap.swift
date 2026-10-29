@@ -66,6 +66,14 @@ public struct Keymap: Sendable, Equatable {
         return places.compactMap { inForce[$0]?[chord] }
     }
 
+    /// The command whose menu item carries `chord` as its shortcut, since SwiftUI gives a chord to
+    /// one menu item only: the one in force anywhere, else the first in table order in force in
+    /// its pane. Nil when no command holds it.
+    public func menuHolder(of chord: KeyChord) -> String? {
+        if let id = inForce[.anywhere]?[chord] { return id }
+        return KeyCommand.all.first { inForce[$0.place]?[chord] == $0.id }?.id
+    }
+
     /// The overrides after giving `chord` (nil clears) to `id`. A command in the same place that
     /// held the chord loses it. The map stays minimal: entries equal to a default are dropped.
     public func assign(_ id: String, _ chord: KeyChord?) -> Result<Assignment, KeymapRefusal> {

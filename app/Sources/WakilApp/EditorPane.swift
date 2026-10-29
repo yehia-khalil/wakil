@@ -13,6 +13,8 @@ import WebKit
 /// (`WindowModel.editorBufferDidChange` / `editorViewDidReport`). Its own state is the save-as
 /// field's text and failure, and Compare's diff while it is open.
 struct EditorPane: View {
+    /// The keymap in force, for the tooltip that names a chord (keyboard Task 5).
+    @Environment(\.keymap) private var keymap
     let snapshot: EditorSnapshot
     let viewOptions: EditorViewOptions
     let showIgnored: Bool
@@ -360,7 +362,9 @@ struct EditorPane: View {
                 .foregroundStyle(EditorPaneStyle.text)
                 .opacity(column.shown ? 0.9 : 0.5)
                 .padding(.trailing, PaneStripStyle.glyphTrailing)
-                .help("Files ⌘B · Search ⌘⇧F · Changes ⌘⇧G")
+                .help([("Files", "editor.showFiles"), ("Search", "editor.searchFiles"), ("Changes", "editor.showChanges")]
+                    .map { label, id in keymap.chord(id).map { "\(label) \($0.text)" } ?? label }
+                    .joined(separator: " · "))
                 .accessibilityIdentifier("editor.column.toggle")
             PaneTabStrip(
                 ids: tabs.indices.map { "\($0)" },
