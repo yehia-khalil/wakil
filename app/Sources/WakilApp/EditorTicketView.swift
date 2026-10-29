@@ -150,7 +150,7 @@ struct EditorTicketView: View {
             // Only with more than one root does the view say which it follows.
             if state.roots.count > 1, let root {
                 Text((root as NSString).lastPathComponent).dimmed()
-                    .lineLimit(1).truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("editor.ticket.root")
             }
             Spacer()
@@ -182,9 +182,9 @@ struct EditorTicketView: View {
             Group {
                 if let conversation = at.conversation {
                     Button { Task { await dispatch("session_switch", ["conversation": .string(conversation)]) } } label: {
-                        HStack(spacing: 5) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
                             ChipDot(colour: handOffDotHue(at.dot), breathes: at.dot == .working)
-                            Text(at.label).lineLimit(1).truncationMode(.tail)
+                            Text(at.label).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.text.opacity(0.85))
@@ -276,10 +276,10 @@ struct EditorTicketView: View {
             ForEach(b.tickets, id: \.key) { t in
                 Button { Task { await dispatch("ticket_show", ["key": .string(t.key)]) } } label: {
                     VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: Space.s) {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                             Text(t.marked ? "●" : " ").foregroundStyle(EditorPaneStyle.violet)
                             Text(t.key).ticketKey()
-                            Text(t.title).lineLimit(1)
+                            Text(t.title).fixedSize(horizontal: false, vertical: true)
                             Spacer()
                             Text(t.status).dimmed()
                         }
@@ -354,15 +354,15 @@ struct EditorTicketView: View {
                     // Two lines so a narrow column never breaks the key (walk, 2026-10-27): the key
                     // whole and the title truncating, then the status pill and Go's state words.
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: Space.s) {
-                            Text(ticketInFlightRowLabel(r)).ticketKey().lineLimit(1).fixedSize()
-                            Text(r.title).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                            Text(ticketInFlightRowLabel(r)).ticketKey().fixedSize(horizontal: false, vertical: true)
+                            Text(r.title).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                         }
                         HStack(spacing: Space.s) {
                             TicketPill(label: r.status, hue: ticketStatusHue(r.status))
                             // Go composes the row's one state in words; it shows as it came.
                             Text(r.state).font(.system(size: 10.5, design: .monospaced)).dimmed()
-                                .lineLimit(1).truncationMode(.tail)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .padding(.vertical, 3)
@@ -537,9 +537,9 @@ struct EditorTicketView: View {
 
     private func prCard(_ pr: PullRequestState) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("#\(pr.number)").font(.system(size: 11, design: .monospaced))
-                Text(pr.title.isEmpty ? pr.head : pr.title).font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
+                Text(pr.title.isEmpty ? pr.head : pr.title).font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true)
             }
             // One element read as the PR's whole line: number, branches, state and checks.
             .accessibilityElement(children: .ignore)
@@ -551,13 +551,13 @@ struct EditorTicketView: View {
                 if let checks = ticketChecksPill(pr) { TicketPill(label: checks.label, hue: checks.hue) }
                 if !pr.base.isEmpty {
                     Text("→ \(pr.base)").font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(0.35)).lineLimit(1)
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.35)).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .accessibilityHidden(true)
             ForEach(Array(ticketFailingChecks(pr).enumerated()), id: \.offset) { _, c in
-                HStack(spacing: Space.s) {
-                    Text("✗ \(c.name)").foregroundStyle(TicketPill.colour(.red)).lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text("✗ \(c.name)").foregroundStyle(TicketPill.colour(.red)).fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     if let s = c.url, let url = URL(string: s) {
                         Button("details ↗") { openLink(url.absoluteString, NSEvent.modifierFlags.contains(.option)) }
@@ -591,10 +591,10 @@ struct EditorTicketView: View {
             // place — cut from the middle, so the line number always shows — and the replies; then
             // the comment's first words, wrapping to two lines.
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
                     TicketAvatar(name: t.comments.first?.author ?? "")
                     Text(row.place).font(.system(size: 10.5, design: .monospaced)).opacity(0.6)
-                        .lineLimit(1).truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: Space.s)
                     // A reply waits in the file's box to be sent, the operator's or an agent's.
                     if reviews.reads.drafts[t.id] != nil {
@@ -607,7 +607,7 @@ struct EditorTicketView: View {
                             .accessibilityIdentifier("editor.ticket.elsewhere:\(t.id)")
                     }
                 }
-                Text(row.words).font(.system(size: 11.5)).lineLimit(2).truncationMode(.tail)
+                Text(row.words).font(.system(size: 11.5))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 23)
             }
@@ -1105,10 +1105,10 @@ private struct TicketPill: View {
     var body: some View {
         HStack(spacing: 5) {
             Circle().fill(Self.colour(hue)).frame(width: 6, height: 6)
-            Text(label).font(.system(size: 10.5)).lineLimit(1)
+            Text(label).font(.system(size: 10.5)).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 7).padding(.vertical, 1)
-        .overlay(Capsule().strokeBorder(EditorPaneStyle.text.opacity(0.14)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(EditorPaneStyle.text.opacity(0.14)))
         .opacity(0.85)
     }
 }
