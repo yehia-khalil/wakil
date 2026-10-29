@@ -197,6 +197,17 @@ Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before 
 - **background-agents** `3b-ii-b-replace-cancel` intermittent: regex search over the 200 MiB haystack lands just past the 3 s settle; time it before it leaves quarantine.
 - **background-agents** Landing at 1000 wide overflows: content wider than the window, chip at x 777–1048 and capacity indicator at 894–1040 (`bg-agent-chip-over-landing` red).
 
+**phase-connections**
+
+- **connections** a second gated call in a conversation while one is on the plane is refused ("Another call in this conversation is already waiting…"), not queued.
+- **connections** no approval waits on a timer: an unanswered plane holds the agent's turn until answered or the agent is stopped.
+- **connections** quick tasks get no connections; only Claude Code sessions carry them.
+- **connections** the spoken flag is sticky for the turn: a typed message sent beside a spoken one still asks before a ticked write.
+- **connections** a change made from a terminal (`wakil-ctx`) reaches open conversations only after Settings is next read (a removal still refuses at once).
+- **connections** a restart for a connection change ends the idle agent's background shells and subagents; a sign-in change restarts every open conversation in the organisation, even one that never uses that connection.
+- **connections** Datadog and Amplitude (the fields sign-in) and Slack's pre-registered client never walked.
+- **connections** a per-project connection (a project on another PM tool than its organisation, open question 6) planned for, not built.
+
 **conversation-layouts**
 
 - **conversation-layouts** no reclamation: layout files for conversations gone from `list_sessions` are never dropped, so `~/.wakil/layouts` only grows.
@@ -471,7 +482,20 @@ Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before 
 
 - **conversations** The whole 7-row walk is unwalked ("Not walked"): two live agents in one place, switching mid-turn, approval from chip and Running row, quit/relaunch into Continue, production red, five dot colours.
 
+**phase-ticket-view**
+
+- **ticket-view** after a failed record, Next or Link write, a retry takes a keystroke: Enter on the same text sends nothing.
+- **ticket-view** a picked branch's read cannot be cancelled early; it stops at the 20 s limit.
+- **ticket-view** a key no project of the organisation claims shows only "No ticket found", not which project key is missing.
+- **ticket-view** linking does not read Jira's development panel (only an undocumented `dev-status` endpoint serves it); a PR whose head is in a fork is not matched; GitLab and Bitbucket PRs are not read.
+
 **rail-collapse**
 
 - **rail-collapse** Rows 4 to 8 unwalked: 6 pt right-edge peek strip, Reduce Motion crossfade, maximise while collapsed, collapsed state across relaunch, VoiceOver "Open panes" and agent `rail_set`.
 - **rail-collapse** Hover peek, its timings, slide, release, Reduce Motion and relaunch persistence are walk-only; no check reaches them (`rail.edge` in `uncoverable.tsv`).
+
+**ticket-work** (the umbrella design's pieces 4–6, designed 2026-10-25, not built)
+
+- **ticket-work** the steps row: a repo's declared process (Design · Plan · Build 4/9 · …) in the Ticket header, a step done when its evidence exists, never by a hand tick; rulings counted in the header with Keep / Overrule (the record already stores `rulings`).
+- **ticket-work** Then: after a merge, deploy or gate, one-click next moves — Run a CI dispatch (live, cancellable), Move the ticket, Draft a comment — from the repo's docs plus what the operator did last time; a time-tracking and presence footer when the organisation has those connections. Move waits on open question 15.
+- **ticket-work** people, recall and cost: reviewers suggested from who reviewed the repo before; a Not done line waiting on a person with Draft message; **Similar before** in the hand-off brief from `wakil-recall` (not drawn until then); per-ticket agent runs, tokens and provider.
