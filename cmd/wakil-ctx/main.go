@@ -174,6 +174,7 @@ type updateOrgArgs struct {
 	GitCommitInstructions *string `json:"gitCommitInstructions,omitempty" jsonschema:"how the agent writes commit messages here"`
 	GitPRInstructions     *string `json:"gitPRInstructions,omitempty" jsonschema:"how the agent writes PR titles and descriptions here"`
 	GitBranchInstructions *string `json:"gitBranchInstructions,omitempty" jsonschema:"how a workspace's branch is named here"`
+	MessageWakes          *int    `json:"messageWakes,omitempty" jsonschema:"Agents woken by messages: message-woken turns per operator message per workspace, 0 to 99 (0 never wakes); -1 clears it back to the default, 8"`
 }
 
 type setProjectAgentArgs struct {
@@ -182,6 +183,7 @@ type setProjectAgentArgs struct {
 	Commits      *string `json:"commits,omitempty" jsonschema:"the project's commit message instructions"`
 	PullRequests *string `json:"pullRequests,omitempty" jsonschema:"the project's PR instructions"`
 	Branches     *string `json:"branches,omitempty" jsonschema:"the project's branch naming instructions"`
+	MessageWakes *int    `json:"messageWakes,omitempty" jsonschema:"the project's own Agents woken by messages, 0 to 99; -1 clears it back to the organisation's"`
 }
 
 type gitSecretArgs struct {
@@ -1391,10 +1393,10 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests), written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests) and its Agents woken by messages, written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectAgentArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateProjectAgentInstructions(a.ProjectPath, wakilcore.ProjectAgentPatch{
-				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests, Branches: a.Branches,
+				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests, Branches: a.Branches, MessageWakes: a.MessageWakes,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
