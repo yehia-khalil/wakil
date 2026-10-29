@@ -485,6 +485,24 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(await store.branch(holding: "W2")?.branch == "ini-142-web")
     }
 
+    /// Walk 2026-10-29: refreshing a picked ticket reads its record again too — an agent's Next shows
+    /// without reopening the ticket.
+    @Test(.timeLimit(.minutes(1))) func refreshingAPickedTicketReadsItsRecordAgain() async throws {
+        let fake = FakeTicket()
+        func record(_ next: String) -> JSONValue {
+            .object(["key": .string("INI-142"), "next": .object(["id": .string("next"), "text": .string(next), "by": .string("agent")])])
+        }
+        await fake.set("ticket_branch", ticketBranchJSON())
+        await fake.set("ticket_record", record("Send the reply"))
+        let store = EditorTicketStore(ticket: fake)
+        await store.readShown(key: "INI-142", root: "/p/api", branch: "ini-142-login")
+        _ = try await store.readRecord(key: "INI-142")
+        #expect(await store.shownRecords()["INI-142"]?.next?.text == "Send the reply")
+        await fake.set("ticket_record", record("Push the commit"))
+        await store.refreshShown(key: "INI-142")
+        #expect(await store.shownRecords()["INI-142"]?.next?.text == "Push the commit")
+    }
+
     /// The Pull requests section's groups: one per repository, the shown branch's first, each PR once.
     @Test func aTicketsPullRequestsGroupByRepository() throws {
         func b(_ json: JSONValue) throws -> TicketBranchState {

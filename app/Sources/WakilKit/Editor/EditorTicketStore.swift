@@ -430,7 +430,11 @@ public actor EditorTicketStore {
     /// Reads a picked ticket's branch again (↻, a resolve, a push, a reply); nothing for a key not picked.
     public func refreshShown(key: String) async {
         guard let at = shownWhere[key] else { return }
+        // Its record too, when it is a ticket's (a keyless row's key is `<root>:<branch>`): an agent's
+        // Next or notes show without reopening the ticket (walk 2026-10-29). A failure is kept by readRecord.
+        async let record: Void = { if !key.contains(":"), !key.contains("#") { _ = try? await self.readRecord(key: key) } }()
         await readShown(key: key, root: at.root, branch: at.branch)
+        await record
     }
 
     /// Reads again each picked ticket's branch on `root` — on `branch` too, when given — not waited
