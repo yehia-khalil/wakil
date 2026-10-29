@@ -311,6 +311,12 @@ struct WakilWindow: View {
                     // last rows moved to the bottom-anchored stack below, above
                     // the bar (rule 8: an error is never clipped).
                     .padding(.bottom, 48)   // 2d-ii: the bar's height plus its gap — a pane ends above it
+                    // Walk 2026-10-29: while the conversation has a thread, a pane ends above the
+                    // thread's resting rows too — at rest it sat over the bottom-left of whatever pane
+                    // was there (a maximized editor's Ticket column), the two unreadable through each
+                    // other. A fixed reserve, not the thread's height, so nothing moves as rows arrive
+                    // or open; an opened row still rises over the canvas, at full opacity (§9).
+                    .padding(.bottom, session.model.thoughts.isEmpty ? 0 : ThoughtThread.restingReserve)
 
                     // 2d-ii: ONE bottom-anchored flow, so nothing on the bottom edge
                     // can overprint anything else however tall the bar grows (rule 8:

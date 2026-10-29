@@ -344,11 +344,7 @@ public actor LayoutStore {
     /// resize; every maximized pane follows.
     public func setVoid(_ frame: PaneFrame) {
         void = frame
-        guard var current = byScope[scope], !current.preMaximizeFrames.isEmpty else { return }
-        for index in current.panes.indices where current.preMaximizeFrames[current.panes[index].id] != nil {
-            current.panes[index].frame = frame
-        }
-        byScope[scope] = current
+        refitMaximized(scope)
     }
 
     // MARK: - Panes
@@ -886,9 +882,24 @@ public actor LayoutStore {
     }
 
     /// Makes `scope` the active arrangement, keeping the outgoing one.
+    ///
+    /// **Its maximized panes fill the void it comes on screen in** (walk 2026-10-29): `setVoid`
+    /// refits only the canvas on screen, so one brought back by a conversation switch — or read off
+    /// disk, as a new conversation's seed is — kept the void of another window size, and the window,
+    /// whose size had not changed, never refit it.
     public func switchScope(to scope: LayoutScope) {
         screen = scope
         if byScope[scope] == nil { byScope[scope] = LayoutSnapshot() }
+        refitMaximized(scope)
+    }
+
+    /// Every maximized pane of `scope` takes the void; their frames to restore to are untouched.
+    private func refitMaximized(_ scope: LayoutScope) {
+        guard var current = byScope[scope], !current.preMaximizeFrames.isEmpty else { return }
+        for index in current.panes.indices where current.preMaximizeFrames[current.panes[index].id] != nil {
+            current.panes[index].frame = void
+        }
+        byScope[scope] = current
     }
 
     /// Makes `scope` the active arrangement, MOVING `outgoing`'s into it (re-walk finding #4):
@@ -900,6 +911,7 @@ public actor LayoutStore {
         byScope[scope] = carried
         focusOrder[scope] = focusOrder.removeValue(forKey: outgoing)
         screen = scope
+        refitMaximized(scope)
     }
 
     /// Puts `pane` into the current scope's arrangement exactly as it is:
@@ -932,6 +944,8 @@ public actor LayoutStore {
     /// back knowing where to put it again.
     public func load(_ snapshot: LayoutSnapshot, for scope: LayoutScope) {
         byScope[scope] = snapshot
+        // A maximized pane saved at another window size fills this one's void (`switchScope`).
+        refitMaximized(scope)
         focusOrder[scope] = nil  // a restored arrangement starts with no focus history
         // Keep ids unique against whatever was restored: a persisted
         // `db-7` must not be handed out again this session.

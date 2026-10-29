@@ -25,6 +25,12 @@ struct ThoughtThread: View {
     let parallax: CGSize
     @Binding var disclosure: ThreadDisclosure
 
+    /// The room the canvas leaves under itself while a conversation has a thread (walk 2026-10-29):
+    /// the folded thread's height — four 15pt rows, the "N earlier" line and the panel's padding —
+    /// plus the 6pt gap above the status lines. Panes end above it, so the thread at rest is never
+    /// drawn over a pane being read.
+    static let restingReserve: CGFloat = CGFloat(ThreadDisclosure.visibleCount) * 15 + 11 + 14 + 6
+
     var body: some View {
         let (shown, earlier) = disclosure.visible(rows)
         VStack(alignment: .leading, spacing: 0) {

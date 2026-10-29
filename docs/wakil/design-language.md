@@ -381,6 +381,12 @@ expands a row in place (an open row toggles closed from its label), and the thre
 row. The bottom edge is one flow: the thread, then status and notes, then the composer bar
 beside the account indicator.*
 
+*Amended 2026-10-29 (ticket noticing walk): at rest the thread no longer sits over a pane. While
+the conversation has a thread the canvas ends above its four resting rows (a fixed reserve, so
+nothing moves as rows arrive); a row opened or hovered still rises over the canvas at full opacity.
+The operator found a done conversation's rows drawn over a maximized editor's Ticket column, both
+unreadable.*
+
 ## 10. Layout model
 
 Approved 2026-09-03. Resolves the tension between layout D (tabs + columns) and the void
