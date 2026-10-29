@@ -127,7 +127,7 @@ type Effective struct {
 // FindRoot returns the root whose repo name is repo.
 func FindRoot(p Project, repo string) (Root, bool) {
 	for _, r := range p.Roots {
-		if RepoName(r) == repo {
+		if p.repoName(r) == repo {
 			return r, true
 		}
 	}
@@ -275,7 +275,7 @@ func ptr[T any](v T) *T { return &v }
 func repoNames(p Project) []string {
 	var out []string
 	for _, r := range p.Roots {
-		out = append(out, RepoName(r))
+		out = append(out, p.repoName(r))
 	}
 	return out
 }
@@ -305,7 +305,7 @@ func ValidateRecipes(p Project) error {
 	sort.Strings(names)
 	repos := map[string]bool{}
 	for _, r := range p.Roots {
-		repos[RepoName(r)] = true
+		repos[p.repoName(r)] = true
 	}
 	for _, n := range names {
 		if !recipeNamePattern.MatchString(n) {
@@ -314,7 +314,7 @@ func ValidateRecipes(p Project) error {
 		problems = append(problems, recipeProblems("recipe "+strconv.Quote(n), p.Recipes[n], false, p, repos)...)
 	}
 	for _, root := range p.Roots {
-		repo := RepoName(root)
+		repo := p.repoName(root)
 		where := "repo " + strconv.Quote(repo)
 		if root.DoesntRun && (root.Recipe != "" || root.Overrides != nil) {
 			add("%s is marked doesn't run, so it cannot also name a recipe or override one; clear one or the other.", where)
@@ -471,7 +471,7 @@ func needsCycle(p Project) string {
 			continue
 		}
 		eff, _ := MergeRecipe(p.Recipes[root.Recipe], deref(root.Overrides))
-		edges[RepoName(root)] = eff.Needs
+		edges[p.repoName(root)] = eff.Needs
 	}
 	for n, r := range p.Recipes {
 		if IsSharedService(r) {
@@ -564,7 +564,7 @@ func ApplyRecipePatch(project *Project, patch RecipePatch) error {
 	for repo, run := range patch.Repos {
 		found := false
 		for i := range project.Roots {
-			if RepoName(project.Roots[i]) == repo {
+			if project.repoName(project.Roots[i]) == repo {
 				project.Roots[i].RepoRun = run
 				found = true
 			}

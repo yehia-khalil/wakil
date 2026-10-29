@@ -22,6 +22,8 @@ type Project struct {
 	Agent *ProjectAgentInstructions `json:"agent,omitempty"`
 	// Recipes is how the project's repos run (workspaces piece 2), by name; a root names one.
 	Recipes map[string]Recipe `json:"recipes,omitempty"`
+	// dir is the folder relative root paths are read from (SetDir); never written.
+	dir string
 }
 
 type Root struct {
@@ -323,6 +325,7 @@ func LoadProject(path string) (*Project, error) {
 	if p.Name == "" || p.Org == "" {
 		return nil, fmt.Errorf("project.json missing name or org")
 	}
+	p.SetDir(path)
 	return &p, nil
 }
 

@@ -115,6 +115,9 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"create_environment",
 		"rename_environment",
 		"remove_environment",
+		// Workspaces piece 2: how a repo runs.
+		"recipe_detect", "recipe_draft_all", "recipe_effective", "recipe_save",
+		"recipe_plan", "recipe_ready_wait", "ports_allocate", "compose_override",
 	})
 }
 
