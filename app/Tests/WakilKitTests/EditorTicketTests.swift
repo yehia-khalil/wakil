@@ -645,6 +645,110 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
 }
 
 /// A ticket that needs the operator is listed once, under Waiting on you (walk, 2026-10-28).
+/// The per-ticket lists' edge cases (walk 2026-10-29), so a ticket is never listed twice again.
+@Suite struct TicketViewListsEdgeCaseTests {
+    private func lists(_ waiting: [InFlightRowState], _ inFlight: [InFlightRowState],
+                       handoffs: [String: TicketHandOffLive] = [:], drafts: [String: TicketDraftState] = [:])
+        -> (waiting: [TicketNeedsRow], inFlight: [TicketNeedsRow]) {
+        ticketViewLists(InFlightState(waitingOnYou: waiting, inFlight: inFlight), handoffs: handoffs, drafts: drafts)
+    }
+
+    /// Whatever the rows, no ticket is listed twice, in one list or across both.
+    private func listedOnce(_ l: (waiting: [TicketNeedsRow], inFlight: [TicketNeedsRow])) -> Bool {
+        let ids = (l.waiting + l.inFlight).map(\.id)
+        return Set(ids).count == ids.count
+    }
+
+    @Test func nothingInFlightListsNothing() {
+        let l = lists([], [])
+        #expect(l.waiting.isEmpty && l.inFlight.isEmpty)
+    }
+
+    /// Two PRs of one ticket both wait on the operator: one row, the second a real "+1 more".
+    @Test func twoWaitingPRsOfOneTicketAreOneRow() {
+        let a = InFlightRowState(key: "INI-142", root: "/r/api", branch: "a", pr: 1, failing: ["unit"])
+        let b = InFlightRowState(key: "INI-142", root: "/r/api", branch: "b", pr: 2, threads: ["T1"])
+        let l = lists([a, b], [a, b])
+        #expect(l.waiting.map(\.id) == ["INI-142"] && l.inFlight.isEmpty)
+        #expect(l.waiting.first?.rows.count == 2)
+        #expect(l.waiting.first?.urgent.words == "#2 · 1 comment · +1 more")
+        #expect(listedOnce(l))
+    }
+
+    /// One PR number in two repositories of one ticket: two rows of the ticket, never merged as one PR.
+    @Test func oneNumberInTwoRepositoriesIsTwoRowsOfOneTicket() {
+        let api = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142", pr: 1, repo: "github.com/initech/api")
+        let web = InFlightRowState(key: "INI-142", root: "/r/web", branch: "ini-142", pr: 1, repo: "github.com/initech/web")
+        let l = lists([], [api, web])
+        #expect(l.inFlight.map(\.id) == ["INI-142"])
+        #expect(l.inFlight.first?.rows.count == 2)
+        #expect(listedOnce(l))
+    }
+
+    /// A keyless PR is its own row, by repository and number; two keyless PRs with one number in two
+    /// repositories are two rows; one Go lists in both lists is one, with no "+1 more" for itself.
+    @Test func keylessPRsAreRowsByRepositoryAndNumber() {
+        let api = InFlightRowState(key: "", root: "/r/api", branch: "speed", pr: 7, repo: "github.com/initech/api", failing: ["lint"])
+        let web = InFlightRowState(key: "", root: "/r/web", branch: "speed", pr: 7, repo: "github.com/initech/web")
+        let l = lists([api], [api, web])
+        #expect(l.waiting.map(\.id) == ["github.com/initech/api#7"])
+        #expect(l.waiting.first?.urgent.words == "#7 · lint failing")
+        #expect(l.inFlight.map(\.id) == ["github.com/initech/web#7"])
+        #expect(listedOnce(l))
+    }
+
+    /// A ticket with only a local branch, no PR, is in flight and says so.
+    @Test func aLocalBranchOnlyTicketIsInFlight() {
+        let local = InFlightRowState(key: "INI-160", root: "/r/api", branch: "ini-160")
+        let l = lists([], [local])
+        #expect(l.inFlight.map(\.id) == ["INI-160"])
+        #expect(l.inFlight.first?.urgent.words == "local branch")
+    }
+
+    /// A ticket Go lists only under In flight moves to Waiting on you when its handed agent waits,
+    /// and is not drawn under In flight as well.
+    @Test func aWaitingAgentMovesItsTicketToWaiting() {
+        let row = InFlightRowState(key: "INI-170", root: "/r/api", branch: "ini-170", pr: 4,
+                                   handoffs: [HandoffRefState(id: "h1", conversation: "c1")])
+        let l = lists([], [row], handoffs: ["c1": .waiting])
+        #expect(l.waiting.map(\.id) == ["INI-170"] && l.inFlight.isEmpty)
+        #expect(l.waiting.first?.urgent.words == "agent waiting")
+        // Its agent working is in flight, not waiting on the operator.
+        let working = lists([], [row], handoffs: ["c1": .working])
+        #expect(working.inFlight.map(\.id) == ["INI-170"] && working.waiting.isEmpty)
+    }
+
+    /// An agent's state, carried by every row of its ticket, is said once.
+    @Test func anAgentOnTwoRowsIsSaidOnce() {
+        let ref = HandoffRefState(id: "h1", conversation: "c1")
+        let a = InFlightRowState(key: "INI-142", root: "/r/api", branch: "a", pr: 1, handoffs: [ref])
+        let b = InFlightRowState(key: "INI-142", root: "/r/web", branch: "b", pr: 2, repo: "github.com/initech/web", handoffs: [ref])
+        let l = lists([], [a, b], handoffs: ["c1": .failed])
+        #expect(l.waiting.first?.urgent.words == "agent failed")
+    }
+
+    /// A drafted thread reads as its draft, not again as a comment, and a row Go lists twice does not
+    /// count its draft twice.
+    @Test func aDraftCountsOnceAsADraft() {
+        let row = InFlightRowState(key: "INI-142", root: "/r/api", branch: "a", pr: 1, threads: ["T1"])
+        let l = lists([row], [row], drafts: ["T1": TicketDraftState(text: "Fixed", by: "operator")])
+        #expect(l.waiting.first?.urgent.words == "1 draft to send")
+    }
+
+    /// Waiting on you is most urgent first, then newest; In flight likewise.
+    @Test func eachListIsMostUrgentThenNewestFirst() {
+        let older = InFlightRowState(key: "INI-1", root: "/r/api", branch: "x", pr: 1, failing: ["unit"], activity: "2026-10-27T09:00:00Z")
+        let newer = InFlightRowState(key: "INI-2", root: "/r/api", branch: "y", pr: 2, failing: ["unit"], activity: "2026-10-28T09:00:00Z")
+        let comment = InFlightRowState(key: "INI-3", root: "/r/api", branch: "z", pr: 3, threads: ["T9"], activity: "2026-10-20T09:00:00Z")
+        let quietOld = InFlightRowState(key: "INI-4", root: "/r/api", branch: "p", pr: 4, activity: "2026-10-01T09:00:00Z")
+        let quietNew = InFlightRowState(key: "INI-5", root: "/r/api", branch: "q", pr: 5, activity: "2026-10-02T09:00:00Z")
+        let l = lists([older, newer, comment], [older, newer, comment, quietOld, quietNew])
+        #expect(l.waiting.map(\.id) == ["INI-3", "INI-2", "INI-1"])
+        #expect(l.inFlight.map(\.id) == ["INI-5", "INI-4"])
+        #expect(listedOnce(l))
+    }
+}
+
 /// Walk 2026-10-29: the Ticket view's lists are tickets, not branches or PRs — one row per ticket, as
 /// the Landing's: Waiting on you when its most urgent state needs the operator, else In flight.
 @Test func theTicketViewListsEachTicketOnce() {
