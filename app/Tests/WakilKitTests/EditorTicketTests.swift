@@ -645,6 +645,17 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
 }
 
 /// A ticket that needs the operator is listed once, under Waiting on you (walk, 2026-10-28).
+/// Walk 2026-10-29: a PR card names its branch — `head → base` — so two PRs of one ticket read apart.
+@Test func aPRCardNamesItsBranches() {
+    func pr(_ head: String, _ base: String) -> PullRequestState {
+        PullRequestState(number: 2, title: "Second", head: head, base: base)
+    }
+    #expect(ticketPRBranches(pr("AQ247-141-second", "main")) == "AQ247-141-second → main")
+    #expect(ticketPRBranches(pr("", "main")) == "→ main")
+    #expect(ticketPRBranches(pr("AQ247-141-second", "")) == "AQ247-141-second")
+    #expect(ticketPRBranches(pr("", "")) == nil)
+}
+
 /// The per-ticket lists' edge cases (walk 2026-10-29), so a ticket is never listed twice again.
 @Suite struct TicketViewListsEdgeCaseTests {
     private func lists(_ waiting: [InFlightRowState], _ inFlight: [InFlightRowState],

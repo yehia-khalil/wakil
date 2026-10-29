@@ -589,8 +589,8 @@ struct EditorTicketView: View {
                 let state = ticketPRStatePill(pr)
                 TicketPill(label: state.label, hue: state.hue)
                 if let checks = ticketChecksPill(pr) { TicketPill(label: checks.label, hue: checks.hue) }
-                if !pr.base.isEmpty {
-                    Text("→ \(pr.base)").font(.system(size: 10, design: .monospaced))
+                if let branches = ticketPRBranches(pr) {
+                    Text(branches).font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(EditorPaneStyle.text.opacity(0.35)).fixedSize(horizontal: false, vertical: true)
                 }
             }

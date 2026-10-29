@@ -568,6 +568,17 @@ public func ticketLookedLine(_ looked: [String]) -> String? {
 
 /// A pull request's line: `#212  ini-142-login → main      open · checks 7/9 · 1 failing`.
 /// Checks show only when it has some: passed of all, then the failing.
+/// A PR card's branches (walk 2026-10-29): `head → base`, so two PRs of one ticket read apart; either
+/// alone when the other is unknown; nil with neither.
+public func ticketPRBranches(_ pr: PullRequestState) -> String? {
+    switch (pr.head.isEmpty, pr.base.isEmpty) {
+    case (false, false): "\(pr.head) → \(pr.base)"
+    case (true, false): "→ \(pr.base)"
+    case (false, true): pr.head
+    case (true, true): nil
+    }
+}
+
 public func ticketPRLine(_ pr: PullRequestState) -> String {
     var state = pr.state.isEmpty ? "open" : pr.state.lowercased()
     if !pr.checks.isEmpty {
