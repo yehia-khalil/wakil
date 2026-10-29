@@ -45,7 +45,7 @@ The operator's CLI, **not an MCP server** (`cmd/wakil/main.go`). Subcommand fami
 
 - `secrets set | set-db | set-api` — puts a credential in the Keychain under `wakil:<org>:<ref>`.
   Secret values arrive on stdin, never argv.
-- `org create | set | list | rm` (`orgcmd.go`) — `~/.wakil/orgs/<org>/org.json`.
+- `org create | set | list | rm` (`orgcmd.go`) — `~/.wakil/orgs/<org>/org.json`. `rm` names the org's WebKit store and its saved browser passwords (`BrowserLoginsPresent`, `browserlogins.go`: `find-generic-password -s`, attributes only, no value, no prompt) as residue and deletes neither.
 - `provider add | list | rm | config-dir | home | credentials | mint` (`providercmd.go`,
   `providercredentials.go`) — provider records under the org's `providers/`. The window runs
   `wakil provider credentials` to read an account's credentials (`WakilCLICredentialsLookup`) and
@@ -66,6 +66,10 @@ Tools: `get_context`, `list_projects`, `set_project`, `set_environment`, `list_e
 `list_providers`, `config_tree`, `list_orgs`, `create_org`, `update_org`, `derive_config_dir`,
 `list_accounts`, `list_machine_providers`, `add_provider`, `unlink_provider`, `set_database_dsn`,
 `remove_database`, `adopt_provider`.
+
+`github_pull_requests` (3d-i) is read-only: the active organisation's open pull requests, written by
+it or awaiting its review, through its GitHub account; it says why there is no list (no account, an
+SSH account, no token) rather than failing. The browser's pull-request group reads it.
 
 The editor settings: `editor_settings` answers both tiers; `set_editor_settings` takes `showIgnored`
 (app-wide); `set_project_editor_settings` takes `heavyFolders`, the whole list (per project).

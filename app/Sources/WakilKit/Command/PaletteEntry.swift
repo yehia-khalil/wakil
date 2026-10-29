@@ -39,6 +39,27 @@ public enum PaletteAction: Sendable, Equatable {
     /// A project file: the window opens it in the focused or first editor pane, or a new one
     /// (`editor_open` with no pane).
     case openInEditor(path: String)
+    /// The palette's name step for a subject (names, Calls made 10).
+    case pushName(PaletteRename)
+}
+
+/// One rename the palette's name step runs: `action` dispatched with `params` plus `"name"`
+/// (empty clears). `current` is the name shown, which the step arrives filled with; `fallback` is
+/// what clearing shows instead.
+public struct PaletteRename: Sendable, Equatable {
+    public let action: String
+    public let params: JSONValue
+    public let current: String
+    public let fallback: String
+    public let placeholder: String
+
+    public init(action: String, params: JSONValue, current: String, fallback: String, placeholder: String) {
+        self.action = action
+        self.params = params
+        self.current = current
+        self.fallback = fallback
+        self.placeholder = placeholder
+    }
 }
 
 /// One row in ⌘P or ⌘K.
@@ -68,11 +89,15 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
     public var isDimmed: Bool
     /// A live conversation's row draws its state's dot; every other row is nil and draws none.
     public var state: ConversationState?
+    /// A second action on the row, ⌘R (names, Calls made 11): a Running row's rename. Nil on
+    /// every row that offers none.
+    public var rename: PaletteRename?
 
     public init(
         id: String, group: PaletteGroup, title: String, subtitle: String, kindLabel: String,
         verb: String, action: PaletteAction, isProduction: Bool = false, isError: Bool = false,
-        isCaution: Bool = false, isDimmed: Bool = false, state: ConversationState? = nil
+        isCaution: Bool = false, isDimmed: Bool = false, state: ConversationState? = nil,
+        rename: PaletteRename? = nil
     ) {
         self.id = id
         self.group = group
@@ -86,5 +111,6 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
         self.isCaution = isCaution
         self.isDimmed = isDimmed
         self.state = state
+        self.rename = rename
     }
 }

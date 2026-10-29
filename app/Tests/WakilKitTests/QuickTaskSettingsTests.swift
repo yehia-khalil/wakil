@@ -95,3 +95,10 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect((try? AttributedString(markdown: quickTasksAbout,
                                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) != nil)
 }
+
+@Test func settingsOrgDecodesConversationNamesOnByDefault() throws {
+    let bare = try JSONDecoder().decode(SettingsOrg.self, from: Data(#"{"id":"acme"}"#.utf8))
+    #expect(bare.conversationNames == true)
+    let off = try JSONDecoder().decode(SettingsOrg.self, from: Data(#"{"id":"acme","conversationNames":false}"#.utf8))
+    #expect(off.conversationNames == false)
+}

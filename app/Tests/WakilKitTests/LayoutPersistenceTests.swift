@@ -897,7 +897,36 @@ private func oneNamedPane(_ title: String) -> LayoutSnapshot {
     let pane = await store.open(kind: "browser", title: "Browser")
     #expect(await store.browserTabs(id: pane.id) == nil)
     let tabs = [BrowserSavedTab(id: "t", url: "https://t.example/", title: "T")]
-    await store.setBrowserTabs(id: pane.id, to: tabs, active: "t")
+    await store.setBrowserTabs(id: pane.id, to: tabs, active: "t", groups: [], columnHidden: false)
     let got = await store.browserTabs(id: pane.id)
     #expect(got?.tabs == tabs && got?.active == "t")
+}
+
+// MARK: - 3d-i: groups, pins and the column
+
+@Test func aLayoutFrom3cDecodesWithNoGroups() throws {
+    let json = #"{"id":"p","kind":"browser","title":"Browser","frame":{"x":1,"y":2,"width":3,"height":4},"#
+        + #""browserTabs":[{"id":"t1","url":"https://a.example/","title":"A"},{"id":"t2","url":"https://b.example/","title":"B"}],"#
+        + #""browserActiveTab":"t2"}"#
+    let pane = try JSONDecoder().decode(Pane.self, from: Data(json.utf8))
+    #expect(pane.browserGroups == nil && pane.browserColumnHidden == nil)
+    let tabs = try #require(pane.browserTabs)
+    #expect(tabs.count == 2)
+    #expect(tabs.allSatisfy { $0.group == nil && $0.opener == nil && $0.pin == nil && !$0.keptLoose })
+}
+
+/// Names (Task 12): a 3c layout and a 3d-i layout, neither of which knew tab names, decode with none.
+@Test func a3cAnd3dILayoutDecodeWithNoName() throws {
+    let frame = #"{"id":"p","kind":"browser","title":"Browser","frame":{"x":1,"y":2,"width":3,"height":4},"#
+    let from3c = frame + #""browserTabs":[{"id":"t1","url":"https://a.example/","title":"A"}],"browserActiveTab":"t1"}"#
+    let from3dI = frame
+        + #""browserTabs":[{"id":"t1","url":"https://a.example/","title":"A","group":"g1","opener":"t2","pin":"p1234abcd","keptLoose":true}],"#
+        + #""browserActiveTab":"t1","browserGroups":[],"browserColumnHidden":false}"#
+    for json in [from3c, from3dI] {
+        let pane = try JSONDecoder().decode(Pane.self, from: Data(json.utf8))
+        let tabs = try #require(pane.browserTabs)
+        #expect(tabs.count == 1 && tabs[0].name == nil && tabs[0].title == "A")
+    }
+    let dI = try #require(try JSONDecoder().decode(Pane.self, from: Data(from3dI.utf8)).browserTabs?.first)
+    #expect(dI.group == "g1" && dI.pin == "p1234abcd" && dI.keptLoose)
 }

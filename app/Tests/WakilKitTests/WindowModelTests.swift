@@ -2289,6 +2289,8 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // below. It reports a database's Keychain entry NAME and never a
         // credential's value, which is what puts it beside
         // `ctx_list_providers` rather than beside the org-plane four.
+        // Names: `.control` and agent-reachable, for the agent's own conversation.
+        "mcp__wakil__conversation_rename",
         "mcp__wakil__ctx_browser_settings",
         "mcp__wakil__ctx_config_tree",
         // ctx_editor_settings, added by 3b-v (Decision 38): `.read` and
@@ -2296,6 +2298,8 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // `ctx_set_project_editor_settings`, are `.control` and
         // operator-only, so they are absent here like `ctx_update_org`.
         "mcp__wakil__ctx_editor_settings",
+        // ctx_github_pull_requests, added by 3d-i: `.read`, agent-reachable, active org only.
+        "mcp__wakil__ctx_github_pull_requests",
         "mcp__wakil__ctx_list_environments",
         "mcp__wakil__ctx_list_projects",
         // ctx_list_providers, added by Phase 2b-vi Task 12, is `.read`
@@ -2978,6 +2982,24 @@ extension JSONValue: ExpressibleByDictionaryLiteral {
     #expect(withPrompt.first?.title == "why does the booking")
     let bare = WindowModel.sessionItems(from: [["id": .string("s2"), "provider": .string("main")]])
     #expect(bare.first?.title == "s2")
+}
+
+/// A stored name titles a past conversation by its lineage root: operator, then ai, then the CLI's title.
+@Test func aStoredNameTitlesAPastConversationByItsRoot() async throws {
+    let row: JSONValue = ["id": .string("s9"), "provider": .string("main"), "lineageRoot": .string("r1"),
+                          "title": .string("CLI title"), "firstPrompt": .string("hello")]
+    func title(_ names: [String: StoredConversationName]) -> String? {
+        PaletteItems.sessionItems(from: [row], names: names).first?.title
+    }
+    #expect(title(["r1": StoredConversationName(ai: "Model")]) == "Model")
+    #expect(title(["r1": StoredConversationName(operator: "Mine", ai: "Model")]) == "Mine")
+    #expect(title(["other": StoredConversationName(ai: "Model")]) == "CLI title")
+}
+
+@Test func aRowWithNoStoredNameKeepsTodaysTitle() async throws {
+    let rows: [JSONValue] = [["id": .string("s1"), "provider": .string("main"), "firstPrompt": .string("why")]]
+    #expect(PaletteItems.sessionItems(from: rows, names: ["s1": StoredConversationName(ai: "X")]).first?.title == "why")
+    #expect(PaletteItems.sessionItems(from: rows).first?.title == "why")
 }
 
 /// 2d-i: a session's first prompt is what was sent, which may carry the

@@ -1,0 +1,19 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"http://127.0.0.1:1"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"dispatch":{"action":"pane_close","params":{"id":"settings-1"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-2","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-2","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-2","url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-2","field":"tabs[1].title","equals":"Page B"}}
+{"expect":{"pane":"browser-2","field":"groups[0].name","contains":"127.0.0.1:"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"Could not connect to the server."}}
+{"expect":{"pane":"browser-2","field":"groups[0].name","contains":"127.0.0.1:"}}

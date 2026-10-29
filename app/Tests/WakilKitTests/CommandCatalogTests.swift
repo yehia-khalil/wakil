@@ -223,3 +223,39 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     #expect(!CommandCatalog.entries(for: PaletteContext(focusedPane: FocusedPane(id: "db-1", kind: "db")))
         .contains { $0.title == "Print page" })
 }
+
+// Names, Calls made 10: ⌘K's Rename Conversation… pushes the name step for the conversation on screen.
+@Test func renameConversationIsOfferedOnlyWithAConversationOnScreen() throws {
+    #expect(!CommandCatalog.entries(for: PaletteContext()).contains { $0.id == "global.renameConversation" })
+    let subject = PaletteSubject(id: "c1", name: "Mine", fallback: "Model")
+    let entry = try #require(CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true, currentConversation: subject))
+        .first { $0.id == "global.renameConversation" })
+    #expect(entry.title == "Rename Conversation…")
+    #expect(entry.action == .pushName(PaletteRename(
+        action: "conversation_rename", params: .object(["conversation": .string("c1")]),
+        current: "Mine", fallback: "Model", placeholder: "Conversation name")))
+    let c = try #require(CommandCatalog.command(id: "global.renameConversation"))
+    #expect(c.input == .name(placeholder: "Conversation name"))
+}
+
+// Names, spec §3: ⌘K's Rename Tab… pushes the name step for the focused browser pane's active tab,
+// prefilled with its label; clearing would show its page label.
+@Test func renameTabIsOfferedOnAFocusedBrowserPaneWithAnActiveTab() throws {
+    let browser = FocusedPane(id: "browser-1", kind: "browser")
+    #expect(!CommandCatalog.entries(for: PaletteContext(focusedPane: browser)).contains { $0.id == "browser.renameTab" })
+    let subject = PaletteSubject(id: "t2", name: "Billing", fallback: "Stripe Dashboard")
+    let entry = try #require(CommandCatalog.entries(for: PaletteContext(focusedPane: browser, browserActiveTab: subject))
+        .first { $0.id == "browser.renameTab" })
+    #expect(entry.title == "Rename Tab…")
+    #expect(entry.action == .pushName(PaletteRename(
+        action: "browser_rename_tab", params: .object(["pane": .string("browser-1"), "tab": .string("t2")]),
+        current: "Billing", fallback: "Stripe Dashboard", placeholder: "Tab name")))
+    // Another pane kind in focus offers none, whatever the context carries.
+    #expect(!CommandCatalog.entries(for: PaletteContext(
+        focusedPane: FocusedPane(id: "db-1", kind: "db"), browserActiveTab: subject)).contains { $0.id == "browser.renameTab" })
+    let c = try #require(CommandCatalog.command(id: "browser.renameTab"))
+    #expect(c.input == .name(placeholder: "Tab name"))
+    #expect(c.scope == .pane("browser"))
+    #expect(c.params(PaletteContext(focusedPane: browser, browserActiveTab: subject), "New")
+        == .object(["pane": .string("browser-1"), "tab": .string("t2"), "name": .string("New")]))
+}

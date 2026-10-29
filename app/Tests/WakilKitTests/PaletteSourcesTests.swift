@@ -517,3 +517,16 @@ private func sessionRow(_ id: String, parent: String? = nil) -> JSONValue {
     #expect(rows.map(\.group) == [.running, .openPanes])
     #expect(rows.last?.state == nil, "a row that is not a conversation carries no dot")
 }
+
+// Names, Calls made 11: each Running row offers ⌘R, the name step for its conversation.
+@Test func runningRowsCarryTheirRename() async {
+    let place = Place(organization: "initech", project: "api", environment: "staging")
+    let source = RunningConversationsSource(conversations: {
+        [LiveConversation(id: "c-1", session: "s-1", place: place, title: "Mine", titleSource: .operator_,
+                          fallbackTitle: "Model", state: .idle, onScreen: false, lastActivity: Date())]
+    })
+    let rows = await source.entries()
+    #expect(rows.first?.rename == PaletteRename(
+        action: "conversation_rename", params: .object(["conversation": .string("c-1")]),
+        current: "Mine", fallback: "Model", placeholder: "Conversation name"))
+}

@@ -23,6 +23,21 @@ public struct EditorActiveDiff: Sendable, Equatable {
     }
 }
 
+/// What the palette can rename (names, Calls made 10): a conversation — its id, the name shown, and
+/// what clearing would show instead (`LiveConversation.fallbackTitle`) — or a browser tab: its id,
+/// its `label` and its `pageLabel`.
+public struct PaletteSubject: Sendable, Equatable {
+    public var id: String
+    public var name: String
+    public var fallback: String
+
+    public init(id: String, name: String, fallback: String) {
+        self.id = id
+        self.name = name
+        self.fallback = fallback
+    }
+}
+
 /// A snapshot of the window state the catalog's predicates and params read. Built by the
 /// window when ⌘K opens and again whenever that state moves, so a command appears or goes
 /// while the palette is open (a send starts → Cancel appears).
@@ -49,6 +64,11 @@ public struct PaletteContext: Sendable, Equatable {
     public var conversationOnScreen: Bool
     /// 3a-iv: the root the Branch segment is about (`WindowModel.activeBranchRoot`); nil with no git root.
     public var activeGitRoot: String?
+    /// Names: the conversation on screen, which *Rename Conversation…* renames; nil on a Landing.
+    public var currentConversation: PaletteSubject?
+    /// Names: the focused browser pane's active tab, which *Rename Tab…* renames; nil with no browser
+    /// pane focused, no tab, or a pull-request row (3d-i ruling 18: a listing, never named).
+    public var browserActiveTab: PaletteSubject?
 
     public init(
         focusedPane: FocusedPane? = nil, apiSendInFlight: Bool = false,
@@ -56,8 +76,11 @@ public struct PaletteContext: Sendable, Equatable {
         hasEnvironments: Bool = false, projectCount: Int = 0, providerCount: Int = 0,
         editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
         editorActiveDiff: EditorActiveDiff? = nil, conversationOnScreen: Bool = false,
-        activeGitRoot: String? = nil, editorActiveConflicted: Bool = false
+        activeGitRoot: String? = nil, editorActiveConflicted: Bool = false,
+        currentConversation: PaletteSubject? = nil, browserActiveTab: PaletteSubject? = nil
     ) {
+        self.currentConversation = currentConversation
+        self.browserActiveTab = browserActiveTab
         self.activeGitRoot = activeGitRoot
         self.editorActiveConflicted = editorActiveConflicted
         self.focusedPane = focusedPane
@@ -98,6 +121,10 @@ public enum CommandInput: Sendable, Equatable {
     /// A genuinely open value. `recentKey` names this window's recent entries, shown as
     /// suggestions and never as a restriction (rule 9).
     case text(placeholder: String, recentKey: String)
+    /// A name for something that already has one (names, Calls made 10): the step arrives filled
+    /// with the shown name, selected; an empty line clears. No recents. The row that offers it
+    /// carries the subject as `.pushName(PaletteRename)`, since only the window knows the name.
+    case name(placeholder: String)
 }
 
 /// Which commands a command sits among: the focused pane's kind's, or the global ones.
@@ -120,6 +147,8 @@ public struct CatalogCommand: Sendable {
     /// The dispatch params given the context and the step's value (nil when no input).
     public let params: @Sendable (PaletteContext, String?) -> JSONValue
     public let available: @Sendable (PaletteContext) -> Bool
+    /// A `.name` step's subject: what it renames, its name and its fallback. Nil for every other input.
+    public var subject: @Sendable (PaletteContext) -> PaletteSubject? = { _ in nil }
 }
 
 /// The curated ⌘K list. **Raw registry actions never appear**: each row is a verb the
@@ -159,6 +188,20 @@ public enum CommandCatalog {
 
         // 3c-i (final review I6): the spec's "⌘K → Print page" — the system's print panel.
         pane("browser.print", "Print page", "browser", "browser_print"),
+        // Names, spec §3: the name step for the focused pane's active tab, named by pane and tab id so
+        // the rename lands on it wherever the operator is when it runs; the step adds `name`.
+        CatalogCommand(
+            id: "browser.renameTab", label: "Rename Tab…", scope: .pane("browser"),
+            action: "browser_rename_tab", input: .name(placeholder: tabNamePlaceholder),
+            params: { c, value in
+                var params: [String: JSONValue] = [
+                    "pane": .string(c.focusedPane?.id ?? ""), "tab": .string(c.browserActiveTab?.id ?? ""),
+                ]
+                if let value { params["name"] = .string(value) }
+                return .object(params)
+            },
+            available: { $0.browserActiveTab != nil },
+            subject: { $0.browserActiveTab }),
 
         CatalogCommand(
             id: "editor.language", label: "Set language…", scope: .pane("editor"),
@@ -218,6 +261,18 @@ public enum CommandCatalog {
             id: "global.closeConversation", label: "Close conversation", scope: .global,
             action: "session_close", input: nil,
             params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
+        // Names, Calls made 10: the name step for the conversation on screen. Its params name it by
+        // id, so the rename lands on it wherever the operator is when it runs; the step adds `name`.
+        CatalogCommand(
+            id: "global.renameConversation", label: "Rename Conversation…", scope: .global,
+            action: "conversation_rename", input: .name(placeholder: conversationNamePlaceholder),
+            params: { c, value in
+                var params: [String: JSONValue] = ["conversation": .string(c.currentConversation?.id ?? "")]
+                if let value { params["name"] = .string(value) }
+                return .object(params)
+            },
+            available: { $0.currentConversation != nil },
+            subject: { $0.currentConversation }),
     ]
 
     /// Focused pane's commands first (catalog order), then global; unavailable ones dropped.
@@ -228,10 +283,21 @@ public enum CommandCatalog {
         return (paneCommands + globalCommands).filter { $0.available(context) }.map { c in
             PaletteEntry(
                 id: c.id, group: .commands, title: c.label, subtitle: "", kindLabel: "command",
-                verb: c.input == nil ? "run" : "choose",
-                action: c.input == nil
-                    ? .dispatch(action: c.action, params: c.params(context, nil))
-                    : .pushStep(commandId: c.id))
+                verb: c.input == nil ? "run" : "choose", action: action(c, context))
+        }
+    }
+
+    /// A command's row action: a dispatch, a step to push, or — a name — the name step for the
+    /// subject the context names (only the window knows a name, so the row carries it).
+    private static func action(_ c: CatalogCommand, _ context: PaletteContext) -> PaletteAction {
+        switch c.input {
+        case nil: return .dispatch(action: c.action, params: c.params(context, nil))
+        case .name(let placeholder):
+            let subject = c.subject(context)
+            return .pushName(PaletteRename(
+                action: c.action, params: c.params(context, nil), current: subject?.name ?? "",
+                fallback: subject?.fallback ?? "", placeholder: placeholder))
+        case .choice?, .text?: return .pushStep(commandId: c.id)
         }
     }
 

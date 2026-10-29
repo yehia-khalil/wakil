@@ -76,7 +76,9 @@ public enum BrowserSuggestions {
 
         // Open tabs: strip order on ties (the sort is stable).
         let tabHits = tabs.enumerated().compactMap { index, tab -> (Int, Int, BrowserTab)? in
-            guard !tab.url.isEmpty, let s = score(url: tab.url, title: tab.label) else { return nil }
+            // Found by its name or its page's title; titled with what the tab is called.
+            let text = tab.name.map { "\($0) \(tab.pageLabel)" } ?? tab.label
+            guard !tab.url.isEmpty, let s = score(url: tab.url, title: text) else { return nil }
             return (s, index, tab)
         }.sorted { $0.0 != $1.0 ? $0.0 > $1.0 : $0.1 < $1.1 }
         for (_, _, tab) in tabHits where rows.count < tabLimit && seen.insert(tab.url).inserted {
