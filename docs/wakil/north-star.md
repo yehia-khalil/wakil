@@ -285,6 +285,7 @@ live app; *accepted* means it was marked met without one.
 | **Connections** | An organization's MCP servers — Settings → Connections, `wakil-connect` fronting each one with the credentials in place, the operator's Allow agent per tool | — | — |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
 | **Names** | Conversations named by the quick model and renamed anywhere; browser tabs renamed | — | 3d-i (browser half) |
+| **Keyboard** | One keymap; Settings → Keyboard rebinds menu commands | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

@@ -124,6 +124,9 @@ public let operatorOnlyActions: Set<String> = [
     "browser_print",
     // 3c-i. Which search engine and start page the operator's browser uses is theirs, as the editor's are.
     "ctx_set_browser_settings",
+    // Which key does what is the operator's, as the editor's and the browser's settings are; the
+    // agent reads the keymap through ctx_keyboard.
+    "ctx_set_key", "ctx_set_keys",
     // 3c-i. Putting back a browser pane's saved tabs is the window's own relaunch step; the
     // agent opens and selects tabs through the browser actions instead.
     "browser_restore",
@@ -372,6 +375,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator changes the browser's search engine, start "
             + "page, search suggestions and picture in picture. You may READ them: ctx_browser_settings answers the settings in force. "
             + "Ask the operator to change them in the settings pane (\u{2318},)."
+    case "ctx_set_key", "ctx_set_keys":
+        return "\(toolName): only the operator changes which key runs which command. You may READ "
+            + "the keymap: ctx_keyboard answers the overrides in force. Ask the operator to change "
+            + "it in Settings → Keyboard (\u{2318},)."
     case "ctx_set_editor_settings", "ctx_set_project_editor_settings":
         return "\(toolName): only the operator changes editor settings. Autosave "
             + "decides when their files are written, the font, wrap and tabs are how they read and "

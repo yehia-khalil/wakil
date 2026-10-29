@@ -75,6 +75,15 @@ struct SettingsPane: View {
     var clearBrowserData: (_ org: String) async -> String? = { _ in nil }
     /// 3d-i: why the active organisation has no pull-request group, under Browser → Tabs; nil, it has one.
     var browserPullRequestsAbsent: String?
+    /// Keyboard Task 6: the keymap in force and settings.json's error, for the Keyboard node.
+    var keymap = Keymap(overrides: [:])
+    var keymapError: String?
+    /// Changes one command's chord through `ctx_set_key`.
+    var setKey: (String, KeyChange) async -> KeySetOutcome = { _, _ in .took(nil) }
+    /// Writes the whole override map (Undo, Restore All); answers the refusal or nil.
+    var setKeys: ([String: String]) async -> String? = { _ in nil }
+    /// Whether a chord box is recording, so the window's own key monitor stands aside.
+    var recordingKey: (Bool) -> Void = { _ in }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
     /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
@@ -404,6 +413,7 @@ struct SettingsPane: View {
             VStack(alignment: .leading, spacing: 2) {
                 row(.editor, label: "Editor", depth: 0)
                 row(.browser, label: "Browser", depth: 0)
+                row(.keyboard, label: "Keyboard", depth: 0)
                 row(.organisation, label: tree?.org.label ?? "Organisation", depth: 0)
                 row(.providers, label: "Providers", depth: 0, badge: tree.map { "\($0.providers.count)" })
 
@@ -569,7 +579,7 @@ struct SettingsPane: View {
     /// never on appear, so a selection left inside a branch the operator closed stays hidden.
     private func revealSelection() {
         switch selection {
-        case .organisation, .providers, .editor, .browser, .projects: return
+        case .organisation, .providers, .editor, .browser, .keyboard, .projects: return
         case .project: expansion.projectsOpen = true
         case .projectEditor(let project), .environment(let project, _):
             expansion.reveal(project: project)
@@ -1053,6 +1063,10 @@ struct SettingsPane: View {
                 save: saveBrowserSettings, clearData: clearBrowserData,
                 pictureInPictureUnavailable: BrowserPictureInPicture.unavailableLine(
                     missing: BrowserPictureInPictureSupport.missing))
+        case .keyboard:
+            KeyboardSettingsForm(
+                keymap: keymap, error: keymapError, setKey: setKey, setKeys: setKeys,
+                recordingKey: recordingKey)
         case .projectEditor(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 EditorProjectSettingsForm(
@@ -2925,6 +2939,7 @@ enum SettingsNode: Hashable {
     case providers
     case editor
     case browser
+    case keyboard
     case projectEditor(String)
 
     /// A stable fragment for this node's accessibility identifier.
@@ -2940,6 +2955,7 @@ enum SettingsNode: Hashable {
         case .projects: return "projects"
         case .editor: return "editor"
         case .browser: return "browser"
+        case .keyboard: return "keyboard"
         case .projectEditor(let name): return "projectEditor.\(name)"
         case .project(let name): return "project.\(name)"
         case .environment(let project, let environment):
@@ -2993,6 +3009,8 @@ enum SettingsNode: Hashable {
             return ["Wakil", "Editor"]
         case .browser:
             return ["Wakil", "Browser"]
+        case .keyboard:
+            return ["Wakil", "Keyboard"]
         case .projectEditor(let name):
             return [organisation, "Projects", name, "Editor"]
         case .project(let name):

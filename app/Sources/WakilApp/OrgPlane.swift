@@ -268,10 +268,12 @@ struct OrgPlane: View {
                 HStack(alignment: .firstTextBaseline) {
                     microLabel("Organisation")
                     Spacer()
-                    Text("⌘⇧O")
-                        .font(.system(size: 9, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundStyle(coolWhite.opacity(0.52))
+                    if let chord = model.keymap.chord("window.organisation") {
+                        Text(chord.text)
+                            .font(.system(size: 9, design: .monospaced))
+                            .tracking(1.2)
+                            .foregroundStyle(coolWhite.opacity(0.52))
+                    }
                 }
 
                 // `OrgFirstRun.dc.html`: the primary sentence is always

@@ -473,6 +473,17 @@ public final class WindowModel {
     /// What the browser actions read; `WindowSession` points it at the wiring's.
     public var browserSettingsCache = BrowserSettingsCache()
 
+    /// The keymap in force, read through `ctx_keyboard` at launch and after every change
+    /// (`WindowModel+Keyboard.swift`). The defaults until the first read lands.
+    public internal(set) var keymap = Keymap(overrides: [:])
+
+    /// settings.json's error, whole, when the keymap could not be read; the defaults are then in force.
+    public internal(set) var keymapError: String?
+
+    /// True while Settings → Keyboard records a chord: the app's F-key monitor then leaves every
+    /// key to the recorder, which takes it ahead of the menu bar. Nothing draws from it.
+    @ObservationIgnored public var isRecordingKey = false
+
     /// The database each pane's query line has been pointed at by the
     /// operator, keyed by pane id — see `QueryLineDatabaseChoice`, which
     /// carries what the pane's subject named at the time so a choice
@@ -2189,6 +2200,7 @@ public final class WindowModel {
             // 3b-v: the tabs follow the project, so the settings in force are read with it.
             await refreshEditorSettings()
             await refreshBrowserSettings()
+            await refreshKeymap()
             // 3c-ii: launch, and an org, project or environment switch, all end here.
             await refreshBrowserSites()
             // Capacity is read once the providers and the org are known,
@@ -3012,6 +3024,9 @@ public final class WindowModel {
     /// that never answered has learned nothing about whether it does.
     public func refreshSettings() async {
         let asked = browserSitesKey
+        // The keymap is its own read, so settings.json fixed by hand clears Settings → Keyboard's
+        // error here, with no relaunch, whether or not the tree's read answers.
+        await refreshKeymap()
         do {
             let result = try await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
@@ -5702,8 +5717,6 @@ public final class WindowModel {
     /// ⌘T: a scratch tab in the focused editor pane, else the first, else a new one — which then
     /// takes focus. Opening a pane opens it into the conversation, as `openPane` does.
     public func newScratch() async {
-        // 3c-i: in a focused browser pane ⌘T is a new tab; everywhere else, a scratch tab as before.
-        if await browserKey(.newTab) { return }
         var params: [String: JSONValue] = [:]
         if let pane = focusedEditor { params["pane"] = .string(pane) }
         let before = paneIds
@@ -5801,8 +5814,6 @@ public final class WindowModel {
     /// ⌘W: the active tab of a focused editor pane, else the pane, as before. A tab with unsaved
     /// edits asks first (`askUnsaved`, Task 9).
     public func closeFocusedTabOrPane() async {
-        // 3c-i: in a focused browser pane ⌘W closes its tab (the last one closes the pane).
-        if await browserKey(.closeTab) { return }
         guard let id = layoutSnapshot.focusedId else { return }
         let s = focusedEditor.flatMap { editor($0) } ?? .empty
         guard let pane = focusedEditor, editorCloseTarget(tabs: s.tabs.count) == .tab,
@@ -6929,7 +6940,8 @@ public final class WindowModel {
             browserActiveTab: focused.flatMap { f -> PaletteSubject? in
                 guard f.kind == "browser", let tab = browser(f.id)?.activeTab, tab.pullRequest == nil else { return nil }
                 return PaletteSubject(id: tab.id, name: tab.label, fallback: tab.pageLabel)
-            })
+            },
+            keymap: keymap)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
