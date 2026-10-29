@@ -585,14 +585,17 @@ struct EditorTicketView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(ticketPRLine(pr))
             .accessibilityIdentifier("editor.ticket.pr:\(pr.number)")
-            HStack(spacing: 6) {
+            // Its branches on their own line, then the pills flowing whole onto the next line when the
+            // column is narrow — never a pill broken mid-word (walk 2026-10-29).
+            if let branches = ticketPRBranches(pr) {
+                Text(branches).font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.45)).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+            }
+            ApiFlow(spacing: 6, lineSpacing: 4) {
                 let state = ticketPRStatePill(pr)
                 TicketPill(label: state.label, hue: state.hue)
                 if let checks = ticketChecksPill(pr) { TicketPill(label: checks.label, hue: checks.hue) }
-                if let branches = ticketPRBranches(pr) {
-                    Text(branches).font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(0.35)).fixedSize(horizontal: false, vertical: true)
-                }
             }
             .accessibilityHidden(true)
             ForEach(Array(ticketFailingChecks(pr).enumerated()), id: \.offset) { _, c in
