@@ -1080,6 +1080,9 @@ private let registeredBeforeThePalette: Set<String> = [
     "conversation_rename", "browser_rename_tab",
     // Workspaces, piece 1: the read, the agent's start, and the operator's archive, restore, Bring to Main and Move.
     "workspace_list", "workspace_start", "workspace_archive", "workspace_restore", "workspace_bring_home", "workspace_set_environment", "conversation_move",
+    // Workspaces, piece 2: Run, Stop, Build and the read; the Running settings and Try (operator-only).
+    "workspace_run", "workspace_stop", "workspace_build", "workspace_running",
+    "running_read", "running_detect", "running_draft_all", "running_save", "running_secret_set", "running_try", "running_try_end",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",
@@ -1123,6 +1126,8 @@ private let agentToolsBeforeThePalette: Set<String> = [
     // Workspaces, piece 1: the read only; the rest are operator-only and absent (`workspace_start`
     // is `.mutate`, so it is priced, not pre-allowed).
     "mcp__wakil__workspace_list",
+    // Workspaces, piece 2: the read is pre-approved; Run, Stop and Build are writes the gate prices.
+    "mcp__wakil__workspace_running",
     "mcp__wakil__editor_refresh",
     // 3b-v (Decision 38): the read only; both writes are operator-only and absent.
     "mcp__wakil__ctx_editor_settings",

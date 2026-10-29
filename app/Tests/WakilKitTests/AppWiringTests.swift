@@ -273,13 +273,15 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
              "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
              "rail_set", "review_open", "review_reply_draft", "review_reply_draft_restore", "review_reply_send", "review_resolve", "review_step",
+             "running_detect", "running_draft_all", "running_read", "running_save", "running_secret_set",
+             "running_try", "running_try_end",
              "session_close", "session_get", "session_list", "session_new", "session_read",
              "session_record_parent", "session_resume", "session_set_provider", "session_switch", "settings_open", "term_open",
              "term_propose", "term_run", "term_scroll",
              "ticket_hand_off", "ticket_hand_off_brief", "ticket_hand_off_cancel", "ticket_hand_off_close", "ticket_hand_off_open",
              "ticket_in_flight", "ticket_link", "ticket_open", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show",
-             "workspace_archive", "workspace_bring_home", "workspace_list", "workspace_restore", "workspace_set_environment",
-             "workspace_start"])
+             "workspace_archive", "workspace_bring_home", "workspace_build", "workspace_list", "workspace_restore",
+             "workspace_run", "workspace_running", "workspace_set_environment", "workspace_start", "workspace_stop"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)
     // #185 made `wakil-http` the third Wakil-owned client, so three

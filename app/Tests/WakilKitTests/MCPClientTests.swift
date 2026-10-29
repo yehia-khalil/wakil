@@ -43,7 +43,7 @@ private func repoRoot() -> URL {
     // `make app-test` does not depend on `make build` — so a tool added
     // in Go without landing here is a suite that keeps passing against
     // yesterday's server and says nothing.
-    #expect(tools == ["add_provider", "adopt_provider", "browser_settings", "capacity", "config_tree",
+    #expect(tools == ["add_provider", "adopt_provider", "browser_settings", "capacity", "compose_override", "config_tree",
                       "connection_add", "connection_allow_set", "connection_catalog", "connection_remove",
                       "connection_secrets_set", "connection_signin_start", "connection_signin_wait",
                       "connection_signout", "connection_update", "create_environment",
@@ -54,7 +54,9 @@ private func repoRoot() -> URL {
                       "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set", "github_pull_requests", "jira_token_set", "keyboard",
                       "list_accounts", "list_environments", "list_machine_providers",
                       "list_orgs", "list_projects", "list_providers", "list_sessions",
-                      "read_session", "record_capacity", "record_session_parent", "remove_api_entry", "remove_database",
+                      "ports_allocate", "read_session", "recipe_detect", "recipe_draft_all", "recipe_effective",
+                      "recipe_list", "recipe_plan", "recipe_prepare", "recipe_ready_wait", "recipe_run_steps",
+                      "recipe_save", "recipe_secret_set", "recipe_try", "record_capacity", "record_session_parent", "remove_api_entry", "remove_database",
                       "remove_environment", "remove_project", "rename_environment", "rename_project",
                       "set_api_entry", "set_browser_settings", "set_database_connection", "set_database_dsn", "set_editor_settings", "set_environment", "set_keys", "set_local_provider",
                       "set_project", "set_project_agent_instructions",
