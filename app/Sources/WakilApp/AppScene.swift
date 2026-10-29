@@ -498,7 +498,9 @@ private struct KeyMenuItems: View {
         let event = NSApp.currentEvent
         // Typed only when the event is the chord itself: Return on an item reached with the arrows
         // is a key-down too, and runs the item's own command, as a click does.
-        let typed = chord.flatMap { chord in event.flatMap(KeyChord.init(event:)) == chord ? chord : nil }
+        let typed = chord.flatMap { chord in
+            event?.type == .keyDown && event.flatMap(KeyChord.init(event:)) == chord ? chord : nil
+        }
         guard let startup = delegate.startup else { return }
         Task { @MainActor in
             let model = await startup.value.model

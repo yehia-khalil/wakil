@@ -79,7 +79,9 @@ public struct KeyChord: Hashable, Sendable {
 
     /// The chord an event is: the key by its ANSI key code first, so ⌘R is ⌘R on every layout
     /// (as `QueryLineKeys` does), then by character for keys the table doesn't hold.
+    /// Nil for anything but a key event: AppKit raises on a mouse event's key code.
     public init?(event: NSEvent) {
+        guard event.type == .keyDown || event.type == .keyUp else { return nil }
         var modifiers: Modifiers = []
         let flags = event.modifierFlags
         if flags.contains(.control) { modifiers.insert(.control) }

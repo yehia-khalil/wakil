@@ -37,4 +37,12 @@ import Testing
             isARepeat: false, keyCode: 15))
         #expect(KeyChord(event: event)?.text == "⌘R")
     }
+
+    /// A menu item's click has a mouse event as the current event: no chord, and no AppKit raise.
+    @Test func testMouseEventGivesNoChord() throws {
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        #expect(KeyChord(event: event) == nil)
+    }
 }
