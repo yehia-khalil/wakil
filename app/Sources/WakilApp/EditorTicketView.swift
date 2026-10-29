@@ -477,21 +477,28 @@ struct EditorTicketView: View {
     /// is its hover, as every record line's. A Next in the operator's shape (`ticketNextShape`, the
     /// one a handed agent writes) draws its step as the field and its tool and blocker as small dim
     /// chips after it, a blocker other than nothing amber; the operator's own edit of the step is
-    /// theirs, plain (walk 2026-10-28).
+    /// theirs, plain (walk 2026-10-28). The chips sit on their own line under the step and shorten
+    /// to fit (walk 2026-10-29): beside it, at full width, a long tool list and blocker made the
+    /// column wider than its pane, cut off on both sides.
     private func nextLine(key: String, line: TicketLineState?, text: String, labelled: Bool) -> some View {
         let shape = ticketNextShape(text)
-        return HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            Text(labelled ? "Next (\(key))" : "Next").dimmed().fixedSize()
-            TicketField(value: shape?.step ?? text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus,
-                        wraps: true) { now in
-                write(["key": .string(key), "section": .string("next"), "op": .string("set"), "text": .string(now)])
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                Text(labelled ? "Next (\(key))" : "Next").dimmed().fixedSize()
+                TicketField(value: shape?.step ?? text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus,
+                            wraps: true) { now in
+                    write(["key": .string(key), "section": .string("next"), "op": .string("set"), "text": .string(now)])
+                }
+                .id("next|\(key)")
             }
-            .id("next|\(key)")
             if let shape {
-                TicketNextChip(label: shape.tool, amber: false)
-                    .accessibilityIdentifier("editor.ticket.next.tool")
-                TicketNextChip(label: "Blocked by \(shape.blocker)", amber: shape.blocked)
-                    .accessibilityIdentifier("editor.ticket.next.blocker")
+                HStack(spacing: Space.s) {
+                    TicketNextChip(label: shape.tool, amber: false)
+                        .accessibilityIdentifier("editor.ticket.next.tool")
+                    TicketNextChip(label: "Blocked by \(shape.blocker)", amber: shape.blocked)
+                        .layoutPriority(1)
+                        .accessibilityIdentifier("editor.ticket.next.blocker")
+                }
             }
         }
         .padding(.top, 2)
@@ -1068,7 +1075,8 @@ private struct TicketBlock<Content: View>: View {
 
 /// A status pill: a dot in its meaning's hue (§5's reserved green, amber, red; grey for none) and
 /// its word, in a hairline capsule.
-/// A Next's tool or blocker after its step: small, dim, monospaced for the tool; amber when it blocks.
+/// A Next's tool or blocker under its step: small, dim, monospaced for the tool; amber when it
+/// blocks. Shortened in the middle when the column is narrow, whole on hover.
 private struct TicketNextChip: View {
     let label: String
     let amber: Bool
@@ -1079,7 +1087,8 @@ private struct TicketNextChip: View {
             .foregroundStyle(amber ? EditorPaneStyle.amber : EditorPaneStyle.text.opacity(0.55))
             .padding(.horizontal, 6).padding(.vertical, 1)
             .overlay(Capsule().strokeBorder((amber ? EditorPaneStyle.amber : EditorPaneStyle.text).opacity(0.18)))
-            .fixedSize()
+            .fixedSize(horizontal: false, vertical: true)
+            .help(label)
     }
 }
 
