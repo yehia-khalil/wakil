@@ -48,6 +48,7 @@ struct TicketHandOffPopover: View {
             .help("Refill the brief from where it was handed from")
             .accessibilityIdentifier("ticket.handoff.reset")
             choices
+            if !state.crewRepos.isEmpty { crew }
             if let error = state.error {
                 Text(error)
                     .font(.system(size: 11.5))
@@ -122,6 +123,45 @@ struct TicketHandOffPopover: View {
                 .accessibilityIdentifier("ticket.handoff.mayPush")
             Spacer(minLength: Space.s)
             placeLine
+        }
+        .font(.system(size: 11.5))
+    }
+
+    /// Workspaces piece 5 (decision 17): **Agents: one / one per repo**, one by default (Rule 9); one
+    /// per repo lists the project's repos as toggles, the ticket's pre-ticked. Each change is kept at
+    /// once (`ticket_hand_off_brief`), so nothing waits on Enter (Rule 2). Names wrap, never cut.
+    private var crew: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Picker("Agents", selection: Binding(
+                get: { state.agents },
+                set: { set(["agents": .string($0.rawValue)]) })) {
+                Text("One").tag(TicketHandOffAgents.one)
+                Text("One per repo").tag(TicketHandOffAgents.perRepo)
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .disabled(state.starting)
+            .accessibilityIdentifier("ticket.handoff.agents")
+            if state.agents == .perRepo {
+                HStack(alignment: .top, spacing: Space.m) {
+                    ForEach(state.crewRepos, id: \.root) { repo in
+                        Toggle(repo.name, isOn: Binding(
+                            get: { repo.ticked },
+                            set: { on in
+                                var ticked = Set(state.crewRoots)
+                                if on { ticked.insert(repo.root) } else { ticked.remove(repo.root) }
+                                set(["repos": .array(state.crewRepos.map(\.root).filter(ticked.contains).map { .string($0) })])
+                            }))
+                            .toggleStyle(.checkbox)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .disabled(state.starting)
+                            .accessibilityIdentifier("ticket.handoff.repo:\(repo.name)")
+                    }
+                }
+                Text("One agent per ticked repo, in one workspace; each is told who holds what, and they talk through messages.")
+                    .font(.system(size: 11)).foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .font(.system(size: 11.5))
     }

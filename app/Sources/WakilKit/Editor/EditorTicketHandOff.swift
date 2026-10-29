@@ -79,6 +79,13 @@ public struct TicketHandOffState: Sendable, Equatable {
     public var titleLine: String
     /// Which open of a subject this is: a field typed for one never starts another (`startParams`).
     public var opened: Int
+    /// Workspaces piece 5: one agent, or one per ticked repo of `crewRepos` (empty for a project with
+    /// one repo, when the choice is not drawn).
+    public var agents: TicketHandOffAgents = .one
+    public var crewRepos: [TicketHandOffCrewRepo] = []
+
+    /// The repos one per repo starts in: the ticked ones, in order.
+    public var crewRoots: [String] { crewRepos.filter(\.ticked).map(\.root) }
 
     public init(key: String?, pr: Int? = nil, repo: String? = nil, source: TicketHandOffSource, brief: String,
                 harness: String, provider: String, mayPush: Bool, place: Place, production: Bool = false,
@@ -143,6 +150,10 @@ public struct TicketHandOffState: Sendable, Equatable {
         if let repo { p["repo"] = .string(repo) }
         if let thread { p["thread"] = .string(thread) }
         p["opened"] = .integer(Int64(opened))
+        if agents == .perRepo {
+            p["agents"] = .string(agents.rawValue)
+            p["repos"] = .array(crewRoots.map { .string($0) })
+        }
         return p
     }
 
@@ -163,8 +174,11 @@ public struct TicketHandOffState: Sendable, Equatable {
         var o: [String: JSONValue] = [
             "open": .bool(true), "source": .string(thread == nil ? "header" : "thread"),
             "key": key.map { .string($0) } ?? .null, "harness": .string(harness), "provider": .string(provider),
-            "mayPush": .bool(mayPush), "starting": .bool(starting),
+            "mayPush": .bool(mayPush), "starting": .bool(starting), "agents": .string(agents.rawValue),
         ]
+        if !crewRepos.isEmpty {
+            o["repos"] = .array(crewRepos.map { .object(["root": .string($0.root), "ticked": .bool($0.ticked)]) })
+        }
         if let thread { o["thread"] = .string(thread) }
         if let pr { o["pr"] = .integer(Int64(pr)) }
         if let error { o["error"] = .string(error) }
@@ -674,6 +688,49 @@ public final class TicketHandOffLookup: @unchecked Sendable {
         defer { lock.unlock() }
         return (startSource, cancelSource)
     }
+
+    /// Workspaces piece 5: one per repo — the window starts one handed conversation per request in
+    /// the ticket's workspace (`WindowModel.startCrew`), and returns their ids.
+    public typealias Crew = @Sendable ([TicketHandOffRequest]) async throws -> [String]
+    private var crewSource: Crew?
+
+    public func use(crew: @escaping Crew) {
+        lock.lock()
+        crewSource = crew
+        lock.unlock()
+    }
+
+    private func installedCrew() -> Crew? {
+        lock.lock()
+        defer { lock.unlock() }
+        return crewSource
+    }
+
+    public func startCrew(_ requests: [TicketHandOffRequest]) async throws -> [String] {
+        guard let crew = installedCrew() else { throw TicketHandOffError(description: "no window to start the crew in") }
+        return try await crew(requests)
+    }
+}
+
+// MARK: - Agents: one / one per repo (workspaces piece 5)
+
+/// How many agents a Start starts (decision 17): one — the default (Rule 9) — or one per ticked repo.
+public enum TicketHandOffAgents: String, Sendable, Equatable { case one, perRepo }
+
+/// One repo the popover offers for one per repo: Main's folder, its name, and whether it is ticked.
+public struct TicketHandOffCrewRepo: Sendable, Equatable, Hashable {
+    public let root: String
+    public var ticked: Bool
+    public init(root: String, ticked: Bool) { self.root = root; self.ticked = ticked }
+    public var name: String { (root as NSString).lastPathComponent }
+}
+
+/// The repos one per repo offers: every root of the project, in order; the subject's repo and each
+/// repo the ticket's branches and PRs touch (`touched`) pre-ticked. None when the project has one
+/// repo: one per repo is then one.
+public func handOffCrewRepos(roots: [String], subject: String, touched: Set<String>) -> [TicketHandOffCrewRepo] {
+    guard roots.count > 1 else { return [] }
+    return roots.map { TicketHandOffCrewRepo(root: $0, ticked: $0 == subject || touched.contains($0)) }
 }
 
 // MARK: - The hand-off at work (walk 2026-10-28)

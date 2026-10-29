@@ -54,6 +54,8 @@ public struct WakilWiring: Sendable {
     /// Workspaces, piece 2: where the drafting conversation's `running_draft_propose` lands — the
     /// window's `recipeDraftBook`, pointed by `useActiveContext(of:)`.
     public let recipeDrafts: RecipeDraftLookup
+    /// Workspaces piece 5: the crew actions' window (`WindowModel.useCrew`).
+    public let crewLookup: CrewLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -300,6 +302,12 @@ public struct WakilWiring: Sendable {
             guard let model else { throw RecipeDraftError("running_draft_propose: no window is open to show the draft in") }
             try await model.receiveRecipeDraft(conversation: conversation, proposal)
         }
+        handOffLookup.use(crew: { [weak model] requests in
+            guard let model else { throw TicketHandOffError(description: "no window to start the crew in") }
+            return try await model.startCrew(requests)
+        })
+        // Workspaces piece 5: a proposed teammate's Start and Dismiss, and nothing to do.
+        model.useCrew(crewLookup)
         // Workspaces, piece 1: the write rule asks the window about conversations and tells threads.
         model.useWorkspaces(workspaces)
         model.useRunner(runner)
@@ -462,6 +470,7 @@ public struct WakilWiring: Sendable {
         let agentLookup = ActiveAgentLookup()
         let liveLookup = LiveConversationLookup()
         let handOffLookup = TicketHandOffLookup()
+        let crewLookup = CrewLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
@@ -577,6 +586,8 @@ public struct WakilWiring: Sendable {
         await registerRunningActions(into: registry, context: routed(.context, contextClient), runner: runner)
         let recipeDrafts = RecipeDraftLookup()
         await registerRecipeDraftActions(into: registry, drafts: recipeDrafts)
+        // Workspaces piece 5: a teammate proposed, started, dismissed; nothing to do.
+        await registerCrewActions(into: registry, crew: crewLookup)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         await registerBrowserPasswordActions(
@@ -642,6 +653,7 @@ public struct WakilWiring: Sendable {
             liveLookup: liveLookup,
             handOffLookup: handOffLookup,
             recipeDrafts: recipeDrafts,
+            crewLookup: crewLookup,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,

@@ -109,6 +109,9 @@ public let operatorOnlyActions: Set<String> = [
     "running_try", "running_try_end",
     // Workspaces, piece 3: which view is on screen is the operator's, as which conversation is.
     "workspace_open", "workspace_new_conversation",
+    // Workspaces piece 5 (decision 17): an agent proposes a teammate; starting it, dismissing it
+    // and editing its brief are the operator's.
+    "conversation_teammate_start", "conversation_teammate_dismiss", "conversation_teammate_brief",
     // Conversations 3 of 3: nor end it.
     "session_close",
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
@@ -309,6 +312,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator opens a workspace's view or starts a conversation in it — an agent "
             + "must not push aside what is on screen. Tell the operator which workspace the work needs; they can "
             + "open it from its card or \u{2318}P."
+    case "conversation_teammate_start", "conversation_teammate_dismiss", "conversation_teammate_brief":
+        return "\(toolName): only the operator starts, dismisses or edits a proposed teammate (decision 17). "
+            + "Propose one with conversation_propose_teammate; the operator decides."
     case "session_close":
         return "\(toolName): only the operator closes a conversation — an agent must not end the "
             + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."

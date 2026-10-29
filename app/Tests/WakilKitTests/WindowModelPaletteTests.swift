@@ -1092,6 +1092,9 @@ private let registeredBeforeThePalette: Set<String> = [
     "workspace_open", "workspace_new_conversation",
     // Workspaces piece 4.
     "conversation_message",
+    // Workspaces piece 5.
+    "conversation_propose_teammate", "conversation_teammate_start", "conversation_teammate_dismiss",
+    "conversation_teammate_brief", "conversation_nothing_to_do",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",
@@ -1148,6 +1151,8 @@ private let agentToolsBeforeThePalette: Set<String> = [
     // Names: `.control` and agent-reachable, for the agent's own conversation.
     "mcp__wakil__conversation_rename",
     "mcp__wakil__conversation_message",
+    // Workspaces piece 5: the agent proposes a teammate and says it has nothing to do.
+    "mcp__wakil__conversation_propose_teammate", "mcp__wakil__conversation_nothing_to_do",
     // Names: `.control` and agent-reachable, a browser tab's name.
     "mcp__wakil__browser_rename_tab",
     "mcp__wakil__ctx_github_pull_requests",

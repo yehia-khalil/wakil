@@ -26,6 +26,12 @@ private actor FakeHandOff {
         return "c9"
     }
 
+    var crews: [[TicketHandOffRequest]] = []
+    func crew(_ rs: [TicketHandOffRequest]) -> [String] {
+        crews.append(rs)
+        return rs.indices.map { "crew-\($0)" }
+    }
+
     func cancel(_ id: String) {
         cancelled.append(id)
         wasCancelled = true
@@ -91,6 +97,7 @@ private func handOffFixture(defaults: JSONValue? = nil) async throws -> HandOffF
     let fake = FakeHandOff()
     let lookup = TicketHandOffLookup()
     lookup.use(start: { r, reserved in try await fake.start(r, reserved: reserved) }, cancel: { await fake.cancel($0) })
+    lookup.use(crew: { rs in await fake.crew(rs) })
     lookup.use(context: {
         TicketHandOffContext(screen: screen, provider: "initech-work",
                              providers: [TicketHandOffProvider(id: "initech-work"), TicketHandOffProvider(id: "initech-spare")],
@@ -1019,5 +1026,68 @@ private func quotedBlock(_ brief: String) -> [String] {
         let one = ticketHandOffFold([e("6", "2026-10-29T10:00:00Z")], live: ["c-6": .failed])
         #expect(one.shown.map(\.id) == ["6"])
         #expect(one.earlierLine == nil)
+    }
+
+    // MARK: Agents: one / one per repo (workspaces piece 5)
+
+    @Test func crewReposListTheProjectsReposThoseTheTicketTouchesTicked() {
+        #expect(handOffCrewRepos(roots: ["/p/api"], subject: "/p/api", touched: []).isEmpty, "one repo: no choice")
+        let repos = handOffCrewRepos(roots: ["/p/api", "/p/web", "/p/core"], subject: "/p/api", touched: ["/p/core"])
+        #expect(repos.map(\.ticked) == [true, false, true])
+        #expect(repos.map(\.name) == ["api", "web", "core"])
+    }
+
+    @Test func thePopoverOffersOneAgentByDefaultAndTheTicketsReposTicked() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        let s = try await f.state()
+        #expect(s.agents == .one, "one by default (Rule 9)")
+        #expect(s.crewRepos == [TicketHandOffCrewRepo(root: "/p/api", ticked: true),
+                                TicketHandOffCrewRepo(root: "/p/web", ticked: false)])
+        #expect(s.startParams["agents"] == nil, "one agent starts as before")
+    }
+
+    @Test func onlyTheOperatorChoosesAgentsAndRepos() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        let before = try await f.state()
+        for (field, value) in [("agents", JSONValue.string("perRepo")), ("repos", .array([.string("/p/web")]))] {
+            await #expect {
+                try await f.dispatch("ticket_hand_off_brief", [field: value], origin: .agent)
+            } throws: { "\($0)".contains("only the operator sets \(field)") }
+            #expect(try await f.state() == before)
+        }
+        await #expect { try await f.dispatch("ticket_hand_off_brief", ["agents": .string("many")]) } throws: {
+            "\($0)".contains("agents is one or perRepo")
+        }
+    }
+
+    @Test func onePerRepoStartsOneHandedAgentPerTickedRepo() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"),
+                                                       "repos": .array([.string("/p/api"), .string("/p/web")])])
+        let s = try await f.state()
+        #expect(s.crewRoots == ["/p/api", "/p/web"])
+        #expect(s.startParams["agents"] == .string("perRepo"))
+        let r = try await f.start()
+        #expect(r == .object(["conversations": .array([.string("crew-0"), .string("crew-1")])]))
+        let crews = await f.handOff.crews
+        let crew = try #require(crews.first)
+        #expect(crew.map(\.root) == ["/p/api", "/p/web"])
+        #expect(crew.allSatisfy { $0.key == "INI-142" })
+        #expect(crew[0].branch == "ini-142-login" && crew[0].pr == 212)
+        #expect(crew[1].pr == nil, "the PR is the subject repo's")
+        #expect(crew.allSatisfy { $0.brief.contains(handOffAddedByWakil) })
+        #expect(await f.handOff.requests.isEmpty, "no single start")
+        #expect(await f.store.handOff() == nil, "the popover closes after a Start")
+    }
+
+    @Test func onePerRepoWithNoRepoTickedStartsNothing() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"), "repos": .array([])])
+        await #expect { _ = try await f.start() } throws: { "\($0)".contains("no repo ticked") }
+        #expect(await f.handOff.crews.isEmpty)
     }
 }

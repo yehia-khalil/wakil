@@ -336,6 +336,12 @@ struct WakilWindow: View {
                     // indicator on its row. Panes end 48pt above the window's bottom
                     // (the canvas padding above), a bar's height plus its gap.
                     VStack(alignment: .leading, spacing: 6) {
+                        // Workspaces piece 5: teammates proposed in the workspace on screen.
+                        if !session.model.teammateProposalsOnScreen.isEmpty {
+                            TeammateProposalsStrip(
+                                proposals: session.model.teammateProposalsOnScreen,
+                                dispatch: { name, params in await session.model.dispatchFromSurfaceReply(name, params) })
+                        }
                         ThoughtThread(
                             rows: session.model.thoughts,
                             parallax: CGSize(width: nearOffset.x, height: nearOffset.y),

@@ -9044,6 +9044,8 @@ public final class WindowModel {
             // Workspaces piece 4: the operator's message resets its workspace's wake budget and
             // carries the conversation's queued messages at the head of its input.
             let riding = await messagesRidingWithOperatorTurn(to: agent)
+            // Workspaces piece 5: the operator's message is new work; "nothing to do" was the last.
+            agent.nothingToDo = nil
             if !riding.block.isEmpty { outgoing = riding.block + "\n\n" + outgoing }
             try await harness.send(outgoing)
             messagesDelivered(riding.count, withOperatorTurnTo: agent)
@@ -9946,8 +9948,11 @@ public final class WindowModel {
                     messagesWaiting: agent.messagesWaitingForYou)
             }
             .map { row in
+                // Workspaces piece 5: its proposals, and nothing to do (`session_list`).
                 var row = row
                 if let w = conversations[row.id]?.workspace { row.workspace = (w.id, w.name) }
+                row.proposals = teammateProposals.pending(from: row.id)
+                row.nothingToDo = conversations[row.id]?.nothingToDo
                 return row
             }
     }
@@ -10217,6 +10222,10 @@ public final class WindowModel {
     /// Workspaces piece 4: the wake budgets and each organisation's Agents woken by messages
     /// (`WindowModel+Messages.swift`).
     @ObservationIgnored let messageState = ConversationMessageState()
+    /// Workspaces piece 5: the teammates agents proposed, waiting for the operator's Start or
+    /// Dismiss, and the dismissals (`WindowModel+Crews.swift`). Kept across an org switch, as the
+    /// conversations that made them are.
+    public internal(set) var teammateProposals = TeammateProposals()
 
     /// Ends `conversation` — nil, the one on screen — as Close Conversation does: its agent stops,
     /// its panes close as on quit, and it moves to Continue; its place then shows its next live
@@ -10310,6 +10319,8 @@ public final class WindowModel {
         conversationOrder.removeAll { $0 == agent.id }
         // Workspaces, piece 1: a closed conversation holds nothing; its record keeps it as last holder.
         await workspaceRouter?.store.release(agent.id)
+        // Workspaces piece 5: its proposals go with it — there is no one left to start beside.
+        teammateProposals.drop(from: agent.id)
         // 3c-ii: the sites it allowed die with it, and no other conversation's.
         await panes.browserForget(conversation: agent.id)
         if shown, placeRemoved {

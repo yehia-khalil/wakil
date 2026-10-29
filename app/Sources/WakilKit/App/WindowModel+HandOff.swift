@@ -12,9 +12,15 @@ extension WindowModel {
     /// conversation and throws the window's status, whole. Then the hand-off is recorded
     /// (`ticket_handoff_write` `add`); a record that fails leaves the conversation running, handed
     /// with May push off, and says why on its chip and in its thread. Returns its id.
-    public func startHandOff(_ r: TicketHandOffRequest, reserved: ((String) -> Void)? = nil) async throws -> String {
+    ///
+    /// Workspaces piece 5: `workspace` puts it in a crew's workspace before its first message, so
+    /// its first write makes a copy there; `crewRepo` is the repo it was started for.
+    public func startHandOff(_ r: TicketHandOffRequest, reserved: ((String) -> Void)? = nil,
+                             workspace: String? = nil, crewRepo: String? = nil) async throws -> String {
         let agent = backgroundAgent(in: r.place, providerId: r.provider)
         agent.handoff = PlaceAgentHandoff(key: r.key, pr: r.pr, thread: r.thread, root: r.root, branch: r.branch, mayPush: r.mayPush)
+        agent.crewRepo = crewRepo
+        if let workspace { await workspaceRouter?.join(agent.id, workspace: workspace) }
         // The chip reads well: `INI-142 · <the operator's first line>`, not the whole brief
         // (conversations call 6; walk 2026-10-28) — the first message's slot. The model never names
         // a handed conversation: its ticket names it. The operator's own name still wins (names).
@@ -30,6 +36,8 @@ extension WindowModel {
         guard conversation(id: agent.id) === agent else {
             throw TicketHandOffError(description: "the hand-off was cancelled before it started")
         }
+        // Its lineage root, minted by the send, is recorded in the crew's workspace.
+        if let workspace { await workspaceRouter?.join(agent.id, workspace: workspace) }
         guard let ticket else {
             noteHandOffFailure("The hand-off was not recorded (no ticket client), so this conversation's push and sync ask you.", in: agent)
             return agent.id

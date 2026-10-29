@@ -185,6 +185,8 @@ private let keptPerPlace: Set<String> = [
     // Workspaces piece 4: each workspace's wake budget and each organisation's Agents woken by
     // messages, kept per organisation: the conversations they serve survive the switch.
     "messageState",
+    // Workspaces piece 5: proposals and dismissals, by the conversation and workspace they name.
+    "teammateProposals",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",

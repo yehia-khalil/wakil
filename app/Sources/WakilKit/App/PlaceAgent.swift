@@ -32,6 +32,12 @@ public final class PlaceAgent {
     /// Why the hand-off could not be recorded, carried or read, whole (Rule 8): on its chip and in
     /// its thread. Nil when nothing went wrong.
     public internal(set) var handoffFailure: String?
+    /// Workspaces piece 5: the repo (Main's folder) it was started for as a crew member or a
+    /// proposed teammate; nil for any other.
+    public internal(set) var crewRepo: String?
+    /// Workspaces piece 5: its words after `conversation_nothing_to_do` ("done · nothing to do in
+    /// web"), until the operator's next message.
+    public internal(set) var nothingToDo: String?
     /// The live session's harness, or nil before the first turn.
     var harness: AgentHarness?
     /// 3a-iii-b: the composed instructions this session last received — at launch, or in a turn

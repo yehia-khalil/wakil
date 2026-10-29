@@ -943,14 +943,35 @@ func registerTicketActions(
                 d = handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
             }
             let (place, production) = await handOffWhere(root: subject.root, context: ctx)
-            await store.showHandOff(TicketHandOffState(
+            // Workspaces piece 5: one per repo's repos — this project's roots, the subject's and each
+            // one the ticket's branches and PRs touch pre-ticked. Reopened on the same hand-off, the
+            // operator's choice stays.
+            var crewRepos: [TicketHandOffCrewRepo] = []
+            var agents = TicketHandOffAgents.one
+            if let open, same, !open.crewRepos.isEmpty {
+                crewRepos = open.crewRepos
+                agents = open.agents
+            } else if let key = subject.key {
+                let own = await roots()
+                var touched = Set<String>()
+                for r in own {
+                    if let b = await store.branch(root: r), b.tickets.contains(where: { $0.key == key }) { touched.insert(r) }
+                }
+                let rows = (await store.lastInFlight()).map { $0.waitingOnYou + $0.inFlight } ?? []
+                for row in rows where row.key == key && own.contains(row.root) { touched.insert(row.root) }
+                crewRepos = handOffCrewRepos(roots: own, subject: subject.root, touched: touched)
+            }
+            var shown = TicketHandOffState(
                 key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source, brief: kept?.text ?? subject.brief,
                 harness: d.0, provider: d.1, mayPush: d.2, place: place, production: production,
                 root: subject.root, branch: subject.branch, providers: ctx.providers, pane: pane,
                 // The keyboard is the operator's open's only (Rules 3 and 6).
                 focus: same ? (open?.focus ?? false) || !byAgent : !byAgent,
                 agentBrief: kept?.byAgent ?? false, titleLine: kept?.title,
-                opened: same ? open?.opened ?? 0 : await store.nextHandOffOpen()))
+                opened: same ? open?.opened ?? 0 : await store.nextHandOffOpen())
+            shown.agents = agents
+            shown.crewRepos = crewRepos
+            await store.showHandOff(shown)
             return await editor.reply(pane)
         }))
 
@@ -960,7 +981,8 @@ func registerTicketActions(
             + "harness, provider and mayPush are the operator's alone: an agent may edit the brief's text and nothing "
             + "else, and a call from one that names any of the three is refused whole.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["brief": string, "harness": string, "provider": string, "mayPush": boolean]),
+        schema: schema(["brief": string, "harness": string, "provider": string, "mayPush": boolean, "agents": string,
+                        "repos": .object(["type": .string("array"), "items": string])]),
         handler: { params in
             let action = "ticket_hand_off_brief"
             guard var s = await store.handOff() else {
@@ -969,7 +991,7 @@ func registerTicketActions(
             guard !s.starting else { throw TicketActionError(description: "\(action): the hand-off is starting; nothing was changed") }
             guard case .object(let o) = params else { return await handOffReply(s.pane) }
             // F2: who runs it and whether it may push are the operator's (Invariant 7) — never an agent's.
-            let operatorsOnly = ["harness", "provider", "mayPush"].filter { o[$0] != nil }
+            let operatorsOnly = ["harness", "provider", "mayPush", "agents", "repos"].filter { o[$0] != nil }
             if ActionRegistry.dispatchOrigin == .agent, !operatorsOnly.isEmpty {
                 throw TicketActionError(description: "\(action): only the operator sets "
                     + operatorsOnly.joined(separator: ", ") + " — an agent may edit the brief's text alone; nothing was changed")
@@ -982,6 +1004,20 @@ func registerTicketActions(
             }
             if case .string(let p)? = o["provider"], !p.isEmpty { s.provider = p }
             if case .bool(let m)? = o["mayPush"] { s.mayPush = m }
+            // Workspaces piece 5: Agents — one, or one per ticked repo — and which repos are ticked.
+            if case .string(let a)? = o["agents"] {
+                guard let agents = TicketHandOffAgents(rawValue: a) else {
+                    throw TicketActionError(description: "\(action): agents is one or perRepo, not \(a); nothing was changed")
+                }
+                guard agents == .one || !s.crewRepos.isEmpty else {
+                    throw TicketActionError(description: "\(action): this project has one repo, so one agent works on it; nothing was changed")
+                }
+                s.agents = agents
+            }
+            if case .array(let rs)? = o["repos"] {
+                let ticked = Set(rs.compactMap { if case .string(let r) = $0 { r } else { nil } })
+                for i in s.crewRepos.indices { s.crewRepos[i].ticked = ticked.contains(s.crewRepos[i].root) }
+            }
             // An agent's words are marked as its own; the operator's become the title's source.
             if case .string(let b)? = o["brief"], b != s.brief { s.write(brief: b, byAgent: ActionRegistry.dispatchOrigin == .agent) }
             // A failed Start's message is the operator's to read (Rule 8): only their edit clears it.
@@ -994,12 +1030,14 @@ func registerTicketActions(
         name: "ticket_hand_off",
         description: "Start: hand the popover's ticket to an agent in a new background conversation, with exactly "
             + "the popover's brief, harness, provider, place, root, branch and May push; Wakil appends the ticket's "
-            + "record and its own actions below the brief, and journals the whole text sent. The operator's only.",
+            + "record and its own actions below the brief, and journals the whole text sent. agents perRepo with repos "
+            + "starts one handed agent per repo, all in the ticket's workspace, each told who holds what. The operator's only.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["key": .object(["type": .array([.string("string"), .string("null")])]), "pr": integer,
                         "repo": string, "thread": string, "brief": string, "harness": string, "provider": string,
                         "mayPush": boolean, "root": string, "branch": string, "pane": string, "opened": integer,
-                        "place": .object(["type": .string("object")])],
+                        "place": .object(["type": .string("object")]), "agents": string,
+                        "repos": .object(["type": .string("array"), "items": string])],
                        required: ["brief", "harness", "provider", "mayPush", "place", "root", "branch"]),
         handler: { params in
             let action = "ticket_hand_off"
@@ -1042,6 +1080,54 @@ func registerTicketActions(
                 repo: optionalString(params, "repo").flatMap { $0.isEmpty ? nil : $0 },
                 title: handOffChipTitle(key: key, pr: o["pr"]?.intValue, firstLine: s.agentBrief && brief == s.brief
                     ? s.titleLine : handOffFirstLine(brief)))
+            // Workspaces piece 5: one per repo — one handed agent per ticked repo, in the ticket's workspace.
+            if o["agents"] == .string(TicketHandOffAgents.perRepo.rawValue) {
+                let listed: [JSONValue] = if case .array(let rs)? = o["repos"] { rs } else { [] }
+                let repos = listed.compactMap { if case .string(let r) = $0 { r } else { nil } }
+                guard !repos.isEmpty else {
+                    throw TicketActionError(description: "\(action): one per repo with no repo ticked — tick a repo, or choose one agent; nothing was started")
+                }
+                let own = await roots()
+                if let outside = repos.first(where: { !own.contains($0) }) {
+                    throw TicketActionError(description: "\(action): \(outside) is not a repo of this project; nothing was started")
+                }
+                var requests: [TicketHandOffRequest] = []
+                for r in repos {
+                    var branch = r == request.root ? request.branch : ""
+                    if branch.isEmpty, let k = key, let b = await store.branch(root: r), b.tickets.contains(where: { $0.key == k }) {
+                        branch = b.branch
+                    }
+                    var added = appended
+                    if r != request.root {
+                        var op = s.openParams
+                        op["root"] = .string(r)
+                        op["branch"] = .string(branch)
+                        op["pr"] = nil
+                        added = (try? await handOffSubject(.object(op)).appended) ?? appended
+                    }
+                    requests.append(TicketHandOffRequest(
+                        key: request.key, pr: r == request.root ? request.pr : nil, thread: request.thread,
+                        brief: s.startBrief(brief) + "\n\n" + added, harness: request.harness, provider: request.provider,
+                        place: request.place, root: r, branch: branch, mayPush: request.mayPush, repo: request.repo,
+                        title: request.title))
+                }
+                let token = await store.beginHandOffStart()
+                do {
+                    let ids = try await handOff.startCrew(requests)
+                    _ = await store.finishHandOffStart(token, error: nil)
+                    for (i, id) in ids.enumerated() {
+                        try? await registry.journalFollowUp(
+                            action: action, params: .object(["key": key.map { .string($0) } ?? .null, "conversation": .string(id),
+                                                              "root": .string(requests[i].root), "brief": .string(requests[i].brief)]),
+                            origin: ActionRegistry.dispatchOrigin,
+                            caller: ActionRegistry.dispatchCaller ?? DispatchCaller(place: request.place, session: nil), outcome: "started")
+                    }
+                    return .object(["conversations": .array(ids.map { .string($0) })])
+                } catch {
+                    _ = await store.finishHandOffStart(token, error: "\(error)")
+                    throw TicketActionError(description: "\(action): \(error)")
+                }
+            }
             let token = await store.beginHandOffStart()
             do {
                 let id = try await handOff.start(request, reserved: { id in
