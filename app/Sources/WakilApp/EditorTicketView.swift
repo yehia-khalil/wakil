@@ -256,7 +256,7 @@ struct EditorTicketView: View {
     private func ownTicket(_ b: TicketBranchState) -> some View {
         let t = b.tickets[0]
         TicketBlock(first: true) {
-            header(key: t.key, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record),
+            header(key: t.key, url: t.url.isEmpty ? t.record.seen.url : t.url, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record),
                    threads: ticketThreadsWaitingOnViewer(b), linked: b.linked)
             nextField(b)
         }
@@ -391,7 +391,7 @@ struct EditorTicketView: View {
         let record: TicketRecordState? = if case .record(let r) = shownRecord { r } else { nil }
         backButton
         TicketBlock(first: true) {
-            header(key: key, title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
+            header(key: key, url: [ref?.url, record?.seen.url].compactMap { $0 }.first { !$0.isEmpty } ?? "", title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                    status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                    waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
                    threads: own.map(ticketThreadsWaitingOnViewer) ?? 0, linked: false)
@@ -418,11 +418,19 @@ struct EditorTicketView: View {
     // MARK: - The header and Next
 
     @ViewBuilder
-    private func header(key: String, title: String, status: String, waiting: [String], threads: Int, linked: Bool) -> some View {
+    private func header(key: String, url: String, title: String, status: String, waiting: [String], threads: Int, linked: Bool) -> some View {
         Text("Ticket").microLabel(top: 0)
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(key).ticketKey()
+                // The key opens the ticket in the PM tool, in Wakil's browser (⌥-click: the system's).
+                if !url.isEmpty {
+                    Button { openLink(url, NSEvent.modifierFlags.contains(.option)) } label: { Text(key).ticketKey() }
+                        .buttonStyle(.plain)
+                        .help("Open \(key) in Wakil's browser; ⌥-click for your system browser")
+                        .accessibilityIdentifier("editor.ticket.key")
+                } else {
+                    Text(key).ticketKey()
+                }
                 Text(title).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
             }
             let line = ticketWaitingLine(waiting, threads: threads)
