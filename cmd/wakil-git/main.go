@@ -60,7 +60,7 @@ func runner(root string) (*wakilcore.GitRunner, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	g, err := wakilcore.NewGitRunner(root, wakilcore.ProjectRootPaths(*r))
+	g, err := wakilcore.NewGitRunner(root, wakilcore.AllowedRootPaths(*r))
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
@@ -187,7 +187,7 @@ func writer(root string) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	w, err := wakilcore.NewGitWriter(root, wakilcore.ProjectRootPaths(*r), wakilcore.OrgGitIdentity(org))
+	w, err := wakilcore.NewGitWriter(root, wakilcore.AllowedRootPaths(*r), wakilcore.OrgGitIdentity(org))
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
@@ -209,7 +209,7 @@ func remote(root string) (*wakilcore.GitRemote, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	g, err := wakilcore.NewGitRemote(org, root, wakilcore.ProjectRootPaths(*r), remoteOptions())
+	g, err := wakilcore.NewGitRemote(org, root, wakilcore.AllowedRootPaths(*r), remoteOptions())
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
