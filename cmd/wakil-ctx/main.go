@@ -811,11 +811,11 @@ func newServer() *mcp.Server {
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.PullRequestsResult, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {
-				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.MyPullRequest{}}, nil
 			}
 			out, err := wakilcore.GitHubPullRequests(ctx, org)
 			if err != nil {
-				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.MyPullRequest{}}, nil
 			}
 			return nil, out, nil
 		})

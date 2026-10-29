@@ -143,7 +143,7 @@ func TestPullRequestsSearchesAuthorAndReviewRequested(t *testing.T) {
 		!strings.Contains(strings.Join(seen, "|"), "is:pr is:open review-requested:@me") {
 		t.Fatalf("searches %v", seen)
 	}
-	want := []PullRequest{
+	want := []MyPullRequest{
 		{2, "Both", "https://github.com/initech/web/pull/2", "initech/web", "author"},
 		{3, "Review me", "https://github.com/initech/api/pull/3", "initech/api", "review-requested"},
 		{1, "Old", "https://github.com/initech/api/pull/1", "initech/api", "author"},
