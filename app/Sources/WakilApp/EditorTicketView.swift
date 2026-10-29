@@ -191,8 +191,19 @@ struct EditorTicketView: View {
                     .accessibilityLabel(at.label)
                     .accessibilityIdentifier("editor.ticket.handOff.agent")
                 } else {
-                    Button("Hand to agent") { Task { await dispatch("ticket_hand_off_open", params) } }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
+                    // A button, not a link (walk 2026-10-29: it read as quiet text and was missed).
+                    Button { Task { await dispatch("ticket_hand_off_open", params) } } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "paperplane.fill").font(.system(size: 10))
+                            Text("Hand to agent").font(.system(size: 11.5, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(EditorPaneStyle.violet.opacity(0.32)))
+                        .overlay(Capsule().strokeBorder(EditorPaneStyle.violet.opacity(0.75)))
+                        .contentShape(Capsule())
+                    }
+                        .buttonStyle(.plain)
                         .help("Hand this ticket to an agent in the background, with a brief you can edit")
                         .accessibilityIdentifier("editor.ticket.handOff")
                 }
