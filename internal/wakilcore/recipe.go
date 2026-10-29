@@ -369,6 +369,9 @@ func recipeProblems(where string, r Recipe, override bool, p Project, repos map[
 		if !envNamePattern.MatchString(k) {
 			add("%s maps port variable %q, which is not a valid variable name.", where, k)
 		}
+		if strings.HasPrefix(k, "WAKIL_") || k == "COMPOSE_PROJECT_NAME" || k == "COMPOSE_FILE" {
+			add("%s maps %s, a name Wakil sets itself; map the repo's own variable instead.", where, k)
+		}
 		if strings.TrimSpace(r.Ports[k]) == "" {
 			add("%s maps port variable %s to nothing; give it an expression such as $WAKIL_PORT.", where, k)
 		}
@@ -377,6 +380,12 @@ func recipeProblems(where string, r Recipe, override bool, p Project, repos map[
 		v := r.Env[k]
 		if !envNamePattern.MatchString(k) {
 			add("%s sets env variable %q, which is not a valid variable name.", where, k)
+		}
+		if strings.HasPrefix(k, "WAKIL_") || k == "COMPOSE_PROJECT_NAME" || k == "COMPOSE_FILE" {
+			add("%s sets %s, a name Wakil sets itself; use another name.", where, k)
+		}
+		if _, both := r.Ports[k]; both {
+			add("%s sets %s both under ports and under env; keep one.", where, k)
 		}
 		if v.Secret != "" && !keychainRefRunes.MatchString(v.Secret) {
 			add("%s keeps env variable %s's secret under Keychain ref %q; a ref has no spaces.", where, k, v.Secret)

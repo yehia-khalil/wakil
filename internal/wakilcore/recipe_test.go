@@ -303,8 +303,8 @@ func TestValidateRecipesListsEveryProblemWhole(t *testing.T) {
 			"Bad Name": {},
 			"r": {
 				Needs:     []string{"ghost", "app-recipe"},
-				Ports:     map[string]string{"1X": "", "OK": "$WAKIL_PORT"},
-				Env:       map[string]EnvValue{"A-B": {Value: "x"}, "S": {Secret: "has space"}},
+				Ports:     map[string]string{"1X": "", "OK": "$WAKIL_PORT", "WAKIL_PORT": "1"},
+				Env:       map[string]EnvValue{"A-B": {Value: "x"}, "S": {Secret: "has space"}, "OK": {Value: "y"}, "COMPOSE_FILE": {Value: "z"}},
 				Copy:      []string{"/etc/passwd", "../up", ""},
 				Setup:     []string{" "},
 				Processes: []Process{{"app", ""}, {"app", "x"}, {"Bad", "y"}},
@@ -349,6 +349,9 @@ func TestValidateRecipesListsEveryProblemWhole(t *testing.T) {
 		`recipe "badre"'s ready output /(/ is not a valid regular expression`,
 		`repo "b" needs itself`,
 		`The needs form a loop (a → b → a)`,
+		`maps WAKIL_PORT, a name Wakil sets itself`,
+		`sets COMPOSE_FILE, a name Wakil sets itself`,
+		`sets OK both under ports and under env`,
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("missing problem %q in:\n%s", want, msg)
