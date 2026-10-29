@@ -1,0 +1,18 @@
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","displayName":"Agent Wrote This"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_add","params":{"org":"e2e-fixture","kind":"atlassian"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_catalog","params":{},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_update","params":{"name":"atlassian","newName":"agent-renamed"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_remove","params":{"name":"atlassian"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_secrets_set","params":{"name":"atlassian","values":{"token":"e2e-fake"}},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_allow_set","params":{"name":"atlassian","tool":"read","allow":true},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_signin_start","params":{"name":"atlassian"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_signin_wait","params":{"name":"atlassian"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_signout","params":{"name":"atlassian"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_jira_token_set","params":{"id":"e2e-fixture","email":"e2e@initech.test","token":"e2e-fake"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_config_tree_for","params":{"id":"e2e-fixture"},"refuses":"only the operator can run this"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"E2E Fixture"}}
+{"expect":{"tree":"absent","text":"Agent Wrote This"}}
+{"expect":{"tree":"contains","text":"CONNECTIONS"}}
+{"expect":{"tree":"absent","text":"Atlassian"}}

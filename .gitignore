@@ -19,6 +19,7 @@ bin/
 /wakil-http
 /wakil-pm
 /wakil-recall
+/wakil-connect
 app/.build/
 
 # SwiftPM's build tree for the STT probe harness, which is a second Swift

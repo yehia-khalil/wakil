@@ -1961,6 +1961,39 @@ pull, stash apply or pop that clashes leaves the conflicts in place. Still refus
 cherry-pick or revert (one begun in a terminal is resolved and aborted like a merge), interactive
 rebase, `merge --squash`, a chosen strategy, and tags. The reasoning is Decision 47.
 
+### 2026-10-25 — a connection's tool, allowed by the operator
+
+An organization's own MCP server (Jira, Notion, a custom one), fronted by `wakil-connect`. The
+operator ticks **Allow agent** per tool, per organization; that tick is the operator earning that
+write in. A tool the server marks read-only runs once ticked, voice included. A tool that writes
+runs once ticked, from a typed turn. **A destructive tool can never be ticked.** It earns in because
+the server is the organization's own, the operator chose each tool one by one, and the gate sits in
+`wakil-connect`, where the harness cannot skip it.
+
+Still asks: a locked (destructive) tool, always; a ticked write reached by a spoken turn (Invariant
+7: it raises the plane once, as a *gate* write does); a tool the operator has not ticked. With Wakil
+not running, only ticked tools run and everything else is refused.
+
+The threat model the reviews surfaced: the gate is in `wakil-connect`, not the harness. The switches
+are files on disk and the approval socket is local, so the gate rests on two other layers: the
+CLI/harness permission layer, which decides whether a shell command the agent proposes may run (and
+so whether it can edit the switches or reach the socket), and `ActionRegistry.dispatch` refusing an
+operator-only action — `ctx_connection_allow_set`, `ctx_connection_update`, `ctx_config_tree_for` among
+them — when the agent asks. The socket can only ask and never approve; the tick protects against a
+tool being used unasked.
+
+Two routes reach those operator-only actions without being the agent, and both rest on the same
+CLI permission layer, since each needs a shell command or a file edit by the operator's user:
+
+- **The e2e harness socket** (`<session id>-e2e.sock`, `MCP/HarnessChannel.swift`) runs any
+  operator-only action with origin `.debug`. Only an app whose bundle id is `dev.wakil.e2e` opens
+  it, at mode 0600 beside each agent socket. Its path is derived from the agent socket's, so it
+  is not a secret. What protects it is the bundle-id gate and the file mode. That gate is only as
+  strong as the bundle's `Info.plist`, which the user can edit: Wakil.app has no bundle seal, so
+  setting that id makes a real Wakil open the socket on its next launch.
+- **`Wakil --dispatch <file> [--environment <name>]`** (`main.swift`) runs a script of actions
+  with origin `.debug` in every build, production included, against the real `$HOME`. It is the
+  older of the two and needs no relaunch.
 ### 2026-10-25 — acting in a web page
 
 `browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll` (`.mutate`,

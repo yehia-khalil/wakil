@@ -60,7 +60,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # follows it, so the path below resolves for both configurations without
 # naming the architecture.
 cp "app/.build/$CONFIG/WakilApp" "$APP/Contents/MacOS/Wakil"
-for b in wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall wakil-files; do
+for b in wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall wakil-files wakil-connect; do
   cp "bin/$b" "$APP/Contents/Resources/$b"
 done
 # See the header comment: this goes at the top level of $APP, not inside

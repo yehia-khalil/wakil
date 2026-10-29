@@ -28,6 +28,13 @@ public final class PlaceAgent {
     /// 3a-iii-b: the composed instructions this session last received — at launch, or in a turn
     /// since. nil until the session's first turn records it.
     var launchedInstructions: String?
+    /// The organisation's connections revision (`AgentConnectionsBox.revision`) the live session
+    /// launched at; nil before one. Behind the box's means a connection changed since: the next
+    /// message restarts the agent (spec amendment 2026-10-26, `WindowModel.send`).
+    var launchedConnectionsRevision: Int?
+    /// The revision whose failed restart the conversation was last told of: a failure is said
+    /// once per change, though every next message tries again.
+    var connectionsRestartFailureSaid: Int?
     /// The id the running child was started with; set and cleared with `harness`.
     public internal(set) var sessionId: String? {
         didSet { if let sessionId { sessionIds.insert(sessionId) } }
@@ -67,6 +74,33 @@ public final class PlaceAgent {
     public internal(set) var lastTurnSource: WindowModel.TurnSource?
     /// True from a successful `send` to the `.result` that ends the turn.
     public internal(set) var turnInFlight = false
+    /// Whether any message still unanswered in this conversation came from speech. The approval
+    /// socket reads it (`WindowModel.turnIsSpoken`): a spoken turn never runs a connection's write
+    /// unasked (Invariant 7). **Sticky**: a typed message sent beside a spoken one does not lower
+    /// it, and the first message's `.result` does not clear it while a later one is unanswered —
+    /// only the last `.result` (`noteResult`) or the session's end (`endTurns`) does.
+    public internal(set) var spoken = false
+    /// Messages sent (`noteSent`) less `.result`s received (`noteResult`).
+    var unansweredSends = 0
+
+    /// A message is about to go: spoken stays raised, or is raised by this one.
+    func noteSent(spoken bySpeech: Bool) {
+        unansweredSends += 1
+        spoken = spoken || bySpeech
+    }
+
+    /// A `.result` landed: one message answered; the last clears `spoken`.
+    func noteResult() {
+        unansweredSends = max(0, unansweredSends - 1)
+        if unansweredSends == 0 { spoken = false }
+    }
+
+    /// Nothing the session was sent is still running: a send that failed, a session stopped,
+    /// replaced or gone.
+    func endTurns() {
+        unansweredSends = 0
+        spoken = false
+    }
     /// A turn ended while the place was off screen, and the operator has not been back since
     /// (background agents 4 of 4): its chip says done. Cleared when the place is activated.
     public internal(set) var unseenResult = false
@@ -201,6 +235,14 @@ public final class PlaceAgent {
 /// a recorder in tests. Stopping it stops new connections; one already open finishes.
 public protocol AgentSocket: Sendable {
     func stop() async
+    /// Why part of what the socket brings did not start, though the socket itself did — the
+    /// conversation's approval socket, say. Nil when everything started. Said in the session's
+    /// status after each turn, as `PlaceAgent.socketFailure` is (Rule 8).
+    var startFailure: String? { get }
+}
+
+extension AgentSocket {
+    public var startFailure: String? { nil }
 }
 
 extension MCPSocketServer: AgentSocket {}

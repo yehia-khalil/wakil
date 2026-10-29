@@ -349,7 +349,8 @@ private let tabRenameEffect = PaletteEffect.runName(
     /// into production prices `.control` actions **for the agent only**; the operator's own
     /// switch — the context line's chooser — has never raised a plane. The palette must leave
     /// that unchanged in both directions: the operator's switch runs as the chooser's does, and
-    /// the agent's identical call still parks for confirmation.
+    /// the agent's identical call is still refused (`ctx_set_environment` is operator-only, which
+    /// `dispatch` refuses from the agent before the gate is asked).
     @Test func switchingIntoProductionMeetsTheGateUnchanged() async throws {
         let w = await paletteWindow(register: { registry, _, _ in await registerEnvironmentSwitch(into: registry) })
         _ = await w.model.paletteRootEntries(mode: .commands) { _ in }
@@ -360,7 +361,7 @@ private let tabRenameEffect = PaletteEffect.runName(
         #expect(ran.map(\.outcome) == ["ok"])
         #expect(ran.first?.origin == .ui)
 
-        await #expect(throws: ActionError.self) {
+        await #expect(throws: ActionError.operatorOnly("ctx_set_environment")) {
             try await w.registry.dispatch(
                 name: "ctx_set_environment", params: .object(["name": .string("production")]),
                 origin: .agent, caller: .test("staging"), confirmation: nil)
@@ -1084,7 +1085,7 @@ private let registeredBeforeThePalette: Set<String> = [
     // 3d-i (Ruling 17): the pull-request read.
     "ctx_github_pull_requests",
     // 3b-viii (Decision 42): the operator-only write for a local model endpoint.
-    "ctx_set_local_provider",
+    "ctx_set_local_provider", "ctx_config_tree_for",
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
     "ctx_list_providers", "ctx_provider_login", "ctx_set_environment", "ctx_set_project",
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
@@ -1093,6 +1094,10 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set", "ctx_git_account_test",
     "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
     "ctx_set_project_agent_instructions",
+    // Connections: the operator-only connection actions and the Jira token.
+    "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",
+    "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait",
+    "ctx_connection_signout", "ctx_connection_update", "ctx_jira_token_set",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_update_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_connection", "db_set_dsn",

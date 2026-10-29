@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/connections-jira-token-dispatch.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-26T01:38:06.761392Z",
+  "checkBlob": "ab9cffccc51c6cfcfeb2a3f9e9976e931ff2916c"
+}

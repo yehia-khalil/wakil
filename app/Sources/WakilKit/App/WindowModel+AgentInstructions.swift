@@ -51,3 +51,50 @@ extension WindowModel {
         return agentInstructionsUpdateHeader + "\n\n" + body
     }
 }
+
+extension WindowModel {
+    /// The first launch in an organisation can come before anything read its configuration (the
+    /// settings read follows the pane opening), so a launch for an organisation the box has never
+    /// heard of reads that organisation's tree itself — by id, since the window's active
+    /// organisation need not be the launching place's. A read that fails, answers for another
+    /// organisation, or takes longer than `agentConnectionsReadTimeout` leaves the box untouched:
+    /// the session starts without connections and the next launch asks again.
+    func ensureAgentConnections(in place: Place) async {
+        let org = place.organization
+        guard !agentConnectionsBox.isKnown(org: org) else { return }
+        let registry = self.registry
+        let read = Task<JSONValue?, Never> {
+            try? await registry.dispatch(
+                name: "ctx_config_tree_for", params: .object(["id": .string(org)]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        }
+        let timeout = agentConnectionsReadTimeout
+        let timer = Task {
+            try? await Task.sleep(for: timeout)
+            if !Task.isCancelled { read.cancel() }
+        }
+        let result = await withCheckedContinuation { (continuation: CheckedContinuation<JSONValue?, Never>) in
+            let once = ResumeOnce(continuation)
+            Task { once.resume(await read.value); timer.cancel() }
+            Task { _ = await timer.value; once.resume(nil) }
+        }
+        guard let tree = decodeSettingsTree(fromResult: result), tree.org.id == org else { return }
+        agentConnectionsBox.set(org: org, connections: tree.org.connections)
+    }
+}
+
+/// Resumes a continuation the first time it is asked to and never again.
+private final class ResumeOnce<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Never>?
+
+    init(_ continuation: CheckedContinuation<T, Never>) { self.continuation = continuation }
+
+    func resume(_ value: T) {
+        let taken = lock.withLock { () -> CheckedContinuation<T, Never>? in
+            defer { continuation = nil }
+            return continuation
+        }
+        taken?.resume(returning: value)
+    }
+}

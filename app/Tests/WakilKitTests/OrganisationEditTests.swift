@@ -171,21 +171,25 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
 }
 
 /// The refusal the agent meets is `permissionDecision`'s; this is the
-/// second gate, for the case where the CLI asks anyway — and it leaves a
-/// journal line, so an attempt is visible rather than silent.
-@Test func anAgentsOrganisationEditIsJournalled() async throws {
+/// second gate, for the case where the CLI asks anyway: `dispatch` refuses
+/// an operator-only action from the agent — and it leaves a journal line,
+/// so an attempt is visible rather than silent.
+@Test func anAgentsOrganisationEditIsRefusedAndJournalled() async throws {
     let (registry, _) = try await registryWithRecordingContext()
 
-    _ = try await registry.dispatch(
-        name: "ctx_update_org",
-        params: .object(["id": .string("acme"), "displayName": .string("Acme")]),
-        origin: .agent, caller: .test("staging"), confirmation: nil)
+    await #expect(throws: ActionError.operatorOnly("ctx_update_org")) {
+        try await registry.dispatch(
+            name: "ctx_update_org",
+            params: .object(["id": .string("acme"), "displayName": .string("Acme")]),
+            origin: .agent, caller: .test("staging"), confirmation: nil)
+    }
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first(where: { $0.action == "ctx_update_org" }) else {
         Issue.record("ctx_update_org left no journal entry: \(entries)"); return
     }
     #expect(entry.origin == .agent)
+    #expect(entry.outcome == "refused")
     // Nothing here is secret-bearing: the three strings are a display
     // name, a public Atlassian URL and an account id, so they are
     // journalled verbatim. #207's DSN write is the first action to mark a

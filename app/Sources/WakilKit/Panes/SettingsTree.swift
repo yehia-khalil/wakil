@@ -248,6 +248,112 @@ public struct SettingsGitAccount: Sendable, Equatable, Decodable {
     private enum CodingKeys: String, CodingKey { case host, provider, method, user, keyPath, username }
 }
 
+/// One value a connection asks for (a catalog kind's field): a secret one is drawn masked and
+/// written through `connection_secrets_set`; its value never travels in the tree.
+public struct SettingsConnectionField: Sendable, Equatable, Decodable {
+    public var id: String
+    public var label: String
+    public var secret: Bool
+
+    public init(id: String, label: String, secret: Bool = false) {
+        self.id = id
+        self.label = label
+        self.secret = secret
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? id
+        secret = try c.decodeIfPresent(Bool.self, forKey: .secret) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, label, secret }
+}
+
+/// One of the organisation's own MCP servers, as Go's `ConfigTreeConnection` draws it: no secret,
+/// only which Keychain keys hold one (`secretKeys`). `hints` is the server's word on each tool as
+/// last checked (readOnly, writes, destructive or ""); `allow` the operator's switches.
+public struct SettingsConnection: Sendable, Equatable, Decodable {
+    public var name: String
+    public var kind: String
+    public var title: String
+    public var transport: String
+    public var url: String
+    public var command: String
+    public var args: [String]
+    /// token, fields, browser or none.
+    public var signIn: String
+    public var values: [String: String]
+    public var fields: [SettingsConnectionField]
+    public var allow: [String: Bool]
+    public var hints: [String: String]
+    public var signedIn: Bool
+    public var secretKeys: [String]
+
+    public init(
+        name: String, kind: String = "custom", title: String = "", transport: String = "", url: String = "",
+        command: String = "", args: [String] = [], signIn: String = "none", values: [String: String] = [:],
+        fields: [SettingsConnectionField] = [], allow: [String: Bool] = [:], hints: [String: String] = [:],
+        signedIn: Bool = false, secretKeys: [String] = []
+    ) {
+        self.name = name
+        self.kind = kind
+        self.title = title
+        self.transport = transport
+        self.url = url
+        self.command = command
+        self.args = args
+        self.signIn = signIn
+        self.values = values
+        self.fields = fields
+        self.allow = allow
+        self.hints = hints
+        self.signedIn = signedIn
+        self.secretKeys = secretKeys
+    }
+
+    /// A connection known only by its name, as a launch needs it (`AgentConnection(name:)`).
+    public init(name: String) { self.init(name: name, kind: "custom") }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "custom"
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        transport = try c.decodeIfPresent(String.self, forKey: .transport) ?? ""
+        url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
+        command = try c.decodeIfPresent(String.self, forKey: .command) ?? ""
+        args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
+        signIn = try c.decodeIfPresent(String.self, forKey: .signIn) ?? "none"
+        values = try c.decodeIfPresent([String: String].self, forKey: .values) ?? [:]
+        // Per element: one malformed field is dropped, not the connection (nor, with it, every
+        // connection a launch reads).
+        fields = (try? c.decodeIfPresent([LenientElement<SettingsConnectionField>].self, forKey: .fields))?
+            .compactMap(\.value) ?? []
+        allow = try c.decodeIfPresent([String: Bool].self, forKey: .allow) ?? [:]
+        hints = try c.decodeIfPresent([String: String].self, forKey: .hints) ?? [:]
+        signedIn = try c.decodeIfPresent(Bool.self, forKey: .signedIn) ?? false
+        secretKeys = try c.decodeIfPresent([String].self, forKey: .secretKeys) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, kind, title, transport, url, command, args, signIn, values, fields, allow, hints, signedIn, secretKeys
+    }
+
+    /// What the list and the page call it: the catalog's title, else the name.
+    public var displayTitle: String { title.isEmpty || kind == "custom" ? name : title }
+}
+
+/// One element of a list decoded on its own: a malformed one is nil and the rest survive.
+struct LenientElement<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+/// A session launch reads only a connection's name (`AgentConnectionsBox`); it is the same record.
+public typealias AgentConnection = SettingsConnection
+
 /// The organisation's four editable strings, and the id, which is the
 /// directory name and therefore not editable at all.
 public struct SettingsOrg: Sendable, Equatable, Decodable {
@@ -281,6 +387,11 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     /// Empty means the repository's own git config decides.
     public var gitName: String
     public var gitEmail: String
+    /// The organisation's connections (Settings → Connections); a session launch reads their
+    /// names (`AgentConnectionsBox`).
+    public var connections: [SettingsConnection]
+    /// Whether the organisation's Jira sign-in (`jira:<org>`) is in the Keychain — presence only.
+    public var jiraTokenStored: Bool
 
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
@@ -288,7 +399,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true, conversationNames: Bool = true,
         gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = "",
         gitSignIn: [String] = [], agentGeneral: String = "", gitCommitInstructions: String = "",
-        gitPRInstructions: String = ""
+        gitPRInstructions: String = "", connections: [SettingsConnection] = [], jiraTokenStored: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
@@ -309,6 +420,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.gitPRInstructions = gitPRInstructions
         self.gitName = gitName
         self.gitEmail = gitEmail
+        self.connections = connections
+        self.jiraTokenStored = jiraTokenStored
     }
 
     public init(from decoder: Decoder) throws {
@@ -332,12 +445,16 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         gitPRInstructions = try container.decodeIfPresent(String.self, forKey: .gitPRInstructions) ?? ""
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
+        // `try?`: a malformed connections field must not blank the whole Settings tree.
+        connections = (try? container.decodeIfPresent([LenientElement<SettingsConnection>].self, forKey: .connections))?
+            .compactMap(\.value) ?? []
+        jiraTokenStored = (try? container.decodeIfPresent(Bool.self, forKey: .jiraTokenStored)) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, conversationNames, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
             agentGeneral, gitCommitInstructions, gitPRInstructions
-        case gitName, gitEmail
+        case gitName, gitEmail, connections, jiraTokenStored
     }
 
     /// What the tree's Organisation node is labelled with: the display

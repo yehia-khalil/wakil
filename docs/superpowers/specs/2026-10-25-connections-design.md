@@ -47,7 +47,7 @@ the organization form asks for the Jira site and nothing else (`OrgPlane.swift`)
 1. **Organization settings → Connections.** A list: each connection with a dot and a word —
    *connected* (green), *needs sign-in* (amber), *failing* (red) — and **+ Add connection**.
    The existing Jira site moves here as the Jira connection; nothing about it is lost.
-2. **Add connection** offers the ready-made list — GitHub, Jira, Confluence, Figma, Datadog,
+2. **Add connection** offers the ready-made list — GitHub, Jira, Confluence, Datadog,
    Amplitude, Slack — and **Custom server**. A ready-made entry already knows its server's address
    or command, its sign-in kind and its fields; the operator only signs in.
 3. **The connection's page**:
@@ -56,9 +56,9 @@ the organization form asks for the Jira site and nothing else (`OrgPlane.swift`)
 
      | Kind | Form | Examples |
      |---|---|---|
-     | Token | one field (two for Jira: email and API token) | GitHub PAT, Figma, Jira |
+     | Token | one field (two for Jira: email and API token) | GitHub PAT, Jira |
      | Fields | several labelled fields, some not secret (site, region) | Datadog (site, API key, app key), Amplitude (region, key, secret) |
-     | Browser | **Sign in with …** → the browser → "Signed in as …" · **Sign out** | Atlassian remote, Slack, Figma remote |
+     | Browser | **Sign in with …** → the browser → "Signed in as …" · **Sign out** | Atlassian remote, Slack |
      | None | a command and optional environment variables | a local `npx` server |
 
      A stored secret shows as `•••••••• stored in Keychain`, with **Replace** (the existing
@@ -179,3 +179,30 @@ read-only tool runs from voice like any read.
 
 1. Open question 16: `Connection` also names a database in `wakil-db`'s schemas. This design uses
    §9's meaning; the database sense should be renamed in the plan.
+
+## Amendment 2026-10-26 — a change reaches the open conversations
+
+**Walked, then decided by the operator.** The walk showed that a connection added or removed in
+Settings reached only a conversation started afterwards; the agent in an open conversation kept
+the servers it was launched with. The operator did not accept that.
+
+- **Add, remove, or change a connection's server** (address, command, arguments, sign-in) and every
+  open conversation in that organisation picks it up **at its next message**: Wakil ends that
+  conversation's agent between turns and starts it again on the same conversation (the fork-resume
+  every resume already uses), with the organisation's current connections in its MCP config. The
+  transcript and its history stay; that one message waits a few seconds for the restart.
+- **Never mid-turn.** A conversation whose agent is working, or has a call on the plane, restarts
+  after the turn ends, not during it.
+- **A removed connection refuses at once.** Its `wakil-connect` asks the approval socket on every
+  call; the app refuses a call for a connection the organisation no longer has, before the next
+  message, and journals it.
+- **An Allow agent tick needs no restart**: the approval socket decides each call from the
+  current record already.
+- Only Claude Code sessions carry connections today, so only they restart. The other way — one
+  Wakil server per session that announces tool changes while the agent runs — was not chosen: it
+  depends on each harness honouring tool-list changes.
+
+This replaces the runbook's *Known and not fixed* line "A Claude Code session started before a
+connection was added does not have it".
+
+**2026-10-26, decided by the operator:** Figma leaves the ready-made list — its sign-in server (`mcp.figma.com/register`) answers 403 to any client not on Figma's allowlist.

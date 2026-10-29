@@ -209,6 +209,11 @@ private let orgIndependent: Set<String> = [
     "backgroundFetchTimeout", "backgroundFetchCurrent",
     // 3a-iii-b: the box is keyed by organisation itself; no switch empties it.
     "agentInstructionsBox",
+    // Keyed by organisation like the box above.
+    "agentConnectionsBox", "connectionsUnavailable", "agentConnectionsReadTimeout",
+    // Settings → Connections: how a check runs and how a page opens are wiring, and the accounts
+    // are keyed by organisation.
+    "connectionLister", "openURL", "connectionAccounts",
     // 2d-ii: the operator's hand on ⌥, not either organisation's state.
     "isListening",
     // 2e (#202). Both are injected at construction and describe HOW to

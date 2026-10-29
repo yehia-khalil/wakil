@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/yehia-khalil/wakil/e2e/driver"
 )
 
 // make-app-bundle.sh is the third non-Go artefact this package covers (see
@@ -33,7 +35,7 @@ import (
 // `wakil` is intentionally absent — it is the operator CLI, not an MCP
 // server, and nothing in the app spawns it (the same line
 // register-provider.sh draws; see providerServers).
-var bundledServers = []string{"wakil-ctx", "wakil-db", "wakil-git", "wakil-http", "wakil-pm", "wakil-recall", "wakil-files"}
+var bundledServers = []string{"wakil-ctx", "wakil-db", "wakil-git", "wakil-http", "wakil-pm", "wakil-recall", "wakil-files", "wakil-connect"}
 
 // bundledBinaries is everything Contents/Resources must hold: the MCP servers,
 // and the operator CLI the window runs `provider credentials` through.
@@ -296,5 +298,31 @@ func TestBundleIsRebuiltFromScratchEachRun(t *testing.T) {
 	}
 	if _, err := os.Stat(stale); err == nil {
 		t.Fatal("a file left by a previous build survived the rebuild")
+	}
+}
+
+// The bundle this script ships is never the e2e fixture: the app opens its e2e operator channel
+// (an operator-only route beside every agent socket) only under the fixture's bundle id, so a
+// shipped Info.plist naming it would open that channel in the operator's own Wakil.
+func TestTheShippedBundleIsNotTheE2EFixture(t *testing.T) {
+	root := bundleTree(t)
+	if out, err := runBundleScript(t, root); err != nil {
+		t.Fatalf("make-app-bundle.sh: %v\n%s", err, out)
+	}
+	plutil, err := exec.LookPath("plutil")
+	if err != nil {
+		t.Skipf("plutil is not on PATH, so the Info.plist cannot be parsed: %v", err)
+	}
+	plist := filepath.Join(root, "app", "Wakil.app", "Contents", "Info.plist")
+	out, err := exec.Command(plutil, "-extract", "CFBundleIdentifier", "raw", "-o", "-", plist).Output()
+	if err != nil {
+		t.Fatalf("plutil -extract CFBundleIdentifier: %v", err)
+	}
+	id := strings.TrimSpace(string(out))
+	if id == driver.E2EBundleIdentifier {
+		t.Fatalf("the shipped bundle is %q, the e2e fixture's id: it would open the harness channel", id)
+	}
+	if id != "dev.wakil.app" {
+		t.Errorf("the shipped bundle id is %q, want dev.wakil.app", id)
 	}
 }

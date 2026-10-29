@@ -59,6 +59,16 @@ func (c *ScreenChannel) Initialize() (string, error) {
 	return client.Initialize()
 }
 
+// HarnessFailure is why the operator socket beside the screen's agent socket would not start, or
+// "" (MCP.HarnessFailure).
+func (c *ScreenChannel) HarnessFailure() (string, error) {
+	client, err := c.screenClient()
+	if err != nil {
+		return "", err
+	}
+	return client.HarnessFailure()
+}
+
 // Tools lists the actions on the socket of the place on screen.
 func (c *ScreenChannel) Tools() ([]Tool, error) {
 	client, err := c.screenClient()

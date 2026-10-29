@@ -370,6 +370,40 @@ actor Ran {
     #expect(try await r.journalEntries().last?.via == nil)
 }
 
+/// An operator-only action is refused at `dispatch` when the agent asks, whatever let the call
+/// through the permission prompt: registered `.operatorOnly`, or named in `operatorOnlyActions`.
+/// The operator's own origins still run it. Must fail if `dispatch` stops reading the audience.
+@Test(arguments: ["ctx_connection_allow_set", "ctx_connection_update", "ctx_config_tree_for", "ctx_list_orgs"])
+func dispatchRefusesAnOperatorOnlyActionFromTheAgent(name: String) async throws {
+    let r = ActionRegistry(journalDirectory: testScratchRoot
+        .appendingPathComponent(UUID().uuidString), sessionId: "s1")
+    await r.register(Action(name: name, description: "test", kind: .control, audience: .operatorOnly,
+                            schema: .object([:])) { _ in .string("ran") })
+    await #expect(throws: ActionError.operatorOnly(name)) {
+        try await r.dispatch(name: name, params: .object([:]), origin: .agent,
+                             caller: .test("staging"), confirmation: nil)
+    }
+    for origin in [ActionOrigin.ui, .debug] {
+        let out = try await r.dispatch(name: name, params: .object([:]), origin: origin,
+                                       caller: .test("staging"), confirmation: nil)
+        #expect(out == .string("ran"))
+    }
+    let outcomes = try await r.journalEntries().map(\.outcome)
+    #expect(outcomes == ["refused", "ok", "ok"])
+    #expect(ActionError.operatorOnly(name).description.hasPrefix("\(name): only the operator"))
+}
+
+/// The name alone is enough: an action on `operatorOnlyActions` with no audience said is still
+/// refused to the agent.
+@Test func dispatchRefusesANameOnTheOperatorOnlyListFromTheAgent() async throws {
+    let r = ActionRegistry(journalDirectory: testScratchRoot
+        .appendingPathComponent(UUID().uuidString), sessionId: "s1")
+    await r.register(testAction("ctx_list_orgs", .read))
+    await #expect(throws: ActionError.operatorOnly("ctx_list_orgs")) {
+        try await r.dispatch(name: "ctx_list_orgs", params: .null, origin: .agent,
+                             caller: .test("staging"), confirmation: nil)
+    }
+}
 // MARK: - A price per call (3c-ii)
 
 private func pricedRegistry() -> ActionRegistry {

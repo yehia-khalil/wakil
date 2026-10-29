@@ -3,83 +3,6 @@ import Foundation
 import Darwin
 #endif
 
-/// Wire-setup errors this transport layer throws itself — socket
-/// creation/bind/listen failures on the `MCPSocketServer` side, and the
-/// equivalent connect-side failures `runShim` (in `Shim.swift`) surfaces to
-/// stderr. Never sent as a JSON-RPC error object: these happen before any
-/// JSON-RPC frame could be exchanged at all.
-public enum MCPTransportError: Error, Sendable, CustomStringConvertible {
-    case pathTooLong(String)
-    case posixFailure(call: String, path: String, errnoValue: Int32)
-
-    public var description: String {
-        switch self {
-        case .pathTooLong(let path):
-            return "socket path too long for sockaddr_un: \(path)"
-        case .posixFailure(let call, let path, let errnoValue):
-            return "\(call)(\(path)) failed: \(String(cString: strerror(errnoValue)))"
-        }
-    }
-}
-
-/// Fills in a `sockaddr_un` for `path`. Shared by `MCPSocketServer` (binding)
-/// and `runShim` (connecting) so the two sides of this transport agree on one
-/// way to build the address. `sun_path` is a fixed-size byte buffer on Darwin
-/// (its exact size is read via `MemoryLayout.size(ofValue:)` below rather
-/// than hard-coded), so a path that does not fit is rejected here rather than
-/// silently truncated.
-/// Ignores SIGPIPE process-wide. A write to a socket whose peer already
-/// closed its read side raises SIGPIPE, and the default disposition for that
-/// signal terminates the process outright — before `write(2)` ever returns
-/// control (let alone an error) to Swift, so a `try?` around
-/// `FileHandle.write` cannot catch it; there is nothing for `try?` to catch
-/// until the signal itself stops being fatal. Reproduced directly on this
-/// machine: a client that sent a request and closed its socket before
-/// reading the reply killed the whole process with exit code 141 (128 +
-/// SIGPIPE) the moment `Connection.ingest` tried to write the reply back,
-/// twice in a row, before this fix.
-///
-/// Declared as a top-level `let`: Swift initializes a global exactly once,
-/// the first time it is read, and that initialization is synchronized
-/// against concurrent readers — so calling `_ = ignoreSIGPIPEProcessWide`
-/// from both `MCPSocketServer.start()` and `runShim` still only calls
-/// `signal` once per process. Ignoring SIGPIPE process-wide has no effect on
-/// any other signal or any other descriptor's behaviour beyond turning a
-/// write to a dead peer into an ordinary `EPIPE` error return.
-let ignoreSIGPIPEProcessWide: Void = {
-    signal(SIGPIPE, SIG_IGN)
-}()
-
-/// Sets `SO_NOSIGPIPE` on `fd`: a second, narrower guard against the same
-/// failure `ignoreSIGPIPEProcessWide` already covers process-wide, applied
-/// per-socket. Belt-and-suspenders — either mechanism alone is sufficient on
-/// Darwin — so a `setsockopt` failure here is not treated as fatal; the
-/// process-wide signal disposition is still in effect regardless.
-func disableSIGPIPE(onSocket fd: Int32) {
-    var one: Int32 = 1
-    _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-}
-
-func makeUnixSocketAddress(path: String) throws -> (sockaddr_un, socklen_t) {
-    var addr = sockaddr_un()
-    addr.sun_family = sa_family_t(AF_UNIX)
-    let pathBytes = Array(path.utf8)
-    let capacity = MemoryLayout.size(ofValue: addr.sun_path)
-    guard pathBytes.count < capacity else {
-        throw MCPTransportError.pathTooLong(path)
-    }
-    withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-        let buffer = raw.bindMemory(to: UInt8.self)
-        for (index, byte) in pathBytes.enumerated() {
-            buffer[index] = byte
-        }
-        buffer[pathBytes.count] = 0
-    }
-    addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-    let length = socklen_t(MemoryLayout<sa_family_t>.size + pathBytes.count + 1)
-    return (addr, length)
-}
-
 /// The application state Wakil's MCP surface serves: the action set
 /// `tools/list` projects and `tools/call` dispatches into, and the panes
 /// `read_pane` reads back out.
@@ -208,7 +131,9 @@ public func handle(
     _ message: JSONRPCMessage,
     surface: MCPSurface,
     caller: @Sendable () async -> DispatchCaller,
-    screen: (@Sendable () async -> ScreenShown?)? = nil
+    screen: (@Sendable () async -> ScreenShown?)? = nil,
+    channel: MCPChannel = .agent,
+    harnessFailure: String? = nil
 ) async -> JSONRPCMessage? {
     guard let id = message.id else {
         return nil
@@ -235,8 +160,16 @@ public func handle(
             ]),
             "_meta": initializeMeta(
                 place: own.place, screen: shown?.place,
-                conversation: own.conversation, screenConversation: shown?.conversation),
+                conversation: own.conversation, screenConversation: shown?.conversation,
+                harnessFailure: harnessFailure),
         ]))
+
+    case "tools/list" where channel == .harness:
+        let tools = await surface.registry.all().filter(isOperatorOnly).map(toolListEntry)
+        return JSONRPCMessage(id: id, result: .object(["tools": .array(tools)]))
+
+    case "tools/call" where channel == .harness:
+        return await handleHarnessToolsCall(id: id, params: message.params, surface: surface, caller: caller)
 
     case "tools/list":
         var tools = await surface.registry.all().map(toolListEntry)
@@ -276,13 +209,18 @@ public struct ScreenShown: Sendable, Equatable {
 /// (conversations 2 of 3), each null when unknown. MCP's `_meta` is the result's room for
 /// exactly this, and a client that does not read it ignores it.
 ///
+/// `wakil/harnessFailure`, **only when there is one**: why the e2e fixture's harness socket beside
+/// this one would not start (`harnessSocketFailure`). Absent in every other build and whenever it
+/// started, so the harness reads "no key" as a build that opens none.
+///
 /// **What the e2e harness picks its channel by** (`e2e/driver/socket.go`): a window holds one
 /// socket per conversation it has shown, and the one to drive is the one whose place — and
 /// conversation — is the screen's: after ⌘N a place holds the backgrounded conversation's
 /// socket and its Landing's, and only the second is the screen's. All four answers come from
 /// the window that knows them. `project` is the registry key, the one `WAKIL_PROJECT` pins by.
 func initializeMeta(
-    place: Place, screen: Place?, conversation: String?, screenConversation: String?
+    place: Place, screen: Place?, conversation: String?, screenConversation: String?,
+    harnessFailure: String? = nil
 ) -> JSONValue {
     func object(_ place: Place) -> JSONValue {
         .object([
@@ -291,12 +229,14 @@ func initializeMeta(
             "environment": .string(place.environment),
         ])
     }
-    return .object([
+    var meta: [String: JSONValue] = [
         "wakil/place": object(place),
         "wakil/screen": screen.map(object) ?? .null,
         "wakil/conversation": conversation.map(JSONValue.string) ?? .null,
         "wakil/screenConversation": screenConversation.map(JSONValue.string) ?? .null,
-    ])
+    ]
+    if let harnessFailure { meta["wakil/harnessFailure"] = .string(harnessFailure) }
+    return .object(meta)
 }
 
 /// Projects one registered action into the shape `tools/list` advertises.
@@ -327,7 +267,7 @@ func initializeMeta(
 /// that asks the second question, and it is deliberately not emitted here:
 /// `ActionKind` does not answer it, `Action.price` does, and a hint invented
 /// from the kind would be a guess wearing the protocol's clothes.
-private func toolListEntry(_ descriptor: ActionDescriptor) -> JSONValue {
+func toolListEntry(_ descriptor: ActionDescriptor) -> JSONValue {
     .object([
         "name": .string(descriptor.name),
         "description": .string(descriptor.description),
@@ -1137,7 +1077,7 @@ private func settingsPaneSnapshotJSON(
 /// error code, so a caller (or a test) can tell "no such action" apart from
 /// "this action exists but was refused" without parsing the message string —
 /// mirroring the same distinction `ActionError`'s own doc comment draws.
-private func jsonRPCError(for error: ActionError) -> JSONRPCError {
+func jsonRPCError(for error: ActionError) -> JSONRPCError {
     switch error {
     case .unknown(let name):
         return JSONRPCError(code: -32601, message: "Unknown action: \(name)")
@@ -1147,6 +1087,8 @@ private func jsonRPCError(for error: ActionError) -> JSONRPCError {
         return JSONRPCError(code: -32003, message: "\(name) is blocked in production")
     case .callerGone(_, let reason):
         return JSONRPCError(code: -32006, message: reason)
+    case .operatorOnly:
+        return JSONRPCError(code: -32007, message: error.description)
     }
 }
 
@@ -1168,6 +1110,10 @@ public actor MCPSocketServer {
     private let caller: @Sendable () async -> DispatchCaller
     /// What the window shows, for `initialize`'s `_meta` (`initializeMeta`).
     private let screen: (@Sendable () async -> ScreenShown?)?
+    /// Which channel this socket is: the agent's, or the e2e harness's (`MCPChannel`).
+    private let channel: MCPChannel
+    /// Why the e2e harness socket beside this one would not start, for `initialize`.
+    private let harnessFailure: String?
 
     private var listenFD: Int32 = -1
     private var acceptThread: Thread?
@@ -1186,12 +1132,16 @@ public actor MCPSocketServer {
         surface: MCPSurface,
         socketPath: String,
         caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> ScreenShown?)? = nil
+        screen: (@Sendable () async -> ScreenShown?)? = nil,
+        channel: MCPChannel = .agent,
+        harnessFailure: String? = nil
     ) {
         self.surface = surface
         self.socketPath = socketPath
         self.caller = caller
         self.screen = screen
+        self.channel = channel
+        self.harnessFailure = harnessFailure
     }
 
     public func start() async throws {
@@ -1231,6 +1181,14 @@ public actor MCPSocketServer {
             close(fd)
             throw MCPTransportError.posixFailure(call: "bind", path: socketPath, errnoValue: failedErrno)
         }
+        // The harness socket is 0600, like the approval socket: bound owner-only above, so nobody
+        // else could connect in between.
+        if channel == .harness, chmod(socketPath, 0o600) != 0 {
+            let failedErrno = errno
+            close(fd)
+            unlink(socketPath)
+            throw MCPTransportError.posixFailure(call: "chmod", path: socketPath, errnoValue: failedErrno)
+        }
 
         guard listen(fd, 16) == 0 else {
             let failedErrno = errno
@@ -1255,6 +1213,8 @@ public actor MCPSocketServer {
         let surface = self.surface
         let caller = self.caller
         let screen = self.screen
+        let channel = self.channel
+        let harnessFailure = self.harnessFailure
         let thread = Thread {
             while true {
                 let clientFD = accept(fd, nil, nil)
@@ -1266,7 +1226,9 @@ public actor MCPSocketServer {
                     return
                 }
                 disableSIGPIPE(onSocket: clientFD)
-                let connection = Connection(fd: clientFD, surface: surface, caller: caller, screen: screen)
+                let connection = Connection(
+                    fd: clientFD, surface: surface, caller: caller, screen: screen, channel: channel,
+                    harnessFailure: harnessFailure)
                 Task { await connection.run() }
             }
         }
@@ -1351,17 +1313,21 @@ private actor Connection {
     private let surface: MCPSurface
     private let caller: @Sendable () async -> DispatchCaller
     private let screen: (@Sendable () async -> ScreenShown?)?
+    private let channel: MCPChannel
+    private let harnessFailure: String?
     private var reader = FrameReader()
     private var poisoned = false
 
     init(
         fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> ScreenShown?)?
+        screen: (@Sendable () async -> ScreenShown?)?, channel: MCPChannel, harnessFailure: String?
     ) {
         self.fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.surface = surface
         self.caller = caller
         self.screen = screen
+        self.channel = channel
+        self.harnessFailure = harnessFailure
     }
 
     func run() {
@@ -1439,7 +1405,9 @@ private actor Connection {
             // 120 seconds, and the environment the gate judges on the way
             // out must be the one that is active *then*. See `handle`'s doc
             // comment.
-            guard let reply = await handle(message, surface: surface, caller: caller, screen: screen)
+            guard let reply = await handle(
+                message, surface: surface, caller: caller, screen: screen, channel: channel,
+                harnessFailure: harnessFailure)
             else { continue }
             if let frame = try? encodeFrame(reply) {
                 try? fh.write(contentsOf: frame)

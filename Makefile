@@ -50,7 +50,7 @@
 #     would reopen that trade-off, and it should be reopened deliberately
 #     rather than inherited by accident from an unset variable.
 
-BINS := wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall wakil-files
+BINS := wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall wakil-files wakil-connect
 
 # Set once and exported, so no target can drift from the others the way
 # `test` did.

@@ -76,9 +76,10 @@ public enum ActionAudience: String, Sendable, Equatable {
     /// from an absence.
     case agentReachable
     /// Only the operator may dispatch it. A name classified this way must
-    /// also be in `operatorOnlyActions`, which is what actually performs
-    /// the refusal; the two are pinned to agree by
-    /// `ActionClassificationTests`.
+    /// also be in `operatorOnlyActions`, which the permission prompt
+    /// refuses by; the two are pinned to agree by
+    /// `ActionClassificationTests`. `ActionRegistry.dispatch` refuses
+    /// either from the agent too (`ActionError.operatorOnly`).
     case operatorOnly
 }
 

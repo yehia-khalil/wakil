@@ -22,6 +22,89 @@ import Foundation
 /// discard or stage reaches git only through the registry's `editor_changes_*` actions (Invariant 2).
 public let agentFacingServers = ["wakil-pm", "wakil-recall", "wakil-git"]
 
+/// The binary every connection runs through (`cmd/wakil-connect`). Looked up in `binaries` like the
+/// answer binaries, but it is not an `agentFacingServers` entry: it is one server per connection,
+/// not one server.
+public let wakilConnectBinaryName = "wakil-connect"
+
+/// The connections a session may be given: not named like a server Wakil defines (Go refuses
+/// those names too — this is the second lock), and each name once.
+func usableConnections(_ connections: [AgentConnection]) -> [AgentConnection] {
+    let reserved = Set([wakilShimServerName] + agentFacingServers)
+    var seen = reserved
+    return connections.filter { !$0.name.isEmpty && seen.insert($0.name).inserted }
+}
+
+/// Each organisation's connections, filled from the config tree and read by the harness factory at
+/// each launch — `AgentInstructionsBox`'s shape, keyed by organisation. An organisation never read
+/// has no entry, which is not the same as an entry with none (`isKnown`).
+///
+/// **Each organisation's `revision`** (spec amendment 2026-10-26) moves when what a launch would
+/// give its agent changes: a connection added, removed or renamed, a server field changed
+/// (`serverShape`), or a sign-in replaced (`noteSignInChanged`) — never an Allow agent switch or a
+/// recorded hint, which `wakil-connect` reads from `org.json` at every call. A conversation whose
+/// agent launched at an older revision is restarted at its next message (`WindowModel.send`).
+public final class AgentConnectionsBox: @unchecked Sendable {
+    public static let shared = AgentConnectionsBox()
+    private let lock = NSLock()
+    private var byOrg: [String: [AgentConnection]] = [:]
+    private var revisions: [String: Int] = [:]
+
+    public init() {}
+
+    public func set(org: String, connections: [AgentConnection]) {
+        lock.withLock {
+            if Self.serverShape(byOrg[org] ?? []) != Self.serverShape(connections) { revisions[org, default: 0] += 1 }
+            byOrg[org] = connections
+        }
+    }
+
+    /// The organisation's revision: 0 until something changed it.
+    public func revision(org: String) -> Int {
+        lock.withLock { revisions[org] ?? 0 }
+    }
+
+    /// A connection's credentials changed (a token replaced, a browser sign-in or sign-out):
+    /// nothing in the tree shows it, and `wakil-connect` reads them only when it starts.
+    public func noteSignInChanged(org: String) {
+        lock.withLock { revisions[org, default: 0] += 1 }
+    }
+
+    /// Whether `org` still has a connection called `name`, as the app last read it. True for an
+    /// organisation never read: the app knows nothing to refuse it by (`wakil-connect`, reading
+    /// `org.json` at the call, still does).
+    public func stillHas(org: String, name: String) -> Bool {
+        lock.withLock { byOrg[org].map { $0.contains { $0.name == name } } ?? true }
+    }
+
+    /// What of each connection reaches its `wakil-connect` at start: its name and its server —
+    /// transport, address, command, arguments, field values, sign-in kind and whether it is signed
+    /// in. Not its switches, hints, title or field labels.
+    private struct ServerShape: Equatable {
+        let name, kind, transport, url, command, signIn: String
+        let args: [String]
+        let values: [String: String]
+        let signedIn: Bool
+        let secretKeys: [String]
+    }
+
+    private static func serverShape(_ connections: [AgentConnection]) -> [ServerShape] {
+        connections.map {
+            ServerShape(name: $0.name, kind: $0.kind, transport: $0.transport, url: $0.url, command: $0.command,
+                        signIn: $0.signIn, args: $0.args, values: $0.values, signedIn: $0.signedIn,
+                        secretKeys: $0.secretKeys.sorted())
+        }.sorted { $0.name < $1.name }
+    }
+
+    public func connections(org: String) -> [AgentConnection] {
+        lock.withLock { byOrg[org] ?? [] }
+    }
+
+    public func isKnown(org: String) -> Bool {
+        lock.withLock { byOrg[org] != nil }
+    }
+}
+
 /// Builds the `--mcp-config` JSON one session launches with: the `wakil`
 /// shim, plus whichever of `agentFacingServers` `binaries` could supply.
 ///
@@ -39,12 +122,21 @@ public let agentFacingServers = ["wakil-pm", "wakil-recall", "wakil-git"]
 /// environment variable at all, per §2.2), and setting them uniformly means
 /// the question "which org is this session for" is answered by reading the
 /// config once rather than server by server.
+///
+/// **Connections** (`connections`) are the organisation's own MCP servers, each one run through
+/// `wakil-connect --connection <name>` so its credentials and its gate sit between the agent and
+/// the upstream. Each gets the place environment above plus `WAKIL_APPROVAL_SOCKET` (when
+/// `approvalSocket` is given) — the conversation's approval socket, which no Wakil server and not
+/// the shim carries. Without `wakil-connect` in `binaries` the connections are dropped. A name
+/// that is already a server key never replaces it.
 public func agentMCPConfigJSON(
     shimExecutable: URL,
     socketPath: String,
     binaries: [String: URL],
     place: Place?,
-    provider: String?
+    provider: String?,
+    connections: [AgentConnection] = [],
+    approvalSocket: String? = nil
 ) -> String {
     var environment: [String: JSONValue] = [:]
     // Absent means unset, never the empty string (the Go side reads an empty one as unset too).
@@ -72,6 +164,18 @@ public func agentMCPConfigJSON(
             "args": .array([]),
             "env": .object(environment),
         ])
+    }
+
+    if let connect = binaries[wakilConnectBinaryName] {
+        var connectionEnvironment = environment
+        if let approvalSocket { connectionEnvironment["WAKIL_APPROVAL_SOCKET"] = .string(approvalSocket) }
+        for connection in usableConnections(connections) where servers[connection.name] == nil {
+            servers[connection.name] = .object([
+                "command": .string(connect.path),
+                "args": .array([.string("--connection"), .string(connection.name)]),
+                "env": .object(connectionEnvironment),
+            ])
+        }
     }
 
     let config = JSONValue.object(["mcpServers": .object(servers)])
@@ -207,7 +311,11 @@ public func agentMCPConfigJSON(
 /// that a live turn calls `mcp__wakil__ctx_list_projects` and is not denied —
 /// is confirmed only by standing check 2 of
 /// `docs/wakil/phase-2a-acceptance.md`, run by the operator.
-public func agentAllowedTools(actions: [ActionDescriptor]) -> [String] {
+///
+/// `connections` are allowed server-wide too (`mcp__<name>`): `wakil-connect` is the gate for their
+/// calls (it asks the operator before any that needs it), so the CLI's own layer would only deny
+/// what the gate already decided.
+public func agentAllowedTools(actions: [ActionDescriptor], connections: [AgentConnection] = []) -> [String] {
     // `.read` and `.control`, never `.mutate`.
     //
     // `.control` joined this list in 2b-i and is what makes "put the
@@ -241,5 +349,6 @@ public func agentAllowedTools(actions: [ActionDescriptor]) -> [String] {
     tools.append("mcp__\(wakilShimServerName)__\(readPaneToolName)")
     tools.append("mcp__\(wakilShimServerName)__\(readLayoutToolName)")
     tools.append(contentsOf: agentFacingServers.map { "mcp__\($0)" })
+    tools.append(contentsOf: usableConnections(connections).map { "mcp__\($0.name)" })
     return tools
 }

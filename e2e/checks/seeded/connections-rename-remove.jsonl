@@ -1,0 +1,26 @@
+{"dispatch":{"action":"ctx_connection_add","params":{"id":"e2e-fixture","kind":"custom","name":"ledger","transport":"stdio","command":"e2e-absent-mcp"}}}
+{"dispatch":{"action":"ctx_connection_add","params":{"id":"e2e-fixture","kind":"custom","name":"tracker","transport":"stdio","command":"e2e-absent-mcp"}}}
+{"dispatch":{"action":"ctx_connection_update","params":{"id":"e2e-fixture","name":"tracker","newName":"tracker-two","command":"e2e-other-mcp"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"frame":"settings.org.connections.ledger","minWidth":1}}
+{"do":{"click":"settings.org.connections.tracker-two"}}
+{"expect":{"tree":"contains","text":"e2e-other-mcp"}}
+{"do":{"focus":"settings.org.connections.tracker-two.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"tracker-three"}}
+{"do":{"press":"Return"}}
+{"expect":{"frame":"settings.org.connections.tracker-three.remove","minWidth":1}}
+{"expect":{"journal":{"contains":"\"newName\":\"tracker-three\""}}}
+{"do":{"click":"settings.org.connections.tracker-three.remove"}}
+{"expect":{"frame":"settings.org.connections.add","minWidth":1}}
+{"expect":{"tree":"absent","text":"tracker-three"}}
+{"expect":{"journal":{"contains":"\"action\":\"ctx_connection_remove\""}}}
+{"dispatch":{"action":"ctx_connection_remove","params":{"id":"e2e-fixture","name":"ledger"}}}
+{"dispatch":{"action":"ctx_connection_remove","params":{"id":"e2e-fixture","name":"ledger"},"refuses":"no connection ledger in e2e-fixture"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"LOCAL MODELS"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"CONNECTIONS"}}
+{"expect":{"frame":"settings.org.connections.add","minWidth":1}}
+{"expect":{"tree":"absent","text":"ledger"}}

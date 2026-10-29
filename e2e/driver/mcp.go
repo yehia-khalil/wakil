@@ -159,6 +159,10 @@ type initializeReply struct {
 		// window does not know.
 		Conversation       *string `json:"wakil/conversation"`
 		ScreenConversation *string `json:"wakil/screenConversation"`
+		// HarnessFailure is why the e2e fixture's operator socket beside this one would not
+		// start (`harnessSocketFailure` in HarnessChannel.swift); absent from every other build
+		// and whenever it started.
+		HarnessFailure string `json:"wakil/harnessFailure"`
 	} `json:"_meta"`
 }
 
@@ -185,6 +189,13 @@ func (m *MCP) initialize() (initializeReply, error) {
 func (m *MCP) Initialize() (string, error) {
 	payload, err := m.initialize()
 	return payload.ServerInfo.Name, err
+}
+
+// HarnessFailure is why the operator socket beside this one would not start, or "" when the
+// socket says nothing: it started, or this build opens none.
+func (m *MCP) HarnessFailure() (string, error) {
+	payload, err := m.initialize()
+	return payload.Meta.HarnessFailure, err
 }
 
 // Probe asks the socket, through its own `initialize`, which place and

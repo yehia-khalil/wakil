@@ -326,6 +326,21 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 	}
 	s.logf("%s on %s, %d action(s)", server, filepath.Base(socket), len(tools))
 
+	// **The operator channel**: the socket the staged fixture opens beside each agent socket,
+	// for the actions only the operator may run (OperatorChannel). Found the same way, by this
+	// pid. A build without one — the merge-base `make e2e-new` drives — has none, and every
+	// dispatch goes over the agent socket as it did there.
+	operator, err := AwaitOperator(instance.PID, client)
+	if err != nil {
+		return Result{}, err
+	}
+	if operator != nil {
+		defer operator.Close()
+		s.logf("operator channel on %s, %d operator-only action(s)", filepath.Base(operator.Socket()), operator.Actions())
+	} else {
+		s.logf("no operator channel: this build opens none, so operator-only actions go over the agent socket")
+	}
+
 	// **The evidence directory is named before the checks run**, so a run
 	// that dies mid-flight still says where to look.
 	evidence := &Evidence{
@@ -353,6 +368,9 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		Settle:       settle,
 		Quarantined:  s.Quarantined,
 		Input:        s.Resolver.WatchInput,
+	}
+	if operator != nil {
+		runner.Operator = operator
 	}
 	result = runner.Run(checks)
 	// **The scripted agent's log is read before teardown, always.** The

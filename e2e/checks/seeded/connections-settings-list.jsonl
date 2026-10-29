@@ -1,0 +1,23 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"CONNECTIONS"}}
+{"expect":{"frame":"settings.org.connections.add","minWidth":1}}
+{"do":{"click":"settings.org.connections.add"}}
+{"expect":{"tree":"contains","text":"Add connection"}}
+{"expect":{"frame":"settings.org.connections.catalog.custom","minWidth":1}}
+{"do":{"click":"settings.org.connections.catalog.atlassian"}}
+{"expect":{"frame":"settings.org.connections.atlassian.signin","minWidth":1}}
+{"expect":{"tree":"contains","text":"https://mcp.atlassian.com/v1/mcp"}}
+{"expect":{"tree":"contains","text":"Needs sign-in"}}
+{"expect":{"tree":"contains","text":"No tools yet: they are listed once the server answers a check."}}
+{"do":{"click":"settings.org.connections.atlassian.back"}}
+{"expect":{"frame":"settings.org.connections.add","minWidth":1}}
+{"expect":{"frame":"settings.org.connections.atlassian","minWidth":1}}
+{"do":{"click":"settings.org.connections.jira"}}
+{"expect":{"tree":"contains","text":"No site yet."}}
+{"do":{"type":{"into":"settings.org.connections.jira.email","text":"e2e@initech.test"}}}
+{"do":{"type":{"into":"settings.org.connections.jira.token","text":"e2e-fake-token"}}}
+{"do":{"click":"settings.org.connections.jira.store"}}
+{"expect":{"tree":"contains","text":"•••••••• stored in Keychain"}}
+{"expect":{"journal":{"contains":"\"action\":\"ctx_jira_token_set\""}}}
+{"expect":{"journal":{"contains":"e2e@initech.test"}}}

@@ -205,7 +205,11 @@ func TestSecretPresenceUsesTheAbsolutePathTheACLNames(t *testing.T) {
 		t.Fatalf("defaultSecurityBinary = %q; want the absolute path the ACL argument names",
 			defaultSecurityBinary)
 	}
-	// And with nothing overriding it, that constant is what resolves.
+	// And with nothing overriding it, that constant is what resolves. TestMain installs a
+	// stand-in in the variable; the product's own value is put back for this one lookup.
+	previous := securityBinary
+	securityBinary = defaultSecurityBinary
+	t.Cleanup(func() { securityBinary = previous })
 	t.Setenv("WAKIL_SECURITY_BINARY", "")
 	if got := securityTool(); got != defaultSecurityBinary {
 		t.Errorf("securityTool() = %q", got)

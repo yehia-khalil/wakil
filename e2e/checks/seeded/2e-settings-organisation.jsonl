@@ -3,9 +3,10 @@
 {"expect":{"tree":"contains","text":"IDENTITY"}}
 {"expect":{"tree":"contains","text":"Display name"}}
 {"expect":{"tree":"contains","text":"ACCOUNTS"}}
-{"expect":{"tree":"contains","text":"JIRA"}}
-{"expect":{"tree":"contains","text":"Site"}}
+{"expect":{"tree":"contains","text":"CONNECTIONS"}}
 {"expect":{"tree":"contains","text":"GIT"}}
+{"do":{"click":"settings.org.connections.jira"}}
+{"expect":{"tree":"contains","text":"Site"}}
 {"do":{"type":{"into":"settings.org.jiraBase","text":"https://e2e.atlassian.net"}}}
 {"expect":{"tree":"contains","text":"https://e2e.atlassian.net"}}
 {"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","jiraBase":"https://e2e.atlassian.net"},"click":"settings.org.jiraBase.save","assert":"tree"}}

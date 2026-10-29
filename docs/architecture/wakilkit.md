@@ -314,6 +314,8 @@ alone.
   into, read by `LayoutStore` and `PaneStore` in place of the on-screen one), `PaneContents.swift` (`PaneCell`,
   `PaneColumn`, `PaneSort`, `sortedRows`, `PaneSelection`), `WakilShimServerName.swift`
   (`wakilShimServerName = "wakil"`).
+- `UnixSocket.swift` — `MCPTransportError`, `makeUnixSocketAddress`, `ignoreSIGPIPEProcessWide`,
+  `disableSIGPIPE`: the socket plumbing `MCP/` and `Gate/`'s approval socket share.
 
 Uses: nothing.
 Tests: `JSONValueIntegerTests`, `IntegerPassthroughTests`, `ToolCallerTests`, `PaneContentsTests`,
@@ -411,9 +413,13 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
 - `ConfirmationBroker.swift` — `ConfirmationBroker` (actor): holds at most one refused mutation while
   a human decides. One per assembly, shared by the agent's path and the window's.
 - `PendingMutation.swift` — `PendingMutation` (with its `ask`, 3c-ii), `ConfirmationDecision`, `mutationAffectsEveryRow`.
+- `ConnectionApproval.swift` — `ConnectionApprovalServer` (actor): one conversation's approval
+  socket (`approvalSocketPath(forAgentSocket:)`), which `wakil-connect` asks before a gated
+  connection call; `connectionCallDecision` allows or asks, and an ask parks a `connection_call`
+  on the broker. `ConnectionCallRequest`, `ConnectionCallDecision`.
 
 Uses: nothing but `Core`.
-Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`.
+Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`, `ConnectionApprovalTests`.
 
 ### Git/ — the window's git status
 
@@ -544,10 +550,12 @@ Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `Rail
 - `Shim.swift` — `runShim`: copies bytes between stdio and the socket; parses nothing.
 - `PermissionPrompt.swift` — `approve_tool_use` (`permissionPromptToolName`), `permissionDecision`,
   `operatorOnlyActions`.
+- `HarnessChannel.swift` — `MCPChannel` (`agent`, `harness`), `startHarnessSocket`: the e2e
+  fixture's operator channel, opened only under `dev.wakil.e2e`; operator-only actions, origin `.debug`.
 - `JSONRPC.swift`, `ConfirmationDescription.swift`.
 
 Uses: `Gate`, `Layout`, `Panes`, `Registry`.
-Tests: `MCPClientTests`, `MCPServerTests`, `JSONRPCTests`, `PermissionPromptTests`, `ShimTests`.
+Tests: `MCPClientTests`, `MCPServerTests`, `HarnessChannelTests`, `JSONRPCTests`, `PermissionPromptTests`, `ShimTests`.
 
 ### Panes/ — what each pane shows
 
