@@ -173,7 +173,7 @@ Real, and to be inspected before editing anything:
 - **14 design comps** at `docs/wakil/screens/*.dc.html`, laid out as artboards by
   `canvas.json` (some marked interactive). These are the nearest thing to visual truth for
   surfaces not yet built.
-- **Acceptance runbooks**, one per phase, on its branch (`docs/wakil/*-acceptance.md`) until it merges. The charter's
+- **Acceptance runbooks**, one per phase, live on the feature's branch and leave `main` when it merges. The charter's
   §8 distinguishes *walked* (an operator ran it against the live app) from *accepted*
   (marked met without one). Do not read an accepted check as a verified one.
 - **Measured probes with real numbers**, not estimates: `2d-stt-probe.md` (Apple 4/29

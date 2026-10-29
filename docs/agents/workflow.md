@@ -5,8 +5,8 @@ runbook (all three files live on its branch), and which tool drives each leg.
 
 **Five rungs, three tools, two files.** Set 2026-09-26, replacing a ten-rung ladder
 whose Fog / Spec / Probe / Tickets front end cost four tools and a sub-phase's worth
-of GitHub issues before a line was written. The reasoning and the full accounting are
-in `docs/superpowers/specs/2026-09-26-workflow-superpowers-migration-design.md`.
+of GitHub issues before a line was written. The reasoning and the full accounting were in the
+2026-09-26 migration design, which left `main` when it merged.
 
 ## End every turn that finished something with this block
 

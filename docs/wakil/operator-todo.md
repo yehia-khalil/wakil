@@ -362,7 +362,7 @@ is a substitute for what the server itself will permit. The server's grant is th
 line and the only one Wakil has no view of.
 
 So, plainly: **a `writeRef` pointing at a `root` credential works perfectly, and defeats
-the entire point.** Every check in `docs/wakil/phase-2b-iii-acceptance.md` will pass
+the entire point.** Every check in the 2b-iii acceptance runbook will pass
 against it. The two-credential design exists so that write authority is *proved to the
 server by presenting a credential the server has granted write roles to*, rather than
 asserted by Wakil to itself and hoped to be honoured at the far end — and a `root`
@@ -519,7 +519,7 @@ run, executed by the operator and recorded."*
 
 It was run on 2026-09-05 and all seven exit criteria passed — but against the
 model this branch replaced, before org identity moved to `WAKIL_ORG` and before
-providers became their own axis. `docs/wakil/phase-1-acceptance.md` has been
+providers became their own axis. the phase-1 acceptance runbook has been
 rewritten for the current model: its setup steps are new, the seven criteria are
 unchanged, and a table at the top says which of them the decoupling actually
 moved (criterion 6, session discovery, most of all — the function it exercised
@@ -532,7 +532,7 @@ Step 1 of the runbook.
 
 **Done.** Re-run completed 2026-09-07 by the operator. All seven exit criteria PASS
 against the org/provider model; results are recorded criterion by criterion, dated,
-in `docs/wakil/phase-1-acceptance.md` alongside the 2026-09-05 ones.
+in the phase-1 acceptance runbook alongside the 2026-09-05 ones.
 
 Summary of what the re-run established, and what it cost:
 
@@ -663,8 +663,7 @@ Still open, in rough order:
 4. `umbrella` has an org and a Jira base but no provider and no project. Add them
    when there is work there: §3's procedure, unchanged.
 5. Phase 2 now has a spec and a running implementation — see
-   `docs/superpowers/specs/2026-09-07-phase-2a-spine-design.md` and
-   `docs/superpowers/plans/2026-09-07-phase-2a-spine.md`. Charter open question 5 is
+   the 2026-09-07 phase-2a-spine design and plan (left `main` when merged). Charter open question 5 is
    closed (start fresh, resume as a visible action). Question 10 (default STT engine)
    remains open and blocks sub-phase 2d only.
 
@@ -743,7 +742,7 @@ is in the paragraph below, and it is the only check no script could ever have ru
 **New 2026-09-10.** Session resume's value is a set of human judgements (does a rebuilt
 thread read as the same conversation continued, does the seam read as a seam rather than
 an error) that no test in the suite can make on your behalf. The sub-phase was marked met
-the same day without any of them being made. `docs/wakil/phase-2b-v-acceptance.md` has ten
+the same day without any of them being made. the 2b-v acceptance runbook has ten
 standing checks, every one marked **ACCEPTED — not walked**. Only you can run them — each needs a
 running `Wakil.app`, a real `claude` binary, and a live agent turn, all three of which
 the automated suite is forbidden to touch.
@@ -892,7 +891,7 @@ pinned inside it, and deleting it would strand every sharer with no way back. Re
 bindings first. Neither command ever touches the Keychain, so a token you stored above
 outlives the binding that used it.
 
-This machine's own `docs/wakil/shared-accounts-acceptance.md` is the runbook that walks
+This machine's own shared-accounts acceptance runbook is the one that walks
 these commands and the checks Wakil needs at the window. **Walked in full 2026-09-14, all
 eight result rows PASS** — including the result that settles a question older than this
 sub-phase: `--strict-mcp-config` holds on an enterprise account, and on a team account,

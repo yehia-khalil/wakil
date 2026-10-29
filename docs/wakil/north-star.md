@@ -4,7 +4,7 @@
 
 This is the north star, not a spec. It records what Wakil is, the rules no phase may
 break, what Wakil is deliberately not, and why each decision was made. Phase specs live
-in `docs/superpowers/specs/` and must conform to this document. If a phase spec needs to
+on their feature's branch and must conform to this document. If a phase spec needs to
 violate an invariant here, the charter changes first — deliberately, with a dated entry.
 
 **Keep this under 4,000 words. Past that it has become a spec and will rot.** That is not

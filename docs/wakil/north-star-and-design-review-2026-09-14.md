@@ -307,7 +307,7 @@ the working-out; the design doc holds the answer. That is inverted.
 | Line | What is there |
 |---|---|
 | `:614` | An orphan fragment with no subject: *"otherwise — is the reason 2c-ii's runbook exists at all."* |
-| `:616` | A paragraph opening with a bare file path: *"`docs/superpowers/specs/2026-09-11-phase-2c-i-data-surface-design.md` §0. Two of the six have specs of their own…"* |
+| `:616` | A paragraph opening with a bare file path: *"`2026-09-11-phase-2c-i-data-surface-design.md` §0. Two of the six have specs of their own…"* |
 | `:687` | *"All of its plan's tasks are done…"* after a section break |
 | `:760` | *"All 14 of its plan's tasks are done…"* |
 | `:794` | A paragraph beginning with the single word *"The"* |
@@ -326,7 +326,7 @@ in Part 1.
 | 2c-ii-b's cell (`:551`) is entirely in blocked/future tense — *"blocked until 2c-ii's `D8b`… and `D7`… are closed"* | Both closed 2026-09-13. The code shipped (`4eb85f1`) and was walked (`df3adf0`). `phase-2c-ii-b-acceptance.md:3`: *"**Status: walked 2026-09-14. Twenty of twenty-three checks pass; three do not close.**"* All three fail for one reason — *"Three checks, one credential."* Leaving the row unmarked was deliberate and correct; the charter carrying no record that the walk happened is not. |
 | Invariant 4: *"The second half is not yet… It **arrives with** the Phase 2a harness."* | It arrived. `WindowModel.swift:687-688` emits `WAKIL_ORG` and `WAKIL_PROVIDER` into every server's `env` in the generated `--mcp-config`, rebuilt per selection (`WindowSession.swift:162-178`). An 11-line "not yet" whose "yet" is answered 750 lines later in the same file. |
 | Phase 3's body lists *"Embedded editor (`code-server` pane)"* | Decision 17 explicitly revised **away** from `code-server`: *"(Revised 2026-09-03. Originally: embedded `code-server`, black box, built last.)"* The charter is stale in both directions on the same subject. |
-| `2d` = *"Push-to-talk, pluggable STT, live transcription"* (`:536`) | The multi-org spec names its runbook `docs/wakil/phase-2d-acceptance.md`. **Two subsystems now claim the label.** The file does not exist yet, so nothing has broken — yet. |
+| `2d` = *"Push-to-talk, pluggable STT, live transcription"* (`:536`) | The multi-org spec names its runbook `phase-2d-acceptance.md`. **Two subsystems now claim the label.** The file does not exist yet, so nothing has broken — yet. |
 | — | **Integer fidelity** has a spec, a plan and a shipped commit. `grep -i "integer\|fidelity" north-star.md` → **zero hits**. Also absent: the readonly-gate lexer work (plan, no spec, no row) and org/provider decoupling (recorded only as an Invariant 4 amendment). |
 
 ### Open questions

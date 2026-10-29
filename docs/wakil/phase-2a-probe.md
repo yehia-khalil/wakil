@@ -3,7 +3,7 @@
 **Run:** 2026-09-07 · **Account:** `~/.claude-personal` (`subscriptionType: max`, unmanaged)
 · **CLI:** `claude` 2.1.263 · **Fixtures:** `app/Fixtures/stream-json/`
 
-Task 1 of `docs/superpowers/plans/2026-09-07-phase-2a-spine.md`. Its purpose was to stop
+Task 1 of `2026-09-07-phase-2a-spine.md`. Its purpose was to stop
 the harness being built against assumptions: record the real stream-json event shapes, and
 settle whether the permission layer covers MCP tool calls. Both are answered below, and
 four things came out differently from what the plan and spec assumed.

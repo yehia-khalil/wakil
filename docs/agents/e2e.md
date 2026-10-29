@@ -5,8 +5,8 @@ skill: derive what the work touched, cover it, prove each check could fail,
 prove it now passes, and report — briefly — what could not be covered and why.
 **The residue list is the only thing that reaches the operator.**
 
-It is the design's §9 (`docs/superpowers/specs/2026-09-23-agent-e2e-design.md`,
-binding) and it turns the **Cover** rung of `docs/agents/workflow.md`.
+It is §9 of the agent-e2e design (binding;
+the design file itself left `main` when it merged) and it turns the **Cover** rung of `docs/agents/workflow.md`.
 
 ## Before anything else, read what the harness already knows
 

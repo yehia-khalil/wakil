@@ -1,7 +1,7 @@
 # Organisations and providers — deferred design decision
 
 **Status: SUPERSEDED 2026-09-06** by
-`docs/superpowers/specs/2026-09-06-org-provider-decoupling-design.md`, which implements
+`2026-09-06-org-provider-decoupling-design.md`, which implements
 this model and answers the open questions below. Kept for the reasoning and the
 measurements, which the spec cites rather than repeats.
 
@@ -130,7 +130,7 @@ quietly degrades from "by construction" to "by coincidence".
 > recorded `configDir` directly; nothing reads the ambient `CLAUDE_CONFIG_DIR`
 > variable at all, so the silent-fallback trap described above cannot occur —
 > there is no longer an environment variable for a launcher to leave stale. See
-> `docs/superpowers/specs/2026-09-06-org-provider-decoupling-design.md` §6.
+> `2026-09-06-org-provider-decoupling-design.md` §6.
 
 ## The change, when it happens
 
@@ -197,7 +197,7 @@ an org.
 ### How they were answered — 2026-09-06, by the implementation
 
 Recorded here so this file's last section is not read as still-open. The reasoning
-is in `docs/superpowers/specs/2026-09-06-org-provider-decoupling-design.md`.
+is in `2026-09-06-org-provider-decoupling-design.md`.
 
 - **Org registry: a directory per org.** `~/.wakil/orgs/<org>/` holds `org.json`,
   `active.json`, `projects.json` and `providers/<id>.json`. There is no `orgs.json`

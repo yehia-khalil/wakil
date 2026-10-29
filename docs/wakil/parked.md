@@ -2,7 +2,7 @@
 
 Twenty-nine issues closed `not planned` on **2026-09-26**, when the workflow moved to
 five rungs and the tracker became a bug inbox
-(`docs/superpowers/specs/2026-09-26-workflow-superpowers-migration-design.md`).
+(the migration design, which left `main` when it merged).
 
 **Nothing here is abandoned and nothing is destroyed.** Each is closed, not deleted;
 reopening is `gh issue reopen <n>`, and the full body, comments and history are intact
@@ -18,7 +18,7 @@ the record.
 ## Track — answered by Conversations (8)
 
 Track became the *Conversations* row of the phase map on 2026-10-23, folded with New conversation.
-Its agenda is answered by `docs/superpowers/specs/2026-10-23-conversations-design.md`; each item
+Its agenda is answered by the 2026-10-23 conversations design (left `main` when it merged); each item
 below points at the call there that answers it.
 
 - **#78** — Track — two tickets in one window, without a second window *(the map)* → answered: calls 1–2
@@ -75,7 +75,7 @@ keystrokes all read as app defects.
 ## Not parked — absorbed into the 2c-iv plan (4)
 
 Genuinely unbuilt. Their content became the phases of
-`docs/superpowers/plans/2026-09-26-phase-2c-iv-api-client-pane.md`. They are not
+the 2026-09-26 phase-2c-iv API-client-pane plan (left `main` when it merged). They are not
 waiting; they are being built.
 
 - **#192** — `api_bind` and `api_unbind` → Phase 1

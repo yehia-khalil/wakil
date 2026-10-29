@@ -3,7 +3,7 @@
 **Status:** assessment · **Date:** 2026-09-15 · **Reviewer:** Claude Code, at the
 operator's request
 
-Subject: `docs/superpowers/specs/2026-09-15-phase-2b-viii-org-switch-design.md`,
+Subject: `2026-09-15-phase-2b-viii-org-switch-design.md`,
 committed as `df77bc2`.
 
 This document changed nothing when it was written. The spec, the charter, the probe and

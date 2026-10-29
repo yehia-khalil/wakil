@@ -181,10 +181,10 @@ removed. The spec carries a dated amendment.
 
 ## What it changed
 
-- Spec `docs/superpowers/specs/2026-10-27-3d-browser-you-live-in-design.md`: amendment 2026-10-27
+- Spec `2026-10-27-3d-browser-you-live-in-design.md`: amendment 2026-10-27
   (the candidate rule; a muted or silent video is paused when its view leaves; closing ends the
   float with no callback). The body is edited to match.
-- Plan `docs/superpowers/plans/2026-10-27-3d-iii-picture-in-picture.md`:
+- Plan `2026-10-27-3d-iii-picture-in-picture.md`:
   - ruling 4 (WebKit already pauses the replaced video; the effect stays as a guard);
   - ruling 7 (the setter is `_setAllowsPictureInPictureMediaPlayback:`);
   - ruling 11 (release clears the float itself; the drop does not wait);

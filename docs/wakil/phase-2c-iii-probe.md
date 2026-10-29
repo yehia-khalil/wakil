@@ -278,8 +278,7 @@ Two sections, both in *Implementation Decisions*, plus one line elsewhere:
 are a probe doing the job the spec gave it — *"2c-ii's probe changed three sections
 of its own spec before a line was written"* — not a ruling reopened. Per
 `docs/agents/workflow.md`, a spec and a probe that disagree are not resolved by a
-silent edit: these go into the binding design spec under
-`docs/superpowers/specs/`, which takes this issue **plus** this document as its
+silent edit: these go into the binding design spec, which takes this issue **plus** this document as its
 input.
 
 ## 8. The harness

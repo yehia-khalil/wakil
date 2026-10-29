@@ -10,7 +10,7 @@ document was written
 
 ## 1. What prompted it
 
-`docs/superpowers/specs/2026-09-12-phase-2c-ii-db-pane-design.md` §12 asked two
+`2026-09-12-phase-2c-ii-db-pane-design.md` §12 asked two
 questions it refused to guess at. Both are cheap now and expensive at the acceptance
 walk, which is 2c-i's lesson stated as a rule: six defects and two rulings came out of
 looking at the running thing after 500+ tests were green.

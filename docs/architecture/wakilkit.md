@@ -686,9 +686,8 @@ Tests: `PlaneTests`, `CoreStateTests`, `CoreMotionTests`, `BreathClockTests`, `V
 
 ## The cycle
 
-Measured from `layering-allowed.txt` with the Python snippet in Task 9 Step 2 of
-`docs/superpowers/plans/2026-10-11-pluggable-pane-kinds-and-architecture-docs.md`, run from the
-repository root.
+Measured from `layering-allowed.txt` with a short Python script run from the
+repository root (the one in the pluggable-pane-kinds plan, which left `main` when it merged).
 
 | | Before the pluggable pane kinds stack | After it (2026-10-11) |
 |---|---|---|
