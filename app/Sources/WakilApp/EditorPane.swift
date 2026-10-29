@@ -395,7 +395,7 @@ struct EditorPane: View {
                 move: { from, to in
                     Task { await dispatch("editor_move_tab", ["from": .integer(Int64(from)), "to": .integer(Int64(to))]) }
                 },
-                newTab: PaneStripNewTab(help: "New Scratch Tab ⌘T") {
+                newTab: PaneStripNewTab(help: keymap.help("New Scratch Tab", "editor.newScratch")) {
                     Task { await dispatch("editor_new_scratch", [:]) }
                 },
                 // A middle-click on a tab: ⌘W's path for it — a clean tab closes, a dirty one asks (3b-i's
@@ -778,10 +778,20 @@ struct EditorPane: View {
 
     // MARK: - Empty
 
+    /// `⌘P to open a file · ⌘T for a scratch tab`, by the chords in force; a command with none
+    /// drops out of the line.
+    private var emptyHint: String {
+        let parts = [
+            keymap.chord("window.open").map { "\($0.text) to open a file" },
+            keymap.chord("editor.newScratch").map { "\($0.text) for a scratch tab" },
+        ].compactMap { $0 }
+        return parts.isEmpty ? "No file open" : parts.joined(separator: " · ")
+    }
+
     private var emptyState: some View {
         ZStack {
             EditorPaneStyle.slab
-            Text("⌘P to open a file · ⌘T for a scratch tab")
+            Text(emptyHint)
                 .font(.system(size: 12))
                 .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
         }

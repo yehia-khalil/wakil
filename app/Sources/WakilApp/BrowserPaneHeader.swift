@@ -273,6 +273,8 @@ struct BrowserTabCount: View {
 /// (`browser_unpin`); `BrowserSnapshot.drop` decides.
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
+    /// The keymap in force, for the pinned tab's close tip that names Close Tab's chord.
+    @Environment(\.keymap) private var keymap
     let mode: BrowserTabListMode
     let favicon: (String) -> NSImage?
     /// Which sites are production and which the active environment's (3c-ii): each tagged entry's dot.
@@ -349,7 +351,7 @@ struct BrowserTabList: View {
             bare: { if case .chip = entries[$0] { true } else { false } },
             tip: closeArmed.flatMap { tab in
                 list.index(ofTab: tab).map {
-                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip, identifier: "browser.tab.\(tab).closeTip")
+                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip(keymap.chord("browser.closeTab")), identifier: "browser.tab.\(tab).closeTip")
                 }
             },
             section: PaneStripSection(

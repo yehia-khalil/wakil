@@ -263,6 +263,8 @@ private final class ResponderBox: @unchecked Sendable {
 /// the menu's (`AppScene`), which is the one path no focused view can keep from them.
 struct PalettePlane: View {
     let controller: PaletteController
+    /// The keymap in force, for the header's chord.
+    @Environment(\.keymap) private var keymap
 
     @FocusState private var queryFocused: Bool
     @State private var monitor: Any?
@@ -386,10 +388,12 @@ struct PalettePlane: View {
                 micro(palette.mode == .open ? "OPEN OR SWITCH TO" : "RUN A COMMAND")
             }
             Spacer()
-            Text(palette.mode == .open ? "⌘P" : "⌘K")
-                .font(.system(size: 9, design: .monospaced))
-                .tracking(1.2)
-                .foregroundStyle(Self.ink.opacity(0.52))
+            if let chord = keymap.chord(palette.mode == .open ? "window.open" : "window.commands") {
+                Text(chord.text)
+                    .font(.system(size: 9, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(Self.ink.opacity(0.52))
+            }
         }
     }
 

@@ -127,6 +127,8 @@ struct ChoiceSettingRow: View {
 /// The top-level Editor node: the operator's app-wide editor settings (3b-v).
 struct EditorAppSettingsForm: View {
     let editor: SettingsEditor
+    /// The keymap in force, for the hint that names Open…'s chord.
+    @Environment(\.keymap) private var keymap
     let error: String?
     let save: ([String: JSONValue]) async -> String?
 
@@ -184,7 +186,8 @@ struct EditorAppSettingsForm: View {
                     },
                     refusalIdentifier: "settings.editor.showIgnored.refusal",
                     hint: "Files your .gitignore excludes, like .env or build output. On, they show dimmed "
-                        + "in the Files tree and ⌘P; project search never looks inside them.",
+                        + "in the Files tree and \(keymap.help("Open…", "window.open")); project search "
+                        + "never looks inside them.",
                     save: { option in await save(["showIgnored": .bool(option == "On")]) })
             }
             Text("Yours across every organisation and project — stored in ~/.wakil/settings.json.")
@@ -237,6 +240,8 @@ struct EditorProjectSettingsForm: View {
 /// under the list (Rule 8). Every write sends the whole list.
 struct HeavyFoldersSettingRow: View {
     let folders: [String]
+    /// The keymap in force, for the hint that names Open…'s chord.
+    @Environment(\.keymap) private var keymap
     let save: ([String]) async -> String?
 
     @State private var drafts: [Int: String] = [:]
@@ -257,8 +262,8 @@ struct HeavyFoldersSettingRow: View {
         // Headed by the page's HEAVY FOLDERS section (`SettingsSection`), not by itself.
         VStack(alignment: .leading, spacing: 4) {
             FormHint("Big folders git ignores, like vendor or node_modules, matched by name at any depth. "
-                     + "Each shows as one row and loads only when you open it, so the tree and ⌘P stay "
-                     + "fast; project search skips them. Remove a name to list its files like any "
+                     + "Each shows as one row and loads only when you open it, so the tree and "
+                     + "\(keymap.help("Open…", "window.open")) stay fast; project search skips them. Remove a name to list its files like any "
                      + "ignored file.")
                 .padding(.bottom, 4)
             HStack(spacing: 8) {
