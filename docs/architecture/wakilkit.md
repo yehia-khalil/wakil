@@ -717,6 +717,23 @@ Uses: `Harness`, `Identifiers`, `Layout`, `Panes`, `Registry`, `Visual`.
 Tests: `Terminal*Tests.swift` (for example `TerminalStoreTests`, `TerminalActionsTests`,
 `TerminalLineEditTests`).
 
+### Workspace/ — workspaces, checkouts and the write rule
+
+Workspaces, piece 1 (spec `2026-10-29-workspaces-design.md`): where a piece of work happens, and how
+an agent's write finds its checkout.
+
+- `WorkspaceModel.swift` — `Workspace`, `WorkspaceCheckout`, `PortBlock`, `WorkspacesFile`: the record
+  Go keeps in `workspaces.json` (`internal/wakilcore/workspaces.go`), read and written through
+  wakil-git's `workspaces_read` / `workspaces_write`.
+- `WriteRule.swift` — `decideWrite` (steps 0–2 and a switch to a held branch) → `WriteDecision`;
+  `WorkspaceHold`, `HeldBranch`, `holderIsWorking`.
+- `WorkspacePaths.swift` — `workspacePath` / `mainPath` (Main ↔ checkout), `confinementRefusal` (call 13).
+- `BranchNames.swift` — `branchSlug`, `fallbackBranchName`, `childBranchName`, `uniqueSlug`.
+- `WorkspaceLines.swift` — `WorkspaceLine`: the thread's sentences.
+
+Uses: nothing but `Core/`.
+Tests: `WorkspaceModelTests`.
+
 ### Visual/ — design-language values
 
 Pure numbers and colours the views and the Metal shader read.

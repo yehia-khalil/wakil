@@ -373,6 +373,7 @@ func newServer() *mcp.Server {
 
 // addWriteTools registers the 3a-ii writes. Each runs the repository's hooks and signing.
 func addWriteTools(s *mcp.Server) {
+	addWorkspaceTools(s)
 	// 3a-iii-a: the remote operations, with the organisation's account for the remote's host.
 	for _, op := range []struct {
 		name, desc string
