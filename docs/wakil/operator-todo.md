@@ -35,23 +35,6 @@ driving. Kept current as work proceeds; **last updated 2026-09-21.**
 >    legibility when you point at it, because while a pane is maximized the rail is the
 >    only way back to the others.
 
-> **2026-09-20 — a runbook is waiting to be walked
-> (its unwalked items are in `parked.md`).** [#142](https://github.com/yehia-khalil/rafiq/issues/142)
-> and its three tickets are closed, so pane arrangements are now keyed by
-> conversation rather than by project. Ten checks, written and unwalked.
->
-> **Copy `~/.wakil/layouts` before you start.** The defect
-> [#148](https://github.com/yehia-khalil/rafiq/issues/148) found *destroyed layout
-> files*: a switch onto a conversation with no arrangement of its own wrote an empty
-> canvas over both that conversation's file and the project's seed, which is what every
-> later conversation in that project opens on. It is fixed and pinned by a test; checks
-> 3 and 6 are what would catch it coming back, and both read your real files.
->
-> **One check cannot be replaced by a test, by construction.** Every automated test in
-> this work drives a `session_get` double, so `wakilcore.LineageRootIn` — the resolver
-> that decides which conversation an arrangement belongs to — has never once answered a
-> live window. Check 4 is the only place it does.
-
 > **2026-09-16 — the MySQL write credential exists.** `wakil.acceptance`'s staging
 > `core` database now carries `writeRef: acc-staging-core-write`, and the two
 > credentials name two different MySQL users rather than both naming `root`:
