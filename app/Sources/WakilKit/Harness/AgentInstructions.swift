@@ -83,7 +83,12 @@ folder of a repo your workspace has a copy of is written in the copy, and \
 the answer names the real path; use the copy's paths from then on. \
 `workspace_list` names your workspace's copies, their branches and the \
 other conversations working in it. A path in another workspace's copy is \
-refused: write only in your own.
+refused: write only in your own. To run the app — when the operator asks, \
+or to check your work — call `workspace_run` with the repo (and a process): \
+it runs the operator's saved recipe in your copy on its own ports \
+(`WAKIL_PORT`), each process in a terminal pane you read with read_pane; \
+`workspace_stop` and `workspace_build` likewise. Any other command stays a \
+term_propose for the operator's Enter.
 """
 
 // MARK: - The operator's instructions (3a-iii-b, Decision 45)

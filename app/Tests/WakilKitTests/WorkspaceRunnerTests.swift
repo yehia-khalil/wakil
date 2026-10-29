@@ -247,3 +247,53 @@ private actor Lines {
     var lines: [(String, String, Bool)] = []
     func add(_ c: String, _ t: String, _ e: Bool) { lines.append((c, t, e)) }
 }
+
+// The actions: an agent runs only in its own workspace, never from Main; the operator names one.
+
+private func registryWithRun(_ specs: [String: PlanSpec]) async -> (ActionRegistry, WorkspaceRunner, FakeTerminals) {
+    let (r, _, terms) = await runner(specs)
+    await r.router.install(WorkspaceRouterHooks(
+        conversation: { id in
+            WorkspaceConversationFacts(id: id, lineageRoot: "root-\(id)", title: "t", organization: "initech",
+                                       project: "estate", environment: "staging", mainRoots: ["/p/web", "/p/api"])
+        },
+        states: { [:] }))
+    await r.router.store.move("c1", root: "root-c1", to: "w1")
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    await registerRunActions(into: registry, runner: r, organization: { "initech" })
+    return (registry, r, terms)
+}
+
+private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params: JSONValue, conversation: String) async throws -> JSONValue {
+    let caller = DispatchCaller(place: Place(organization: "initech", project: "estate", environment: "staging"),
+                                session: "s-\(conversation)", conversation: conversation)
+    return try await registry.dispatch(name: name, params: params, origin: .agent, caller: caller, confirmation: nil)
+}
+
+@Test func anAgentRunsInItsOwnWorkspaceOnlyAndNotFromMain() async throws {
+    let (registry, _, terms) = await registryWithRun(["web": PlanSpec(ready: nil)])
+    let out = try await agentDispatch(registry, "workspace_run", .object(["repo": .string("web")]), conversation: "c1")
+    if case .object(let o) = out { #expect(o["port"] == .integer(41200)) } else { Issue.record("\(out)") }
+    #expect(await terms.started.map(\.title) == ["web · dev"])
+    await #expect(throws: RunError("workspace_run: you run only in your own workspace, ‘Fix OTP’ (decision 12).")) {
+        _ = try await agentDispatch(registry, "workspace_run", .object(["repo": .string("web"), "workspace": .string("w0")]), conversation: "c1")
+    }
+    do {
+        _ = try await agentDispatch(registry, "workspace_run", .object(["repo": .string("web")]), conversation: "c9")
+        Issue.record("an agent in Main ran")
+    } catch {
+        #expect("\(error)".contains("you are in Main, where nothing runs"))
+    }
+    let running = try await agentDispatch(registry, "workspace_running", .object([:]), conversation: "c1")
+    if case .object(let o) = running { #expect(o["line"] == .string("web dev running on :41200")) } else { Issue.record("\(running)") }
+}
+
+@Test func theRunActionsAreAgentReachableMutations() async throws {
+    let (registry, _, _) = await registryWithRun([:])
+    for name in ["workspace_run", "workspace_stop", "workspace_build", "workspace_running"] {
+        let a = try #require(await registry.all().first { $0.name == name })
+        #expect(a.audience == .agentReachable)
+        #expect(a.kind == (name == "workspace_running" ? .read : .mutate))
+    }
+}

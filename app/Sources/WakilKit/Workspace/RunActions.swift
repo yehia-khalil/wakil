@@ -74,6 +74,31 @@ public func registerRunActions(
         price: (production: .gate, otherwise: .allow)))
 
     await registry.register(Action(
+        name: "workspace_running",
+        description: "What runs in your workspace (Invariant 3): each repo with its port, its processes and their "
+            + "terminal panes, and its state (setting up, running, failed with why); line is the card's sentence, "
+            + "like \"api running on :41200 · queue running\".",
+        kind: .read, audience: .agentReachable,
+        schema: schema(["workspace": text]),
+        handler: { params in
+            let w = try await target(params, "workspace_running")
+            let states = await runner.state(of: w.id)
+            return .object([
+                "workspace": .string(w.id), "line": .string(runStatusLine(states)),
+                "repos": .array(states.map { st in
+                    var o: [String: JSONValue] = [
+                        "repo": .string(st.repo), "line": .string(st.line),
+                        "processes": .array(st.processes.map { .object(["name": .string($0.name), "pane": .string($0.pane)]) }),
+                    ]
+                    if let p = st.port { o["port"] = .integer(Int64(p)) }
+                    if case .failed(let why) = st.phase { o["failed"] = .string(why) }
+                    if let r = st.ready { o["ready"] = .string(r) }
+                    return .object(o)
+                }),
+            ])
+        }))
+
+    await registry.register(Action(
         name: "workspace_stop",
         description: "Stop a repo's processes in your workspace (their terminals close), or with no repo every process "
             + "and then the services' teardown. Answers what stopped.",
