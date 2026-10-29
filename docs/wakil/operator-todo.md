@@ -502,7 +502,7 @@ run, executed by the operator and recorded."*
 
 It was run on 2026-09-05 and all seven exit criteria passed — but against the
 model this branch replaced, before org identity moved to `WAKIL_ORG` and before
-providers became their own axis. the phase-1 acceptance runbook has been
+providers became their own axis. The phase-1 acceptance runbook has been
 rewritten for the current model: its setup steps are new, the seven criteria are
 unchanged, and a table at the top says which of them the decoupling actually
 moved (criterion 6, session discovery, most of all — the function it exercised

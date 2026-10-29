@@ -18,16 +18,15 @@ the record.
 ## Track — answered by Conversations (8)
 
 Track became the *Conversations* row of the phase map on 2026-10-23, folded with New conversation.
-Its agenda is answered by the 2026-10-23 conversations design (left `main` when it merged); each item
-below points at the call there that answers it.
+Each item below says what Conversations built to answer it.
 
-- **#78** — Track — two tickets in one window, without a second window *(the map)* → answered: calls 1–2
-- **#79** — What a Track is, and where its boundaries fall → answered: calls 1–2
-- **#80** — Does switching to a Track fork its session, and can Wakil afford that? → answered: call 3
-- **#82** — Does the agent know about Tracks? → answered: call 5
-- **#83** — What the Track switcher looks like, and where it lives → answered: "What the operator gets" items 2–4
-- **#84** — Where Track state lives on disk → answered: call 7
-- **#85** — What happens to an in-flight turn when the operator switches Track → answered: call 4
+- **#78** — Track — two tickets in one window, without a second window *(the map)* → answered: a conversation, not the place, is the unit; several live per place, each pinned to its own socket
+- **#79** — What a Track is, and where its boundaries fall → answered: as #78 — a conversation with its own harness, thread, draft and canvas, at most one on screen per place
+- **#80** — Does switching to a Track fork its session, and can Wakil afford that? → answered: switching never forks; only an ended conversation resumes as a fork
+- **#82** — Does the agent know about Tracks? → answered: no; each sees only its own thread, and each write passes the gate on its own
+- **#83** — What the Track switcher looks like, and where it lives → answered: chips, the Landing's Running column and ⌘P's Running group
+- **#84** — Where Track state lives on disk → answered: nothing new; a canvas is filed under its lineage root, and live conversations are not persisted
+- **#85** — What happens to an in-flight turn when the operator switches Track → answered: it finishes in the background; a proposal waits on its chip
 - **#86** — Where Track lands in the phase map, and what it displaces → answered: the phase-map row, *Conversations*
 
 ## Findings not tied to a live sub-phase (12)
@@ -126,7 +125,7 @@ sub-phase you are about to design.
 - **2b-vii** — signing: notarisation needs a paid Developer ID this Mac lacks; local signing with entitlements and the hardened runtime is reachable. Also unwalked: the terminal's bundle `PATH` on a Developer ID build.
 - **2c-v** — cut 2026-09-16 (session browser). The label is not reused and 2c-vi is not renumbered; 15 citations land on it.
 - **2c-vi** — PM board, deferred 2026-10-06; its write waits on open question 15. Exit: a dragged card and "move 2835 to review" dispatch one action, and only a transition Jira offers from the current status is reachable. Reuses the 2c-i data surface. Not a Jira client.
-- **2c-ii** — D1 (one of thirteen walk defects) deliberately unfixed; reason in the fix round's spec §13.
+- **2c-ii** — D1 (one of thirteen walk defects) deliberately unfixed: a pane opened by `db_read_table` shows the table, not SQL, because no `SELECT` was composed (`Conn.ReadTable` keeps Swift from writing one); typing SQL into the line converts the pane, an affordance not yet visible.
 - **2c-iii** — `pane_close` ends in `panes?.drop`, a second leak site that should await the terminal's teardown (`LayoutActions.swift`).
 - **2c-iii** — the tripwire's `panes` and `layout` entries are wrong; whoever moves them corrects them.
 - **2c-iii** — `WindowSession`'s close path is untestable (no `WakilApp` test target) and needs an operator walk; `harness?.stop()` and `shutdown()` ordering are untested.

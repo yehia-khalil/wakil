@@ -85,7 +85,7 @@ docs-check:
 	@words=$$(wc -w < $(CHARTER) | tr -d ' '); \
 	if [ "$$words" -gt $(CHARTER_LIMIT) ]; then \
 		echo "$(CHARTER): $$words words, over the $(CHARTER_LIMIT)-word limit."; \
-		echo "  Something in it belongs in decisions.md, open-questions.md or phase-log.md."; \
+		echo "  Something in it belongs in decisions.md, open-questions.md or parked.md."; \
 		exit 1; \
 	fi; \
 	echo "  $(CHARTER): $$words/$(CHARTER_LIMIT) words"
