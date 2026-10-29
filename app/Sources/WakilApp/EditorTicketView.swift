@@ -616,7 +616,7 @@ struct EditorTicketView: View {
             Task { await dispatch("review_open", ["thread": .string(t.id)]) }
         } label: {
             // Two lines so a narrow column reads the row whole (walk, 2026-10-27): the avatar, the
-            // place — cut from the middle, so the line number always shows — and the replies; then
+            // place, wrapping whole, and the replies; then
             // the first comment whole, wrapping (walk 2026-10-29: nothing is cut).
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
