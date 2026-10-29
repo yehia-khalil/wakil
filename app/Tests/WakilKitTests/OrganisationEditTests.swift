@@ -217,7 +217,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
                 "\(field.rawValue) is not a parameter of ctx_update_org")
         #expect(!field.label.isEmpty)
     }
-    #expect(WindowModel.OrganisationField.allCases.count == 11)  // 3a-iii: pullStrategy and the three agent texts
+    #expect(WindowModel.OrganisationField.allCases.count == 12)  // 3a-iii: pullStrategy and the three agent texts; workspaces: Branches
 }
 
 /// 2d-ii: the Speech row saves through the same action, one key at a time.
