@@ -19,7 +19,7 @@
 {"expect":{"tree":"contains","text":"Value: waiting for you · 1 message"}}
 {"expect":{"tree":"contains","text":"waiting for you · 1 message"}}
 {"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
-{"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · e2e-project · staging"}}
+{"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · Main"}}
 {"expect":{"tree":"absent","text":"read the word from the other conversation"}}
 {"do":{"type":{"into":"window.composer","text":"thread turn three"}}}
 {"do":{"press":"Return"}}

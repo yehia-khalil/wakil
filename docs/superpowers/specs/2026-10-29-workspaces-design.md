@@ -993,10 +993,14 @@ Calls the build made where the piece above is silent (plan:
 - **"waiting for you · N messages"** is the state of a conversation holding messages while not
   working; it counts as *waiting* for its dot, chip and Running row (`LiveConversation.stateWords`,
   `AgentChip.stateText`), and `session_list` carries `messagesWaiting`.
-- **`session_list`** rows carry `workspace` and `workspaceName`; called by an agent, `self` and
+- **`session_list`** rows carry piece 1's `workspace` (`{id, name}`, or `"main"`); called by an agent, `self` and
   `sameWorkspace`.
 - **The setting** is stored as `messageWakes` in `org.json` (absent: 8) and in a project's `agent`
   block (absent: the organisation's); `-1` clears either. Range 0–99. It is read from each
   organisation's last Settings read; one never read uses 8.
-- **Until piece 1**, a conversation's workspace for messages is its place
-  (`WindowModel.messageWorkspace(of:)`, the one seam piece 1 replaces).
+- **A message's workspace is piece 1's**: `WindowModel.messageWorkspace(of:)` asks
+  `WorkspaceStore.workspaceId(ofConversation:root:)` (so a resumed conversation counts in its
+  workspace before it writes). The header names the sender's workspace — *"From ‘backend’ ·
+  INI-142"*. A child workspace (a branch-off) has its own id, so its own budget (call 15). **Main**
+  is named "Main" and its budget is keyed by the place (`main/<org>/<project>/<environment>`), so
+  `sameWorkspace` in Main means the same project and environment.

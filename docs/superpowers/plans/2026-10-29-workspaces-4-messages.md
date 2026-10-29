@@ -12,6 +12,8 @@ it: `WindowModel.messageWorkspace(of:)` in `App/WindowModel+Messages.swift` retu
 `MessageWorkspace` (`key`, `name`). Today the key is the place (`org/project/environment`) and the
 name is `project · environment`. Piece 1 replaces its body with `WorkspaceStore.workspace(ofConversation:)`
 (its id as the key, its name as the name); nothing else in piece 4 reads the place for this.
+*Done after the rebase onto piece 1:* the body asks `WorkspaceStore.workspaceId(ofConversation:root:)`;
+Main is keyed `main/<org>/<project>/<environment>` and named "Main".
 
 ## Decisions this plan makes (recorded in the spec's amendment, piece 4)
 

@@ -10,7 +10,7 @@ public struct ConversationMessage: Sendable, Equatable {
     public let from: String
     /// The sender's title when it was sent.
     public let fromTitle: String
-    /// The sender's workspace name (or place, until piece 1), when it was sent.
+    /// The sender's workspace name ("Main" outside one), when it was sent.
     public let fromWorkspace: String
     public let text: String
 

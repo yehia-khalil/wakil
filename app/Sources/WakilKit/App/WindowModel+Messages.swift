@@ -15,19 +15,21 @@ final class ConversationMessageState {
 /// threads and puts it in the recipient's next input. Nothing here touches the gate, the permission
 /// plane or a parked proposal: a message is text the agent reads, never a decision the window makes.
 extension WindowModel {
-    // MARK: The seam piece 1 replaces
+    // MARK: Which workspace
 
-    /// **SEAM — workspaces piece 1 replaces this body.** Which workspace `agent` is in, for
-    /// messages: the wake budget's key and the name a message's header gives. Until piece 1
-    /// gives each conversation a workspace, the workspace is its place: the key is
-    /// `org/project/environment` and the name `project · environment`. Piece 1 answers with
-    /// `WorkspaceStore.workspace(ofConversation:)` — the workspace id as the key, its name as the
-    /// name (a child workspace its own key: call 15). Nothing else in piece 4 reads the place for this.
-    func messageWorkspace(of agent: PlaceAgent) -> MessageWorkspace {
-        let place = agent.place
-        return MessageWorkspace(
-            key: [place.organization, place.project, place.environment].joined(separator: "/"),
-            name: [place.project, place.environment].filter { !$0.isEmpty }.joined(separator: " · "))
+    /// Which workspace `agent` is in, for messages: the wake budget's key and the name a message's
+    /// header gives — piece 1's record (`WorkspaceStore`), found by the conversation or its lineage
+    /// root, so a resumed conversation counts in its workspace before it writes. A child workspace
+    /// (a branch-off) is its own workspace with its own budget (call 15). Main is keyed by the place.
+    func messageWorkspace(of agent: PlaceAgent) async -> MessageWorkspace {
+        var workspace = agent.workspace
+        if let store = workspaceRouter?.store {
+            workspace = nil
+            if let id = await store.workspaceId(ofConversation: agent.id, root: agent.lineageRoot) {
+                workspace = await store.workspace(id)
+            }
+        }
+        return MessageWorkspace(of: workspace.map { ($0.id, $0.name.isEmpty ? $0.slug : $0.name) }, place: agent.place)
     }
 
     // MARK: Delivery
@@ -51,7 +53,7 @@ extension WindowModel {
                 detail: "Not delivered: the conversation it was for is no longer live.", isError: true)
             return
         }
-        let workspace = messageWorkspace(of: sender)
+        let workspace = await messageWorkspace(of: sender)
         sender.appendMessageRow(.to, header: "To ‘\(recipient.title)’", text: text)
         recipient.appendMessageRow(.from, header: "From ‘\(sender.title)’ · \(workspace.name)", text: text)
         recipient.pendingMessages.append(ConversationMessage(
@@ -64,8 +66,10 @@ extension WindowModel {
     /// (working), or for the operator ("waiting for you · N messages").
     func wakeForMessages(_ agent: PlaceAgent) async {
         guard !agent.pendingMessages.isEmpty, canBeWokenByMessages(agent) else { return }
-        let key = messageWorkspace(of: agent).key
-        guard messageState.budgets.takeWake(in: key, allowance: messageWakesAllowance(for: agent)),
+        let key = await messageWorkspace(of: agent).key
+        // Asked across a suspension: the operator may have sent, or the turn begun, meanwhile.
+        guard !agent.pendingMessages.isEmpty, canBeWokenByMessages(agent),
+              messageState.budgets.takeWake(in: key, allowance: messageWakesAllowance(for: agent)),
               let harness = agent.harness else { return }
         let messages = agent.pendingMessages
         agent.pendingMessages = []
@@ -104,8 +108,8 @@ extension WindowModel {
     /// The operator's message to `agent` (`send`): its workspace's budget is set back to the
     /// setting's value (call 15: reset, not add), and the messages it holds ride at the head of the
     /// input. `count` is how many, for `messagesDelivered` once the send succeeded.
-    func messagesRidingWithOperatorTurn(to agent: PlaceAgent) -> (block: String, count: Int) {
-        let key = messageWorkspace(of: agent).key
+    func messagesRidingWithOperatorTurn(to agent: PlaceAgent) async -> (block: String, count: Int) {
+        let key = await messageWorkspace(of: agent).key
         messageState.budgets.operatorMessage(in: key, allowance: messageWakesAllowance(for: agent))
         return (conversationMessageBlock(agent.pendingMessages), agent.pendingMessages.count)
     }
@@ -114,20 +118,21 @@ extension WindowModel {
     /// other conversations holding messages are woken, within the budget just reset.
     func messagesDelivered(_ count: Int, withOperatorTurnTo agent: PlaceAgent) {
         if count > 0 { agent.pendingMessages.removeFirst(min(count, agent.pendingMessages.count)) }
-        let key = messageWorkspace(of: agent).key
-        let held = liveConversations().filter {
-            $0 !== agent && !$0.pendingMessages.isEmpty && messageWorkspace(of: $0).key == key
-        }
+        let held = liveConversations().filter { $0 !== agent && !$0.pendingMessages.isEmpty }
         guard !held.isEmpty else { return }
         Task { [weak self] in
-            for other in held { await self?.wakeForMessages(other) }
+            guard let self else { return }
+            let key = await self.messageWorkspace(of: agent).key
+            for other in held where await self.messageWorkspace(of: other).key == key {
+                await self.wakeForMessages(other)
+            }
         }
     }
 
     /// TEST-ONLY: what is left of `agent`'s workspace's budget.
-    func messageWakesRemainingForTesting(_ agent: PlaceAgent) -> Int {
+    func messageWakesRemainingForTesting(_ agent: PlaceAgent) async -> Int {
         messageState.budgets.remaining(
-            in: messageWorkspace(of: agent).key, allowance: messageWakesAllowance(for: agent))
+            in: await messageWorkspace(of: agent).key, allowance: messageWakesAllowance(for: agent))
     }
 }
 

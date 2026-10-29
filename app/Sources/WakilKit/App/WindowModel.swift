@@ -9043,7 +9043,7 @@ public final class WindowModel {
             if let map = await workspaceMapUpdate(for: agent) { outgoing += "\n\n" + map }
             // Workspaces piece 4: the operator's message resets its workspace's wake budget and
             // carries the conversation's queued messages at the head of its input.
-            let riding = messagesRidingWithOperatorTurn(to: agent)
+            let riding = await messagesRidingWithOperatorTurn(to: agent)
             if !riding.block.isEmpty { outgoing = riding.block + "\n\n" + outgoing }
             try await harness.send(outgoing)
             messagesDelivered(riding.count, withOperatorTurnTo: agent)

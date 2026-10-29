@@ -91,7 +91,8 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   (workspaces piece 4): `ConversationMessage`, `conversationMessageBlock` (what the recipient's agent
   reads, information only), `MessageWakeBudgets` (per workspace; an operator message resets it, a
   woken turn takes one); the window's `deliverMessage`, `wakeForMessages`, the two `send` hooks and
-  **`messageWorkspace(of:)`, the seam workspaces piece 1 replaces** (today the place).
+  `messageWorkspace(of:)` — piece 1's record (`WorkspaceStore`, by the conversation or its lineage
+  root): a workspace's id keys its budget and its name heads the message; Main is keyed by the place.
 - `QuickTasks.swift` — `QuickTasks` (3b-viii, Decision 42): the one entry point for quick tasks.
   `infill` and `respond` route to the org's `quickProvider`, else the active provider, fall back once
   when a local endpoint will not connect, keep the endpoint's error whole, and refuse after shutdown.

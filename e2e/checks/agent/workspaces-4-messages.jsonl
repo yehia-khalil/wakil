@@ -11,7 +11,7 @@
 {"expect":{"tree":"contains","text":"the login endpoint answers 201 now"}}
 {"expect":{"tree":"contains","text":"Value: done"}}
 {"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
-{"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · e2e-project · staging"}}
+{"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · Main"}}
 {"expect":{"tree":"contains","text":"read the word from the other conversation"}}
 {"expect":{"tree":"absent","text":"sent word to the first conversation"}}
 {"dispatch":{"action":"conversation_message","params":{"to":"c-nowhere","text":"hello"},"refuses":"no live conversation ‘c-nowhere’"}}
@@ -22,5 +22,5 @@
 {"expect":{"tree":"contains","text":"To ‘send word to the first conversation’"}}
 {"expect":{"tree":"contains","text":"Value: done"}}
 {"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging#2"}}
-{"expect":{"tree":"contains","text":"From ‘thread turn one’ · e2e-project · staging"}}
+{"expect":{"tree":"contains","text":"From ‘thread turn one’ · Main"}}
 {"expect":{"tree":"contains","text":"read the thanks from the first conversation"}}

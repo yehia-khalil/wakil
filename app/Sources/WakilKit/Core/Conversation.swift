@@ -198,6 +198,18 @@ public struct MessageWorkspace: Sendable, Equatable {
         self.key = key
         self.name = name
     }
+
+    /// A workspace's (its id and name), or Main's at `place`: keyed `main/<org>/<project>/<env>`
+    /// and named "Main". `session_list`'s `sameWorkspace` and the wake budget both use this.
+    public init(of workspace: (id: String, name: String)?, place: Place) {
+        if let workspace {
+            self.init(key: workspace.id, name: workspace.name.isEmpty ? "a workspace" : workspace.name)
+        } else {
+            self.init(
+                key: (["main", place.organization, place.project, place.environment]).joined(separator: "/"),
+                name: "Main")
+        }
+    }
 }
 
 /// The longest message between conversations, in characters (workspaces piece 4).

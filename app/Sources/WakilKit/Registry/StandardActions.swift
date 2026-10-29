@@ -2878,11 +2878,12 @@ public func registerStandardActions(
             // Workspaces piece 4: an agent's own row, and which rows share its workspace, so a
             // message (`conversation_message`) has an address.
             let own = ActionRegistry.dispatchCaller?.conversation
-            let ownWorkspace = live.first { $0.id == own }?.workspace
+            let key = { (row: LiveConversation) in MessageWorkspace(of: row.workspace, place: row.place).key }
+            let ownWorkspace = live.first { $0.id == own }.map(key)
             return withStructured(past, "live", .array(live.map { row in
                 guard case .object(var o) = row.json, let own else { return row.json }
                 o["self"] = .bool(row.id == own)
-                o["sameWorkspace"] = .bool(ownWorkspace != nil && row.workspace == ownWorkspace)
+                o["sameWorkspace"] = .bool(ownWorkspace != nil && key(row) == ownWorkspace)
                 return .object(o)
             }))
         }
