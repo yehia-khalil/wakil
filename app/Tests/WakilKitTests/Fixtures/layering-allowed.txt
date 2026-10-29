@@ -77,6 +77,7 @@ Terminal -> Panes
 Terminal -> Registry
 Terminal -> Visual
 Visual -> Terminal
+Workspace -> Editor
 Workspace -> Harness
 Workspace -> MCP
 Workspace -> Registry
