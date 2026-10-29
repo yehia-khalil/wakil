@@ -172,9 +172,9 @@ private func writeState(_ files: BrowserOrgFiles, _ scope: LayoutScope, _ pane: 
     #expect(try files.identifier() == id)
 }
 
-@Test func theClearQuestionSaysHistoryGoesAndBookmarksStay() {
+@Test func theClearQuestionSaysHistoryGoesAndBookmarksAndPasswordsStay() {
     #expect(BrowserClearDataQuestion.text(org: "initech")
-        == "Delete initech's browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks stay.")
+        == "Delete initech's browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks and saved passwords stay.")
 }
 
 // MARK: - Bookmarks (3c-iii Task 3)
@@ -227,4 +227,114 @@ private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
     try files.setBookmark(url: "https://example.com/", title: "E", on: true, now: t0)
     try files.removeEverythingButTheProfile()
     #expect(try files.bookmarks().count == 1)
+}
+
+// MARK: - The never-save list (3d-iv Task 5)
+
+@Test func neverSaveAddsRemovesAndStaysSorted() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    #expect(try files.neverSave() == [])
+    #expect(try files.setNeverSave(site: "b.example.com", on: true) == ["b.example.com"])
+    #expect(try files.setNeverSave(site: "a.example.com", on: true) == ["a.example.com", "b.example.com"])
+    #expect(try files.setNeverSave(site: "a.example.com", on: true) == ["a.example.com", "b.example.com"])
+    #expect(try files.neverSave() == ["a.example.com", "b.example.com"])
+    let file = files.directory.appendingPathComponent("passwords-never.json")
+    #expect(try JSONDecoder().decode([String].self, from: Data(contentsOf: file)) == ["a.example.com", "b.example.com"])
+    #expect(try files.setNeverSave(site: "a.example.com", on: false) == ["b.example.com"])
+    #expect(try files.setNeverSave(site: "zzz.example.com", on: false) == ["b.example.com"])
+    #expect(try files.neverSave() == ["b.example.com"])
+}
+
+@Test func anUnreadableNeverFileIsNeverWrittenOver() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try FileManager.default.createDirectory(at: files.directory, withIntermediateDirectories: true)
+    let path = files.directory.appendingPathComponent("passwords-never.json")
+    let bytes = Data("{not json".utf8)
+    try bytes.write(to: path)
+    #expect(throws: BrowserNeverSaveUnreadable.self) { try files.neverSave() }
+    #expect(throws: BrowserNeverSaveUnreadable.self) { try files.setNeverSave(site: "example.com", on: true) }
+    #expect(throws: BrowserNeverSaveUnreadable.self) { try files.setNeverSave(site: "example.com", on: false) }
+    #expect(try Data(contentsOf: path) == bytes)
+}
+
+@Test func clearingBrowsingDataKeepsTheNeverList() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setNeverSave(site: "example.com", on: true)
+    try files.removeEverythingButTheProfile()
+    #expect(try files.neverSave() == ["example.com"])
+}
+
+// MARK: - Pins (3d-i Task 8)
+
+private let pinnedTab = BrowserPin(id: "p0000000a", kind: .tab, url: "https://example.com/a", title: "A")
+private let pinnedGroup = BrowserPin(
+    id: "p0000000b", kind: .group, name: "Docs", colour: .teal,
+    tabs: [BrowserPinTab(url: "https://example.com/1", title: "One"), BrowserPinTab(url: "https://example.com/2", title: "Two")])
+
+@Test func pinsFileRoundTripsInOrder() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    let prs = BrowserPin(id: "p0000000c", kind: .pullRequests)
+    try files.setPins([pinnedGroup, pinnedTab, prs], project: "web")
+    #expect(try files.pins(project: "web") == [pinnedGroup, pinnedTab, prs])
+    let url = files.directory.appendingPathComponent("pins/web.json")
+    let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    let items = try #require(json["items"] as? [[String: Any]])
+    #expect(items.map { $0["kind"] as? String } == ["group", "tab", "pullRequests"])
+    #expect(Set(items[1].keys) == ["id", "kind", "url", "title"])
+    #expect(Set(items[0].keys) == ["id", "kind", "name", "colour", "tabs"])
+    #expect(try files.pins(project: "other") == [])
+}
+
+@Test func aPinsFileWithNoNamesDecodes() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    let url = files.pinsURL(project: "web")
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    // A 3d-i file: a tab pin and a group's tabs with no `name`.
+    try Data("""
+    {"items":[{"id":"p0000000a","kind":"tab","url":"https://example.com/a","title":"A"},
+    {"id":"p0000000b","kind":"group","name":"Docs","colour":"teal","tabs":[{"url":"https://example.com/1","title":"One"}]}]}
+    """.utf8).write(to: url)
+    let pins = try files.pins(project: "web")
+    #expect(pins.first?.name == nil)
+    #expect(pins.last?.tabs?.first?.name == nil)
+    #expect(pins.last?.tabs?.first?.title == "One")
+    // Written back, a tab with no name still has no `name` key.
+    try files.setPins(pins, project: "web")
+    let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    let items = try #require(json["items"] as? [[String: Any]])
+    let tabs = try #require(items[1]["tabs"] as? [[String: Any]])
+    #expect(Set(tabs[0].keys) == ["url", "title"])
+}
+
+@Test func aMissingPinsFileReadsEmpty() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    #expect(try files.pins(project: "web") == [])
+    #expect(!FileManager.default.fileExists(atPath: files.directory.path))
+}
+
+@Test func anUnreadablePinsFileIsNeverWrittenOverByTheFiles() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    let url = files.pinsURL(project: "web")
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    #expect(throws: BrowserPinsUnreadable.self) { try files.pins(project: "web") }
+    #expect(throws: BrowserPinsUnreadable.self) { try files.setPins([pinnedTab], project: "web") }
+    #expect(try Data(contentsOf: url) == bytes)
+}
+
+@Test func aProjectKeyWithASlashIsOneFileName() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setPins([pinnedTab], project: "initech/web")
+    let pins = files.directory.appendingPathComponent("pins")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: pins.path) == ["initech%2Fweb.json"])
+    #expect(try files.pins(project: "initech/web") == [pinnedTab])
+    #expect(BrowserOrgFiles.pinsName(project: "initech/web") == "pins/initech%2Fweb.json")
+}
+
+@Test func clearingBrowsingDataKeepsPins() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setPins([pinnedTab], project: "web")
+    try files.removeEverythingButTheProfile()
+    #expect(try files.pins(project: "web") == [pinnedTab])
 }

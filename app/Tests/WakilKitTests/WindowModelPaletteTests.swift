@@ -178,6 +178,20 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 
 // MARK: - Tests
 
+// MARK: - Names: a name step's run after the palette moved
+
+/// Stand-ins for the two rename actions, so a run that is not refused is seen in the journal.
+private let registerRenameDoubles: @Sendable (ActionRegistry, PaneStore, LayoutStore) async -> Void = { registry, _, _ in
+    for name in ["browser_rename_tab", "conversation_rename"] {
+        await registry.register(Action(
+            name: name, description: "test double", kind: .control,
+            schema: .object(["type": .string("object")]), handler: { _ in .object([:]) }))
+    }
+}
+
+private let tabRenameEffect = PaletteEffect.runName(
+    action: "browser_rename_tab", params: .object(["pane": .string("b1"), "tab": .string("t1")]), name: "Docs")
+
 @Suite @MainActor struct WindowModelPaletteTests {
     /// Spec 37: ⌘P → "New Editor pane" → an editor pane opens and is focused.
     @Test func newEditorPaneEntryOpensAndFocusesAnEditorPane() async throws {
@@ -426,6 +440,67 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         let error = await w.model.performPalette(.run(.dispatch(action: "db_refetch", params: .object(["pane": .string("p1")]))))
 
         #expect(error == whole)
+    }
+
+    /// Names, final review: a tab's name step names it by pane and tab id, which repeat across
+    /// places, so its run — Return's, or the close's after `paletteClosed()` — is refused once the
+    /// window has left the place the palette was opened in. Nothing is dispatched.
+    @Test func aTabRenameAfterAPlaceSwitchIsRefused() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        await w.context.switchTo(project: "q", roots: ["/q/web"])
+        await w.model.refreshContext()
+        w.model.paletteClosed()
+
+        let error = await w.model.performPalette(tabRenameEffect)
+
+        #expect(error == "the palette was opened for acme/p in staging; reopen it")
+        #expect(try await w.journal().filter { $0.action == "browser_rename_tab" }.isEmpty)
+    }
+
+    /// An organisation switch while it was open: refused as every other read of the palette's is.
+    @Test func aTabRenameAfterAnOrganisationSwitchIsRefused() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        await w.model.invalidateForOrgChange()
+        w.model.setOrganizationForTesting("beta")
+        w.model.paletteClosed()
+
+        let error = await w.model.performPalette(tabRenameEffect)
+
+        #expect(error == "the organisation changed under the palette; reopen it")
+        #expect(try await w.journal().filter { $0.action == "browser_rename_tab" }.isEmpty)
+    }
+
+    /// In the place it was opened in, the close's run still goes through, though the close dropped
+    /// every build a `shown` could name.
+    @Test func aTabRenameInThePlaceItWasOpenedInRunsAfterTheClose() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        let root = await w.model.paletteRoot(mode: .commands) { _ in }
+        w.model.paletteClosed()
+
+        #expect(await w.model.performPalette(tabRenameEffect, shown: root.generation) == nil)
+        #expect(try await w.journal().filter { $0.action == "browser_rename_tab" }.count == 1)
+    }
+
+    /// A conversation's name step names a conversation id, which no other place shares: it runs
+    /// wherever the operator is when it does (`conversation_rename` refuses a gone one, whole).
+    @Test func aConversationRenameAfterAPlaceSwitchStillRuns() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        await w.context.switchTo(project: "q", roots: ["/q/web"])
+        await w.model.refreshContext()
+        w.model.paletteClosed()
+
+        let effect = PaletteEffect.runName(
+            action: "conversation_rename", params: .object(["conversation": .string("c1")]), name: "Docs")
+        #expect(await w.model.performPalette(effect) == nil)
+        #expect(try await w.journal().filter { $0.action == "conversation_rename" }.count == 1)
     }
 
     /// Review Focus 3: entries built for one project never run in another.
@@ -991,7 +1066,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ticket_read", "ticket_refresh", "ticket_show", "ticket_in_flight", "ticket_link", "ticket_record_update",
     "review_open", "review_step", "review_reply_draft", "review_reply_send", "review_resolve",
     // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
-    "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_print", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_zoom",
+    "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_print", "browser_pull_requests_refresh", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_unpin", "browser_zoom",
     // 3c-ii: the agent's reach into the page; the five acts are mutations, revoke_site the operator's.
     "browser_read_page", "browser_click", "browser_type", "browser_select", "browser_press", "browser_scroll",
     "browser_revoke_site",
@@ -999,6 +1074,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "api_remove_entry", "api_request", "api_send", "api_set_entry", "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
     "capacity_record", "ctx_capacity",
+    // Names: the operator's and the agent's rename of a conversation and of a browser tab.
+    "conversation_rename", "browser_rename_tab",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",
@@ -1006,6 +1083,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
     // 3c-i: the browser settings read, and the operator-only write.
     "ctx_browser_settings", "ctx_set_browser_settings",
+    // 3d-i (Ruling 17): the pull-request read.
+    "ctx_github_pull_requests",
     // 3b-viii (Decision 42): the operator-only write for a local model endpoint.
     "ctx_set_local_provider", "ctx_config_tree_for",
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
@@ -1027,7 +1106,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
     "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
-    "session_close", "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
+    "rail_set", "session_close", "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
     "session_set_provider", "session_switch", "settings_open", "term_open", "term_propose", "term_run", "term_scroll",
 ]
 
@@ -1037,6 +1116,11 @@ private let agentToolsBeforeThePalette: Set<String> = [
     // 3b-v (Decision 38): the read only; both writes are operator-only and absent.
     "mcp__wakil__ctx_editor_settings",
     "mcp__wakil__ctx_browser_settings",
+    // Names: `.control` and agent-reachable, for the agent's own conversation.
+    "mcp__wakil__conversation_rename",
+    // Names: `.control` and agent-reachable, a browser tab's name.
+    "mcp__wakil__browser_rename_tab",
+    "mcp__wakil__ctx_github_pull_requests",
     "mcp__wakil__editor_tree", "mcp__wakil__editor_tree_expand", "mcp__wakil__editor_tree_collapse",
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",
     "mcp__wakil__editor_changes_select", "mcp__wakil__editor_changes_step",
@@ -1057,7 +1141,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__review_open", "mcp__wakil__review_step", "mcp__wakil__review_reply_draft",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",
     // 3c-i: every browser action but browser_restore.
-    "mcp__wakil__browser_back", "mcp__wakil__browser_bookmark", "mcp__wakil__browser_close_tab", "mcp__wakil__browser_download_cancel", "mcp__wakil__browser_downloads_clear", "mcp__wakil__browser_find", "mcp__wakil__browser_find_close", "mcp__wakil__browser_find_step", "mcp__wakil__browser_focus_address", "mcp__wakil__browser_forward", "mcp__wakil__browser_move_tab", "mcp__wakil__browser_navigate", "mcp__wakil__browser_new_tab", "mcp__wakil__browser_open", "mcp__wakil__browser_reload", "mcp__wakil__browser_reopen_tab", "mcp__wakil__browser_select_tab", "mcp__wakil__browser_stop", "mcp__wakil__browser_zoom",
+    "mcp__wakil__browser_back", "mcp__wakil__browser_bookmark", "mcp__wakil__browser_close_tab", "mcp__wakil__browser_copy_url", "mcp__wakil__browser_download_cancel", "mcp__wakil__browser_downloads_clear", "mcp__wakil__browser_find", "mcp__wakil__browser_find_close", "mcp__wakil__browser_find_step", "mcp__wakil__browser_focus_address", "mcp__wakil__browser_forward", "mcp__wakil__browser_group", "mcp__wakil__browser_move_tab", "mcp__wakil__browser_navigate", "mcp__wakil__browser_new_tab", "mcp__wakil__browser_open", "mcp__wakil__browser_pin", "mcp__wakil__browser_pull_requests_refresh", "mcp__wakil__browser_reload", "mcp__wakil__browser_reopen_tab", "mcp__wakil__browser_select_tab", "mcp__wakil__browser_stop", "mcp__wakil__browser_tab_column", "mcp__wakil__browser_unpin", "mcp__wakil__browser_zoom",
     // 3c-ii: the read only; the acts are mutations, reached through the gate.
     "mcp__wakil__browser_read_page",
     "mcp__wakil__api_bind", "mcp__wakil__api_cancel", "mcp__wakil__api_fill_from_curl",
@@ -1075,8 +1159,98 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__pane_restore", "mcp__wakil__pane_scroll_clear", "mcp__wakil__pane_scroll_to_row",
     "mcp__wakil__pane_select_cell", "mcp__wakil__pane_select_rows", "mcp__wakil__pane_set_column_width",
     "mcp__wakil__pane_set_density", "mcp__wakil__pane_snap", "mcp__wakil__pane_sort",
+    "mcp__wakil__rail_set",
     "mcp__wakil__read_layout", "mcp__wakil__read_pane", "mcp__wakil__session_get",
     "mcp__wakil__session_list", "mcp__wakil__session_read", "mcp__wakil__session_record_parent",
     "mcp__wakil__session_resume", "mcp__wakil__term_open", "mcp__wakil__term_propose",
     "mcp__wakil__term_scroll",
 ]
+
+// MARK: - Names: Rename Conversation… (names, Calls made 10, 11, 12)
+
+@MainActor
+private func untilTrue(_ condition: @MainActor () async -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(2 * testWaitLoadMultiplier)
+    while Date() < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(nanoseconds: 2_000_000)
+    }
+    return await condition()
+}
+
+/// A window with one conversation on screen, titled by its first message, and the shipped
+/// `conversation_rename` on its registry over the window's own broker.
+@MainActor
+private func renameWindow() async throws -> (model: WindowModel, agent: PlaceAgent) {
+    let harnesses = Harnesses()
+    let requests = ConversationBroker()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: "initech",
+        harnessFactory: { place, _ in harnesses.make(place) }, conversationRequests: requests)
+    await model.registryForTesting.register(conversationRenameAction(
+        conversationRequests: requests,
+        liveConversations: { [weak model] place in await model?.liveConversationRows(in: place) ?? [] }))
+    let home = testScratchRoot.appendingPathComponent("palette-rename-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: home.appendingPathComponent(".wakil/orgs/initech", isDirectory: true), withIntermediateDirectories: true)
+    model.browserHome = home
+    model.seedForTesting(providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+                         project: "api", environment: "staging")
+    #expect(await model.send("fix the login test"))
+    return (model, try #require(model.currentAgent))
+}
+
+@Suite @MainActor struct WindowModelPaletteRenameTests {
+    /// Calls made 10: the name step's run is `conversation_rename {conversation, name}`, origin ui,
+    /// and the title changes once the window drains it.
+    @Test func aRunNameDispatchesWithTheName() async throws {
+        let (model, agent) = try await renameWindow()
+        let effect = PaletteEffect.runName(
+            action: "conversation_rename", params: .object(["conversation": .string(agent.id)]), name: "Login bug")
+        #expect(await model.performPalette(effect) == nil)
+        #expect(await untilTrue { agent.title == "Login bug" })
+        let renames = try await model.registryForTesting.journalEntries().filter { $0.action == "conversation_rename" }
+        #expect(renames.count == 1)
+        #expect(renames.first?.origin == .ui)
+        #expect(renames.first?.params == .object(["conversation": .string(agent.id), "name": .string("Login bug")]))
+    }
+
+    /// A name step's run names its conversation by id: it is not refused as a row read for a list
+    /// the palette has since dropped — the close's run lands after `paletteClosed()` (Rule 2).
+    @Test func aRunNameAfterTheCloseStillDispatches() async throws {
+        let (model, agent) = try await renameWindow()
+        let root = await model.paletteRoot(mode: .commands) { _ in }
+        model.paletteClosed()
+        let effect = PaletteEffect.runName(
+            action: "conversation_rename", params: .object(["conversation": .string(agent.id)]), name: "Kept")
+        #expect(await model.performPalette(effect, shown: root.generation) == nil)
+        #expect(await untilTrue { agent.title == "Kept" })
+    }
+
+    /// ⌘K's context names the conversation on screen, with what clearing would show.
+    @Test func theContextNamesTheConversationOnScreen() async throws {
+        let (model, agent) = try await renameWindow()
+        await model.renameConversation(agent.id, to: "Mine")
+        let context = await model.paletteContext()
+        #expect(context.currentConversation == PaletteSubject(id: agent.id, name: "Mine", fallback: "fix the login test"))
+        #expect(model.liveConversationRows().first?.fallbackTitle == "fix the login test")
+        #expect(CommandCatalog.entries(for: context).contains { $0.id == "global.renameConversation" })
+    }
+
+    /// Calls made 12: a chip's Rename… opens ⌘P on the name step for its conversation.
+    @Test func openRenamePaletteStartsOnTheNameStep() async throws {
+        let (model, agent) = try await renameWindow()
+        model.openRenamePalette(conversation: agent.id)
+        let press = try #require(model.paletteKeyPress)
+        #expect(press.mode == .open)
+        let palette = model.makePalette(mode: press.mode, renaming: press.rename)
+        #expect(palette.mode == .open)
+        let step = try #require(palette.steps.last)
+        #expect(step.isName)
+        #expect(step.rename?.current == agent.title)
+        #expect(step.rename?.params == .object(["conversation": .string(agent.id)]))
+        // An id that names no live conversation opens nothing.
+        model.openRenamePalette(conversation: "nope")
+        #expect(model.paletteKeyPress == press)
+    }
+}

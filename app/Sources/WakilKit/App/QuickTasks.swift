@@ -88,6 +88,12 @@ public actor QuickTasks {
     public func endpointErrors() -> [String: String] { errors }
     public func answered() -> Set<String> { succeeded }
     public func routedId(_ op: QuickOperation) -> String? { quickRoute(op, config).first?.id }
+    /// A caller's own failure with a reply the provider gave (one it could not read), kept whole against
+    /// the provider `op` routes to, as `run` keeps the provider's own errors.
+    public func recordFailure(_ message: String, for op: QuickOperation) {
+        guard let id = routedId(op) else { return }
+        note(message, for: id)
+    }
 
     /// `quick-tasks:` lines beside the editor's `monaco-editor:` ones.
     public static let logToStandardError: @Sendable (String) -> Void = { line in

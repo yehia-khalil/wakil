@@ -303,6 +303,8 @@ struct WakilWindow: View {
                     VStack(alignment: .leading) {
                         loaded(session)
                     }
+                    // 3d-iv: Settings → Browser → Passwords reads the store and dispatches through this.
+                    .environment(\.browserPasswords, BrowserPasswordsAccess(session: session))
                     .padding()
                     // 2d-ii: the composer bar owns the bottom edge now, so the
                     // old thread-clearance reserve is gone. A pane ends 48pt
@@ -507,7 +509,11 @@ struct WakilWindow: View {
         // ⌘P and ⌘K are menu commands (`AppScene`); they reach here as a token.
         .onChange(of: session?.model.paletteKeyPress) { _, press in
             guard let press else { return }
-            if let palette {
+            if let rename = press.rename {
+                // A chip's Rename… (names, Calls made 12): a fresh palette on the name step.
+                palette?.close(restoringFocus: false)
+                openPalette(press.mode, renaming: rename)
+            } else if let palette {
                 palette.modeKey(press.mode)
             } else {
                 openPalette(press.mode)
@@ -603,9 +609,9 @@ struct WakilWindow: View {
 
     /// Opens the palette in `mode` — only over an open organisation, and not over the org
     /// plane or a confirmation, each of which owns the window while it is up.
-    private func openPalette(_ mode: PaletteMode) {
+    private func openPalette(_ mode: PaletteMode, renaming rename: PaletteRename? = nil) {
         guard let model = session?.model, hasOpenOrg, !model.showOrgPlane, model.pending == nil else { return }
-        let controller = PaletteController(model: model, mode: mode)
+        let controller = PaletteController(model: model, mode: mode, renaming: rename)
         controller.onClose = { palette = nil }
         palette = controller
     }
@@ -726,8 +732,15 @@ struct WakilWindow: View {
             .background(PaneClickWatcher { point, landsOnInput in
                 canvasMouseDown(model, at: point, landsOnInput: landsOnInput)
             })
+            .transaction(value: model.railCollapsed) { $0.animation = nil }
             rail(model)
         }
+        // §10's collapsed rail: the spine and its peek, over the row and not in it.
+        .overlay(alignment: .topTrailing) { railSpine(model) }
+        // The rail fades in and out of its slot over §7's plane transition; the canvas takes or
+        // gives back the slot's width at once, with no animation of its own, so panes are not
+        // resized frame by frame.
+        .animation(.easeOut(duration: RailTreatment.planeTransition), value: model.railCollapsed)
         // Task 14, `OrgPlane.dc.html`: the canvas behind the org plane is
         // visibly inert, not hidden — the operator must still be able to
         // see what they are leaving. Untouched when the plane is closed

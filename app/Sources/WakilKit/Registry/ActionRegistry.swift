@@ -593,6 +593,18 @@ public actor ActionRegistry {
             caller: caller, outcome: outcome, secretParams: [])
     }
 
+    /// Names phase: one line per quick task that sends the operator's text out — `conversation_named`.
+    /// Not an action, so its secret parameters are declared here: none. The params say where the text
+    /// went and how much of it, never the words (they are in the transcript); the outcome is the
+    /// result or the error whole.
+    public func journalQuickTask(
+        action: String, params: JSONValue, caller: DispatchCaller, outcome: String
+    ) throws {
+        try appendJournalEntry(
+            action: action, params: params, origin: .ui,
+            caller: caller, outcome: outcome, secretParams: [])
+    }
+
     /// Appends the mint's own outcome line — the second fact `dispatch`
     /// structurally cannot record (#204).
     ///

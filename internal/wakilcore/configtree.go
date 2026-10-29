@@ -12,17 +12,18 @@ import (
 // the directory name, so there is one place it can be written — while a
 // tree the pane draws has to say which organisation it is a tree OF.
 type ConfigTreeOrg struct {
-	ID              string `json:"id"`
-	DisplayName     string `json:"displayName"`
-	JiraBase        string `json:"jiraBase"`
-	DefaultProvider string `json:"defaultProvider"`
-	SpeechProvider  string `json:"speechProvider"`
-	QuickProvider   string `json:"quickProvider"`
-	GitName         string `json:"gitName"`
-	GitEmail        string `json:"gitEmail"`
-	GhostText       bool   `json:"ghostText"`
-	FastPath        bool   `json:"fastPath"`
-	CommitDrafts    bool   `json:"commitDrafts"`
+	ID                string `json:"id"`
+	DisplayName       string `json:"displayName"`
+	JiraBase          string `json:"jiraBase"`
+	DefaultProvider   string `json:"defaultProvider"`
+	SpeechProvider    string `json:"speechProvider"`
+	QuickProvider     string `json:"quickProvider"`
+	GitName           string `json:"gitName"`
+	GitEmail          string `json:"gitEmail"`
+	GhostText         bool   `json:"ghostText"`
+	FastPath          bool   `json:"fastPath"`
+	CommitDrafts      bool   `json:"commitDrafts"`
+	ConversationNames bool   `json:"conversationNames"`
 	// 3a-iii: the accounts (no secrets) and the strategy, resolved to rebase when unset.
 	GitAccounts     []GitAccount `json:"gitAccounts"`
 	PullStrategy    string       `json:"pullStrategy"`
@@ -342,6 +343,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	tree.Org.GhostText = resolveOrgSwitch(record.GhostText, app.Editor.Resolved().GhostText)
 	tree.Org.FastPath = resolveOrgSwitch(record.FastPath, quickProviderIsLocal(org, record.QuickProvider))
 	tree.Org.CommitDrafts = resolveOrgSwitch(record.CommitDrafts, true)
+	tree.Org.ConversationNames = resolveOrgSwitch(record.ConversationNames, true)
 	tree.Org.GitAccounts = append([]GitAccount{}, record.GitAccounts...)
 	tree.Org.PullStrategy = PullStrategyOf(record)
 	tree.Org.LastCloneFolder = record.LastCloneFolder

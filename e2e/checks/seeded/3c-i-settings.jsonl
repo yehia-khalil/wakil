@@ -20,14 +20,14 @@
 {"dispatch":{"action":"ctx_browser_settings","params":{}}}
 {"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.startPage","equals":""}}
 {"do":{"click":"settings.browser.clear"}}
-{"expect":{"tree":"contains","text":"Every site signs you out, in every project, and its history is deleted. Bookmarks stay."}}
+{"expect":{"tree":"contains","text":"Every site signs you out, in every project, and its history is deleted. Bookmarks and saved passwords stay."}}
 {"do":{"click":"settings.browser.clear.keep"}}
-{"expect":{"tree":"absent","text":"Every site signs you out, in every project, and its history is deleted. Bookmarks stay."}}
+{"expect":{"tree":"absent","text":"Every site signs you out, in every project, and its history is deleted. Bookmarks and saved passwords stay."}}
 {"do":{"click":"settings.browser.clear"}}
 {"expect":{"tree":"contains","text":"Delete E2E Fixture's browsing data?"}}
 {"do":{"click":"settings.browser.clear.confirm"}}
 {"expect":{"tree":"contains","text":"Deleted E2E Fixture's browsing data."}}
-{"expect":{"tree":"absent","text":"Every site signs you out, in every project, and its history is deleted. Bookmarks stay."}}
+{"expect":{"tree":"absent","text":"Every site signs you out, in every project, and its history is deleted. Bookmarks and saved passwords stay."}}
 {"expect":{"journal":{"contains":"\"action\":\"browser_clear_data\""}}}
 {"expect":{"tree":"contains","text":"Search engine"}}
 {"dispatch":{"action":"ctx_set_browser_settings","params":{"searchEngine":"google"}}}

@@ -13,6 +13,8 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case notABrowser(action: String, pane: String)
     case noTab(action: String, tab: String?)
     case nothingToReopen
+    /// `browser_copy_url`: the tab has no address yet (a blank start page).
+    case nothingToCopy(tab: String)
     case findClosed
     case noDownload(id: String)
     case unknownZoomStep(String)
@@ -27,6 +29,18 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     /// `browser_bookmark` was asked for a page that is not http, https or file.
     case notBookmarkable(scheme: String)
     case bookmarksUnreadable(String)
+    /// 3d-i: the group named is not in the pane.
+    case noGroup(action: String, group: String)
+    /// 3d-i: the pull-request group is the read's; only collapse and expand change it, and its rows
+    /// are never named (`browser_rename_tab`). The word is the participle: `renamed`, `recoloured`,
+    /// `ungrouped`, `closed`; `action` is the refusing action, whose name the sentence leads with.
+    case pullRequestGroupRefuses(action: String, word: String)
+    case unknownColour
+    case unknownGroupAction(String)
+    /// 3d-i: pins are per project, and the place on screen has none.
+    case noProject(action: String)
+    /// 3d-i: `pins/<project>.json` is there but can't be read; it is never written over (ruling 13).
+    case pinsUnreadable(action: String, file: String, reason: String)
 
     public var description: String {
         switch self {
@@ -37,6 +51,7 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .noTab(let action, let tab):
             tab.map { "\(action): the browser pane has no tab \($0)" } ?? "\(action): the browser pane has no open tab"
         case .nothingToReopen: "browser_reopen_tab: no closed tab to reopen in this pane"
+        case .nothingToCopy(let tab): "browser_copy_url: tab \(tab) has no address yet"
         case .findClosed: "browser_find_step: the find bar is closed; open it with browser_find (⌘F)"
         case .noDownload(let id): "browser_download_cancel: this pane has no download \(id)"
         case .unknownZoomStep(let step): "browser_zoom: step is in, out or reset, not \(step)"
@@ -46,6 +61,18 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .notBookmarkable(let scheme): "browser_bookmark: only a web page can be bookmarked, not \(scheme):"
         case .bookmarksUnreadable(let error):
             "browser_bookmark: bookmarks.json can't be read (\(error)) — fix or move it; Wakil won't write over it."
+        case .noGroup(let action, let group): "\(action): this pane has no group \(group)"
+        case .pullRequestGroupRefuses(let action, let word):
+            action == "browser_group"
+                ? "browser_group: the pull-request group can't be \(word)"
+                : "\(action): a pull-request row can't be \(word) (3d-i ruling 18: a listing, never saved)"
+        case .unknownColour:
+            "browser_group: colour is one of " + BrowserGroupColour.allCases.map(\.rawValue).joined(separator: ", ")
+        case .unknownGroupAction(let verb):
+            "browser_group: action is create, rename, recolour, collapse, expand, ungroup or close, not \(verb)"
+        case .noProject(let action): "\(action): no project is active"
+        case .pinsUnreadable(let action, let file, let reason):
+            "\(action): \(file) can't be read (\(reason)) — fix or move it; Wakil won't write over it."
         case .notAWebPage(let scheme):
             "browser_open opens web pages and files (http, https, file), not \(scheme): links — an app's "
                 + "link opens from a page, after the operator allows it."
@@ -67,9 +94,27 @@ func browserZoom(_ zoom: Double, stepIn: Bool) -> Double {
     return browserZoomSteps.last { $0 < zoom - 0.0001 } ?? zoom
 }
 
-/// What a browser pane saves in the layout: each tab's id, URL and title, in order.
+/// What a browser pane saves in the layout as its tabs: each tab's id, URL, title, group, opener, pin,
+/// `keptLoose` and name, in order. A pull-request tab is skipped (ruling 18): the next refresh lists it
+/// again. Its group is saved with the rest of `groups`, without tabs, so its `collapsed` is kept.
 func browserSavedTabs(_ s: BrowserSnapshot) -> [BrowserSavedTab] {
-    s.tabs.map { BrowserSavedTab(id: $0.id, url: $0.url, title: $0.title) }
+    s.tabs.filter { $0.pullRequest == nil }.map {
+        BrowserSavedTab(id: $0.id, url: $0.url, title: $0.title, group: $0.group, opener: $0.opener,
+                        pin: $0.pin, keptLoose: $0.keptLoose, name: $0.name)
+    }
+}
+
+/// The active tab a browser pane saves: its own id, unless that is a pull-request tab, which is
+/// never saved — then the nearest saved tab before it, else the first saved tab, else nil.
+func browserSavedActive(_ s: BrowserSnapshot) -> String? {
+    guard let active = s.active, let i = s.tabs.firstIndex(where: { $0.id == active }) else { return s.active }
+    if s.tabs[i].pullRequest == nil { return active }
+    return s.tabs[..<i].last { $0.pullRequest == nil }?.id ?? s.tabs.first { $0.pullRequest == nil }?.id
+}
+
+/// What `browser_pin` and `browser_unpin` act on: a tab or a group, by id.
+private enum BrowserPinTarget: Sendable {
+    case tab(String), group(String)
 }
 
 /// The ⌘⇧T stack's depth.
@@ -96,6 +141,38 @@ extension BrowserSnapshot {
         return tabs.firstIndex { $0.id == wanted }
     }
 
+    /// Closes the tabs `ids` names (`browser_close_tab`, `browser_group`'s close): each goes on the
+    /// ⌘⇧T stack with its group (ruling 22), and when the selection was among them the tab now where
+    /// the first of them was is selected, else the last. Ends in `arrange()`. Answers how many closed.
+    @discardableResult
+    mutating func closeTabs(_ ids: Set<String>) -> Int {
+        guard tabs.contains(where: { ids.contains($0.id) }) else { return 0 }
+        let gone = tabs.filter { ids.contains($0.id) }
+        for tab in gone {
+            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group, pin: tab.pin,
+                                          name: tab.name))
+        }
+        if closed.count > browserClosedLimit { closed.removeFirst(closed.count - browserClosedLimit) }
+        removeTabs(ids)
+        arrange()
+        return gone.count
+    }
+
+    /// The opener rule (ruling 8) for a tab whose address may not be known yet: a pop-up made by
+    /// `window.open()` is `about:blank` (or empty) until it loads. Such a tab still joins a grouped
+    /// opener, but never starts a chain group with a loose one — its site is unknown, not another —
+    /// and waits for the site rule.
+    mutating func placeOpenedKnowingTheSite(tab: String, opener: String) {
+        guard let t = tabs.firstIndex(where: { $0.id == tab }) else { return arrange() }
+        let url = tabs[t].url.lowercased()
+        let unknown = url.isEmpty || url.hasPrefix("about:")
+        if unknown, tabs.first(where: { $0.id == opener })?.group == nil {
+            tabs[t].opener = nil
+            return arrange()
+        }
+        placeOpened(tab: tab, opener: opener)
+    }
+
     /// Selects `i`, loading it if it has never fetched (a restored tab loads when shown).
     mutating func select(_ i: Int) {
         active = tabs[i].id
@@ -111,6 +188,41 @@ extension BrowserSnapshot {
 /// to call once the store is gone (`browserRemoveStoreThenFiles`), with no web view left on it to
 /// write one.
 public typealias BrowserDataRemover = @Sendable (_ store: UUID, _ deleteFiles: @Sendable () throws -> Void) async throws -> Void
+
+/// Reads the active organisation's open pull requests (`ctx_github_pull_requests`, ruling 17) and
+/// answers its reply; nil when nothing reads them (a fixture, a headless `--dispatch`). A failure is
+/// thrown, its text shown whole.
+public typealias BrowserPullRequestsRead = @Sendable () async throws -> JSONValue?
+
+/// `ctx_github_pull_requests`' reply — `{pullRequests, absent?, host?}` under `structuredContent` —
+/// as the list and why there is none; nil when it is not one.
+func decodeBrowserPullRequests(fromResult result: JSONValue) -> (items: [BrowserPullRequest], absent: String?)? {
+    struct Reply: Decodable {
+        var pullRequests: [BrowserPullRequest]?
+        var absent: String?
+    }
+    guard case .object(let object) = result, let structured = object["structuredContent"],
+          let data = try? JSONEncoder().encode(structured),
+          let reply = try? JSONDecoder().decode(Reply.self, from: data) else { return nil }
+    let absent = reply.absent.flatMap { $0.isEmpty ? nil : $0 }
+    return (reply.pullRequests ?? [], absent)
+}
+
+/// A refresh's failure as the operator reads it (Rule 8): a context server's refusal is its own
+/// sentence (`<host> refused the pull-request search (HTTP <code>): <message>`), whole; anything
+/// else its description.
+func browserPullRequestsFailure(_ error: Error) -> String {
+    if case StandardActionError.serverError(_, let message) = error { return message }
+    return String(describing: error)
+}
+
+extension BrowserSnapshot {
+    /// The pane holds no tab and no pull-request group: a reconcile that leaves it so closes it, as
+    /// closing its last tab does. An empty `pr` group keeps it — the next list refills it.
+    var isEmptyOfTabsAndPullRequests: Bool {
+        tabs.isEmpty && !groups.contains { $0.kind == .pullRequests }
+    }
+}
 
 /// The clear's order (Task 10 fix round 1 ruling): the store first, then the files. A store that
 /// will not go deletes nothing — cookies and zoom stay together — and its error is thrown as it came.
@@ -137,10 +249,13 @@ public func registerBrowserActions(
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: BrowserDataRemover? = nil,
-    driver: (any BrowserPageDriver)? = nil
+    driver: (any BrowserPageDriver)? = nil,
+    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+    copyText: BrowserTextCopier? = nil
 ) async {
     for action in browserActions(panes: panes, layout: layout, settings: settings, orgFiles: orgFiles,
-                                 removeData: removeData, driver: driver) {
+                                 removeData: removeData, driver: driver, pullRequests: pullRequests,
+                                 copyText: copyText) {
         await registry.register(action)
     }
 }
@@ -153,7 +268,9 @@ func browserActions(
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: BrowserDataRemover? = nil,
-    driver: (any BrowserPageDriver)? = nil
+    driver: (any BrowserPageDriver)? = nil,
+    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+    copyText: BrowserTextCopier? = nil
 ) -> [Action] {
     var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
@@ -184,7 +301,64 @@ func browserActions(
 
     @Sendable func persist(_ pane: String) async {
         let s = await panes.browserSnapshot(paneId: pane)
-        await layout?.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active)
+        await layout?.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: browserSavedActive(s),
+            groups: s.groups, columnHidden: s.tabColumnHidden)
+    }
+
+    /// The place's pins file and project (ruling 13): refused when the place has no project, or the
+    /// window no organisation.
+    @Sendable func pinsPlace(_ action: String) async throws -> (files: BrowserOrgFiles, project: String) {
+        let project = await panes.activeScope.project
+        guard !project.isEmpty else { throw BrowserActionError.noProject(action: action) }
+        guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
+        return (files, project)
+    }
+
+    /// Reads or writes the place's pins, an unreadable file refused with its file name and reason.
+    @Sendable func withPins<T>(_ action: String, _ place: (files: BrowserOrgFiles, project: String),
+                               _ body: () throws -> T) throws -> T {
+        do { return try body() } catch let error as BrowserPinsUnreadable {
+            throw BrowserActionError.pinsUnreadable(
+                action: action, file: BrowserOrgFiles.pinsName(project: place.project), reason: error.reason)
+        }
+    }
+
+    /// Full reconcile (ruling 14) of `pane` with its project's pins, when a pane is opened or
+    /// restored. Nothing without a project or an organisation (nil); else how many tabs the pane has after.
+    @Sendable @discardableResult func reconcile(_ pane: String, action: String) async -> Int? {
+        guard let place = try? await pinsPlace(action) else { return nil }
+        let pins: Result<[BrowserPin], BrowserPinsUnreadable>
+        do { pins = .success(try place.files.pins(project: place.project)) }
+        catch let error as BrowserPinsUnreadable { pins = .failure(error) }
+        catch { pins = .failure(BrowserPinsUnreadable(reason: error.localizedDescription)) }
+        return await panes.browserReconcilePins(paneId: pane, pins: pins)
+    }
+
+    /// Delta reconcile (ruling 14) of every other browser pane on the canvas — `layout.snapshot()`,
+    /// the place on screen only — after a pin, unpin or *Update Pin* in `pane`. A pane left with no
+    /// tab closes, as closing its last tab would.
+    @Sendable func reconcileOthers(_ pane: String, add: BrowserPin?, remove: String?) async {
+        guard let layout else { return }
+        for other in await layout.snapshot().panes where other.kind == kind && other.id != pane {
+            guard await panes.browserApplyPin(paneId: other.id, add: add, remove: remove) != nil else { continue }
+            if await panes.browserSnapshot(paneId: other.id).isEmptyOfTabsAndPullRequests {
+                try? await layout.close(id: other.id)
+                await panes.drop(paneId: other.id)
+            } else {
+                await persist(other.id)
+            }
+        }
+    }
+
+    /// The group `group` names, else the tab `tab` names, else the active tab.
+    @Sendable func pinTarget(_ s: BrowserSnapshot, _ params: JSONValue, action: String) throws -> BrowserPinTarget {
+        if let group = optionalString(params, "group"), !group.isEmpty {
+            guard s.group(group) != nil else { throw BrowserActionError.noGroup(action: action, group: group) }
+            return .group(group)
+        }
+        let tab = optionalString(params, "tab")
+        guard let i = s.tabIndex(tab) else { throw BrowserActionError.noTab(action: action, tab: tab) }
+        return .tab(s.tabs[i].id)
     }
 
     /// `typed` by the address rule, refused when it resolves to nothing or to a `javascript:` URL.
@@ -197,8 +371,15 @@ func browserActions(
     }
 
     /// A new tab at the end, made active: `url` loads; none opens the start page, and a blank start
-    /// page loads nothing and puts the keyboard in the address field.
-    @Sendable func addTab(_ pane: String, url: String?) async {
+    /// page loads nothing and puts the keyboard in the address field. With an `opener` the pane still
+    /// has, the opener rule places it (ruling 8); an opener that has closed meanwhile is none.
+    ///
+    /// A pane this store holds nothing for is new — `browserPane(open:)` just opened it, or
+    /// `pane_open` did — and first takes its project's pins (ruling 14's full reconcile), behind the
+    /// new tab, which stays the selected one.
+    @Sendable func addTab(_ pane: String, url: String?, opener: String? = nil) async {
+        let isNew = !(await panes.holdsContents(paneId: pane))
+        if isNew { await reconcile(pane, action: "browser_new_tab") }
         var target = url
         if target == nil {
             let start = await settings().startPage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -210,7 +391,14 @@ func browserActions(
             if let load { tab.issue(.load(load)) } else { tab.issue(.focusAddress) }
             s.tabs.append(tab)
             s.active = tab.id
+            if let opener, s.tabs.contains(where: { $0.id == opener }) {
+                s.placeOpenedKnowingTheSite(tab: tab.id, opener: opener)
+            } else {
+                s.arrange()
+            }
         }
+        // Ruling 19: a pane opened while the list is kept gets it now, not at the next refresh.
+        if isNew { await panes.browserApplyPullRequests(paneId: pane, org: await panes.activeScope.organization) }
     }
 
     /// Issues `verb` to the named or active tab; nil `verb` lets `make` decide from the tab.
@@ -312,6 +500,28 @@ func browserActions(
         handler: { params in try await command(params, action: "browser_focus_address") { _ in .focusAddress } }))
 
     actions.append(Action(
+        name: "browser_copy_url",
+        description: "Copy a tab's address (tab, default the active one) to the system pasteboard, as ⌘⇧C, "
+            + "and answer it as url; copied is false where nothing can write the pasteboard (no app). "
+            + "A tab with no address yet refuses.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(tabSchema),
+        handler: { params in
+            let pane = try await browserPane(params, action: "browser_copy_url").id
+            let tab = optionalString(params, "tab")
+            let snapshot = await panes.browserSnapshot(paneId: pane)
+            guard let i = snapshot.tabIndex(tab) else { throw BrowserActionError.noTab(action: "browser_copy_url", tab: tab) }
+            guard let url = BrowserCopyURL.copyable(snapshot.tabs[i].url) else {
+                throw BrowserActionError.nothingToCopy(tab: snapshot.tabs[i].id)
+            }
+            if let copyText { await copyText(url) }
+            guard case .object(var o) = await reply(pane) else { return .null }
+            o["url"] = .string(url)
+            o["copied"] = .bool(copyText != nil)
+            return .object(o)
+        }))
+
+    actions.append(Action(
         name: "browser_print",
         description: "Print a tab's page (tab, default the active one) through the system's print panel, "
             + "as ⌘K → Print page.",
@@ -323,15 +533,17 @@ func browserActions(
         name: "browser_new_tab",
         description: "Open a new tab at the end of a browser pane's tabs and select it: url when given, "
             + "else (url left out) the start page; a blank start page leaves the address field focused. Opens a browser "
-            + "pane when none is open.",
+            + "pane when none is open. opener, a tab id, is the tab it was opened from (a ⌘-click): it "
+            + "joins the opener's group, or forms one with a loose opener of another site. A pinned "
+            + "group, the pull-request group or a pinned opener takes no new tab: it waits to be grouped by site.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["url": string]),
+        schema: schema(["url": string, "opener": string]),
         handler: { params in
             var url: String?
             // A url given is held to the address rule, blank included; leave it out for the start page.
             if let typed = optionalString(params, "url") { url = try await address(typed) }
             let pane = try await browserPane(params, action: "browser_new_tab", open: true).id
-            await addTab(pane, url: url)
+            await addTab(pane, url: url, opener: optionalString(params, "opener"))
             await persist(pane)
             return await reply(pane)
         }))
@@ -347,13 +559,7 @@ func browserActions(
             let tab = optionalString(params, "tab")
             let left = await panes.updateBrowser(paneId: pane, create: true) { s -> Int? in
                 guard let i = s.tabIndex(tab) else { return nil }
-                let gone = s.tabs.remove(at: i)
-                s.closed.append(BrowserSavedTab(id: gone.id, url: gone.url, title: gone.title))
-                if s.closed.count > browserClosedLimit { s.closed.removeFirst(s.closed.count - browserClosedLimit) }
-                if s.active == gone.id {
-                    s.active = nil
-                    if !s.tabs.isEmpty { s.select(min(i, s.tabs.count - 1)) }
-                }
+                s.closeTabs([s.tabs[i].id])
                 return s.tabs.count
             }
             guard let left else { throw BrowserActionError.noTab(action: "browser_close_tab", tab: tab) }
@@ -367,18 +573,53 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_tab_column",
+        description: "Hide or show the vertical tab column of a browser pane (hidden true or false; omitted "
+            + "toggles). Saved with the pane.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["hidden": .object(["type": .string("boolean")])]),
+        handler: { params in
+            let pane = try await browserPane(params, action: "browser_tab_column").id
+            let hidden = optionalBool(params, "hidden")
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                s.tabColumnHidden = hidden ?? !s.tabColumnHidden
+            }
+            await persist(pane)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
         name: "browser_reopen_tab",
-        description: "Reopen the tab closed most recently in a browser pane, at the end of its tabs, and select it.",
+        description: "Reopen the tab closed most recently in a browser pane, at the end of its tabs (in its "
+            + "group, if the pane still has it), and select it.",
         kind: .control, audience: .agentReachable,
         schema: schema([:]),
         handler: { params in
             let pane = try await browserPane(params, action: "browser_reopen_tab").id
             let ok = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let saved = s.closed.popLast() else { return false }
-                var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title)
+                var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title, name: saved.name)
                 if saved.url.isEmpty { tab.issue(.focusAddress) } else { tab.issue(.load(saved.url)) }
-                s.tabs.append(tab)
+                // A pinned tab comes back pinned, so a full reconcile does not add its pin a second
+                // time; when the pane holds that pin again meanwhile, it comes back plain.
+                if let pin = saved.pin, !s.tabs.contains(where: { $0.pin == pin }),
+                   !s.groups.contains(where: { $0.pin == pin }) {
+                    tab.pin = pin
+                    s.tabs.append(tab)
+                // Ruling 22: back to its group while the pane has it (never the pull-request group,
+                // whose tabs are the read's); else loose, for the site rule when it loads.
+                } else if let gid = saved.group, let g = s.group(gid), g.kind != .pullRequests {
+                    tab.group = gid
+                    if let last = s.tabs.lastIndex(where: { $0.group == gid }) {
+                        s.tabs.insert(tab, at: last + 1)
+                    } else {
+                        s.tabs.append(tab)
+                    }
+                } else {
+                    s.tabs.append(tab)
+                }
                 s.active = tab.id
+                s.arrange()
                 return true
             }
             guard ok else { throw BrowserActionError.nothingToReopen }
@@ -406,6 +647,7 @@ func browserActions(
                 else if let index { i = index < 0 ? s.tabs.count + index : index }
                 guard let i, s.tabs.indices.contains(i) else { return false }
                 s.select(i)
+                s.arrange()   // a collapsed group shows the tab selected in it (ruling 21)
                 return true
             }
             guard ok else { throw BrowserActionError.noTab(action: "browser_select_tab", tab: tab ?? index.map { "at \($0)" }) }
@@ -416,24 +658,379 @@ func browserActions(
 
     actions.append(Action(
         name: "browser_move_tab",
-        description: "Move a tab to position to (0 first; past the end is the end).",
+        description: "Move a tab to position to (0 first; past the end is the end), and/or into group (a group "
+            + "id from read_pane's groups; \"\" takes it out of its group and keeps it out of automatic "
+            + "groups). Into a group without to, it goes after the group's last tab. Tabs stay in drawn "
+            + "order: pinned, groups, then loose tabs.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["tab": string, "to": .object(["type": .string("integer")])], required: ["tab", "to"]),
+        schema: schema(["tab": string, "to": .object(["type": .string("integer")]), "group": string],
+                       required: ["tab"]),
         handler: { params in
             let pane = try await browserPane(params, action: "browser_move_tab").id
             let tab = try requireString(params, "tab", action: "browser_move_tab")
-            guard case .object(let o) = params, let to = o["to"]?.intValue else {
+            let to: Int? = { if case .object(let o) = params { o["to"]?.intValue } else { nil } }()
+            let group = optionalString(params, "group")
+            guard to != nil || group != nil else {
                 throw StandardActionError.missingParam(action: "browser_move_tab", param: "to")
             }
-            let ok = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
-                guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return false }
-                let moved = s.tabs.remove(at: i)
-                s.tabs.insert(moved, at: max(0, min(to, s.tabs.count)))
-                return true
+            let target = group.flatMap { $0.isEmpty ? nil : $0 }
+            let outcome = await panes.updateBrowser(paneId: pane, create: true) { s -> BrowserActionError? in
+                guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else {
+                    return .noTab(action: "browser_move_tab", tab: tab)
+                }
+                if let target, s.group(target) == nil { return .noGroup(action: "browser_move_tab", group: target) }
+                if group != nil {
+                    s.moveTab(tab, into: target, at: to)
+                } else if let to {
+                    let moved = s.tabs.remove(at: i)
+                    s.tabs.insert(moved, at: max(0, min(to, s.tabs.count)))
+                    s.arrange()
+                }
+                return nil
             }
-            guard ok else { throw BrowserActionError.noTab(action: "browser_move_tab", tab: tab) }
+            if let outcome { throw outcome }
             await persist(pane)
             return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_group",
+        description: "Change a browser pane's tab groups (3d-i). action: create makes your group named name "
+            + "(default New Group) of tabs (tab ids, default the active tab), coloured colour when given; "
+            + "rename (name) and recolour (colour: blue, steel, teal, sand, stone or smoke) make an automatic "
+            + "group yours; collapse and expand; ungroup leaves its tabs loose and out of automatic groups; "
+            + "close closes its tabs (browser_reopen_tab brings each back), and the pane with the last. "
+            + "group is a group id from read_pane's groups. The pull-request group (pr) only collapses and "
+            + "expands. Never changes the selected tab.",
+        kind: .control, audience: .agentReachable,
+        schema: schema([
+            "action": .object(["type": .string("string"), "enum": .array(
+                ["create", "rename", "recolour", "collapse", "expand", "ungroup", "close"].map { .string($0) })]),
+            "group": string, "name": string,
+            "tabs": .object(["type": .string("array"), "items": string]),
+            "colour": .object(["type": .string("string"), "enum": .array(
+                BrowserGroupColour.allCases.map { .string($0.rawValue) })]),
+        ], required: ["action"]),
+        handler: { params in
+            let action = "browser_group"
+            let verb = try requireString(params, "action", action: action)
+            guard ["create", "rename", "recolour", "collapse", "expand", "ungroup", "close"].contains(verb) else {
+                throw BrowserActionError.unknownGroupAction(verb)
+            }
+            let pane = try await browserPane(params, action: action).id
+            let name = optionalString(params, "name")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let typedColour = optionalString(params, "colour")
+            let colour = typedColour.flatMap { typed in BrowserGroupColour.allCases.first { $0.rawValue == typed } }
+            if typedColour != nil, colour == nil { throw BrowserActionError.unknownColour }
+
+            if verb == "create" {
+                let listed: [String]? = {
+                    guard case .object(let o) = params, case .array(let items)? = o["tabs"] else { return nil }
+                    return items.compactMap { if case .string(let id) = $0 { id } else { nil } }
+                }()
+                let made = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<String, BrowserActionError> in
+                    let members = listed ?? s.active.map { [$0] } ?? []
+                    guard !members.isEmpty else { return .failure(.noTab(action: action, tab: nil)) }
+                    if let missing = members.first(where: { id in !s.tabs.contains { $0.id == id } }) {
+                        return .failure(.noTab(action: action, tab: missing))
+                    }
+                    let id = s.newGroup(tabs: members, name: name.flatMap { $0.isEmpty ? nil : $0 } ?? "New Group",
+                                        kind: .own, siteKey: nil)
+                    if let colour, let g = s.groups.firstIndex(where: { $0.id == id }) { s.groups[g].colour = colour }
+                    return .success(id)
+                }
+                let id = try made.get()
+                await persist(pane)
+                guard case .object(var o) = await reply(pane) else { return .null }
+                o["group"] = .string(id)
+                return .object(o)
+            }
+
+            guard let group = optionalString(params, "group"), !group.isEmpty else {
+                throw StandardActionError.missingParam(action: action, param: "group")
+            }
+            if verb == "rename", name?.isEmpty ?? true {
+                throw StandardActionError.missingParam(action: action, param: "name")
+            }
+            if verb == "recolour", colour == nil {
+                throw StandardActionError.missingParam(action: action, param: "colour")
+            }
+            let outcome = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<Int, BrowserActionError> in
+                guard let g = s.groups.firstIndex(where: { $0.id == group }) else {
+                    return .failure(.noGroup(action: action, group: group))
+                }
+                if s.groups[g].kind == .pullRequests {
+                    let words = ["rename": "renamed", "recolour": "recoloured", "ungroup": "ungrouped", "close": "closed"]
+                    if let word = words[verb] { return .failure(.pullRequestGroupRefuses(action: action, word: word)) }
+                }
+                switch verb {
+                case "rename":
+                    s.groups[g].name = name ?? s.groups[g].name
+                    s.groups[g].named = true
+                    s.makeOwn(group)
+                case "recolour":
+                    s.groups[g].colour = colour ?? s.groups[g].colour
+                    s.makeOwn(group)
+                case "collapse", "expand":
+                    s.groups[g].collapsed = verb == "collapse"
+                    s.arrange()
+                case "ungroup":
+                    // Ruling 10: the operator ungrouped them, so the site rule never regroups them.
+                    for i in s.tabs.indices where s.tabs[i].group == group {
+                        s.tabs[i].group = nil
+                        s.tabs[i].opener = nil
+                        s.tabs[i].keptLoose = true
+                    }
+                    s.groups.remove(at: g)
+                    s.arrange()
+                default:   // close
+                    s.closeTabs(Set(s.tabs.filter { $0.group == group }.map(\.id)))
+                    s.groups.removeAll { $0.id == group }
+                    s.arrange()
+                }
+                return .success(s.tabs.count)
+            }
+            let left = try outcome.get()
+            if left == 0 {
+                try await layout?.close(id: pane)
+                await panes.drop(paneId: pane)
+                return .object(["pane": .string(pane), "closed": .bool(true)])
+            }
+            await persist(pane)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_rename_tab",
+        description: "Name a browser tab (tab, default the active one): the name shows instead of the page title "
+            + "and is kept across navigations until cleared with an empty name. Never selects the tab.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "name": string], required: ["name"]),
+        handler: { params in
+            let action = "browser_rename_tab"
+            let typed = try requireString(params, "name", action: action)
+            let pane = try await browserPane(params, action: action).id
+            let tab = optionalString(params, "tab")
+            // Names call 14: cleaned as a conversation's name; nothing left clears it.
+            let name = cleanConversationName(typed)
+            let renamed = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<String?, BrowserActionError> in
+                guard let i = s.tabIndex(tab) else { return .failure(.noTab(action: action, tab: tab)) }
+                // 3d-i ruling 18: the pull-request rows are a listing, never saved.
+                if s.tabs[i].pullRequest != nil {
+                    return .failure(.pullRequestGroupRefuses(action: action, word: "renamed"))
+                }
+                s.tabs[i].name = name
+                return .success(s.tabs[i].pin)
+            }
+            let pin = try renamed.get()
+            await persist(pane)
+            // Names call 15: a pinned tab's name goes to its pin at once, and every other pane of the
+            // project takes it. With no project or no organisation there are no pins to write. A pins
+            // file that can't be read or written never refuses the rename (call 14) and is never
+            // written over (ruling 13): its error goes on the pane whole (`pinsError`, Rule 8), so the
+            // strip and the reply say the name is this pane's only.
+            if let pin, let place = try? await pinsPlace(action) {
+                do {
+                    var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+                    if let at = pins.firstIndex(where: { $0.id == pin && $0.kind == .tab }), pins[at].name != name {
+                        pins[at].name = name
+                        try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+                        await reconcileOthers(pane, add: pins[at], remove: nil)
+                    }
+                } catch {
+                    let why = (error as? BrowserActionError)?.description
+                        ?? "\(action): \(BrowserOrgFiles.pinsName(project: place.project)) can't be written "
+                        + "(\(error.localizedDescription)) — the name is kept in this pane only."
+                    await panes.updateBrowser(paneId: pane) { s in s.pinsError = why }
+                }
+            }
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_pin",
+        description: "Pin a tab (tab, default the active one) or a group (group, a group id from read_pane's "
+            + "groups; pr is the pull-request group) to the project: it is kept in the project's pins and "
+            + "shows, unloaded, in every browser pane of the project; a closed pinned tab comes back when the "
+            + "pane next opens. A pinned tab leaves its group; a pinned group becomes yours. update true on a "
+            + "pinned tab keeps its page now as the pin (Pin Current Page), on a pinned group its name, colour "
+            + "and tabs (Update Pin); other panes keep the pages they show. to puts a tab pinned now at that "
+            + "place among this pane's pinned tabs (0 first; past the end is the end), as a drop on them does.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "group": string, "update": .object(["type": .string("boolean")]),
+                        "to": .object(["type": .string("integer")])]),
+        handler: { params in
+            let action = "browser_pin"
+            let pane = try await browserPane(params, action: action).id
+            let place = try await pinsPlace(action)
+            let update = optionalBool(params, "update") == true
+            let to: Int? = { if case .object(let o) = params { o["to"]?.intValue } else { nil } }()
+            let s = await panes.browserSnapshot(paneId: pane)
+            let target = try pinTarget(s, params, action: action)
+            var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+
+            let entry: BrowserPin
+            switch target {
+            case .group(let gid):
+                guard let g = s.group(gid) else { throw BrowserActionError.noGroup(action: action, group: gid) }
+                let id = g.pin ?? BrowserPin.newId()
+                entry = g.kind == .pullRequests
+                    ? BrowserPin(id: id, kind: .pullRequests)
+                    : BrowserPin(id: id, kind: .group, name: g.name, colour: g.colour,
+                                 tabs: s.tabs.filter { $0.group == gid }.map { BrowserPinTab(url: $0.url, title: $0.title, name: $0.name) })
+            case .tab(let tid):
+                guard let tab = s.tabs.first(where: { $0.id == tid }) else {
+                    throw BrowserActionError.noTab(action: action, tab: tid)
+                }
+                // A tab of a pinned group is pinned with it.
+                if tab.pin == nil, s.isPinned(tab) { return await reply(pane) }
+                entry = BrowserPin(id: tab.pin ?? BrowserPin.newId(), kind: .tab, url: tab.url, title: tab.title,
+                                   name: tab.name)
+            }
+            let present = pins.firstIndex { $0.id == entry.id }
+            guard present == nil || update else { return await reply(pane) }
+            if let present { pins[present] = entry } else { pins.append(entry) }
+            try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                switch target {
+                case .group(let gid):
+                    guard let g = s.groups.firstIndex(where: { $0.id == gid }) else { return }
+                    s.groups[g].pin = entry.id
+                    s.makeOwn(gid)   // ruling 11
+                case .tab(let tid):
+                    guard let i = s.tabs.firstIndex(where: { $0.id == tid }) else { return }
+                    s.tabs[i].pin = entry.id
+                    s.tabs[i].group = nil
+                    s.tabs[i].opener = nil
+                    s.tabs[i].pullRequest = nil
+                    // Among the pinned tabs, which `arrange()` keeps first: their count bounds it.
+                    if let to {
+                        let moved = s.tabs.remove(at: i)
+                        let pinned = s.tabs.filter { $0.pin != nil }.count
+                        s.tabs.insert(moved, at: max(0, min(to, pinned)))
+                    }
+                }
+                s.arrange()
+            }
+            await persist(pane)
+            await reconcileOthers(pane, add: entry, remove: nil)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_unpin",
+        description: "Unpin a tab (tab, default the active one; a tab of a pinned group unpins the group) or a "
+            + "group (group): it leaves the project's pins and every other browser pane of the project, and "
+            + "stays here, unpinned. to places a tab pinned itself as browser_move_tab's to does, and into "
+            + "is the group it joins there (none or \"\", loose), as a drop below the pinned tabs does.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "group": string, "to": .object(["type": .string("integer")]),
+                        "into": string]),
+        handler: { params in
+            let action = "browser_unpin"
+            let pane = try await browserPane(params, action: action).id
+            let place = try await pinsPlace(action)
+            let s = await panes.browserSnapshot(paneId: pane)
+            let to: Int? = { if case .object(let o) = params { o["to"]?.intValue } else { nil } }()
+            let pin: String?
+            // A tab pinned itself, dropped somewhere: where it lands, and in which group.
+            var landing: (tab: String, group: String?)?
+            switch try pinTarget(s, params, action: action) {
+            case .group(let gid): pin = s.group(gid)?.pin
+            case .tab(let tid):
+                let tab = s.tabs.first { $0.id == tid }
+                pin = tab?.pin ?? tab?.group.flatMap { s.group($0)?.pin }
+                if tab?.pin != nil, to != nil {
+                    let g = optionalString(params, "into").flatMap { $0.isEmpty ? nil : $0 }
+                    if let g, s.group(g) == nil { throw BrowserActionError.noGroup(action: action, group: g) }
+                    landing = (tid, g)
+                }
+            }
+            guard let pin else { return await reply(pane) }
+            let lands = landing
+            var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+            if pins.contains(where: { $0.id == pin }) {
+                pins.removeAll { $0.id == pin }
+                try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+            }
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                for i in s.tabs.indices where s.tabs[i].pin == pin { s.tabs[i].pin = nil }
+                for i in s.groups.indices where s.groups[i].pin == pin { s.groups[i].pin = nil }
+                s.arrange()
+                if let lands, let to { s.moveTab(lands.tab, into: lands.group, at: to) }
+            }
+            await persist(pane)
+            await reconcileOthers(pane, add: nil, remove: pin)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_pull_requests_refresh",
+        description: "Refresh the pull-request group (pr) of every browser pane on the canvas from the active "
+            + "organisation's open GitHub pull requests — those it wrote and those awaiting its review. A listed "
+            + "pull request's tab keeps its page, a new one is added unloaded, a gone one closes; the selected "
+            + "tab stays, as a loose tab. absent says why there is no group; error is this refresh's failure, "
+            + "the list before it kept. While a refresh runs, another returns at once without reading again. "
+            + "Answers org, count, absent, error and refreshing.",
+        kind: .control, audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            let org = await panes.activeScope.organization
+            guard !org.isEmpty else { throw BrowserActionError.noOrganisation }
+            @Sendable func answer() async -> JSONValue {
+                let list = await panes.browserPullRequests(org: org)
+                return .object([
+                    "org": .string(org), "count": .integer(Int64(list?.absent == nil ? list?.items.count ?? 0 : 0)),
+                    "absent": list?.absent.map { .string($0) } ?? .null,
+                    "error": list?.error.map { .string($0) } ?? .null,
+                    "refreshing": .bool(list?.refreshing ?? false),
+                ])
+            }
+            // Rule 5: a refresh while one runs reads nothing again.
+            guard await panes.browserBeginPullRequestsRefresh(org: org) else { return await answer() }
+            var read: (items: [BrowserPullRequest], absent: String?)?
+            var failure: String?
+            do {
+                if let reply = try await pullRequests() {
+                    read = decodeBrowserPullRequests(fromResult: reply)
+                    if read == nil { failure = "browser_pull_requests_refresh: the reply was not a pull-request list" }
+                }
+            } catch where error is CancellationError || Task.isCancelled {
+                // The loop that asked ended (its last pane closed, a switch): not a failure.
+            } catch {
+                failure = browserPullRequestsFailure(error)
+            }
+            var list = await panes.browserPullRequests(org: org) ?? BrowserPullRequests()
+            list.refreshing = false
+            // The organisation changed while it read: the list may be the incoming one's, so it is
+            // kept for no one, and no pane is touched.
+            guard await panes.activeScope.organization == org else {
+                await panes.browserSetPullRequests(org: org, list)
+                return await answer()
+            }
+            if let read {
+                list.items = read.items
+                list.absent = read.absent
+                list.error = nil
+            } else if let failure {
+                list.error = failure   // the last list is kept (Rule 8: the failure whole)
+            }
+            await panes.browserSetPullRequests(org: org, list)
+            if read != nil || failure != nil, let layout {
+                for pane in await layout.snapshot().panes where pane.kind == kind {
+                    guard await panes.browserApplyPullRequests(paneId: pane.id, org: org) else { continue }
+                    // A pane whose only content was the group (restored with `pr` alone) left with no
+                    // tab and no group closes, by the rule restore and reconcile use.
+                    if await panes.browserSnapshot(paneId: pane.id).isEmptyOfTabsAndPullRequests {
+                        try? await layout.close(id: pane.id)
+                        await panes.drop(paneId: pane.id)
+                    } else {
+                        await persist(pane.id)
+                    }
+                }
+            }
+            return await answer()
         }))
 
     actions.append(Action(
@@ -529,7 +1126,7 @@ func browserActions(
             guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notBookmarkable(scheme: scheme) }
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
             do {
-                try files.setBookmark(url: target.url, title: target.label, on: wanted, now: Date())
+                try files.setBookmark(url: target.url, title: target.pageLabel, on: wanted, now: Date())
                 await panes.browserSetBookmarks(org: files.org, try files.bookmarks())
             } catch let error as BrowserBookmarksUnreadable {
                 throw BrowserActionError.bookmarksUnreadable(error.reason)
@@ -576,16 +1173,33 @@ func browserActions(
         handler: { params in
             let pane = try requireString(params, "pane", action: "browser_restore")
             _ = try await browserPane(params, action: "browser_restore")
-            if let saved = await layout?.browserTabs(id: pane), !saved.tabs.isEmpty {
-                await panes.browserRestore(paneId: pane, tabs: saved.tabs, active: saved.active)
+            // A pane whose only tabs were pull requests saved its `pr` group alone: restored too, so
+            // the group keeps `collapsed` and the pane its column; the list refills it.
+            if let saved = await layout?.browserTabs(id: pane), !saved.tabs.isEmpty || !saved.groups.isEmpty {
+                await panes.browserRestore(paneId: pane, tabs: saved.tabs, active: saved.active,
+                                           groups: saved.groups, columnHidden: saved.columnHidden)
             }
+            // Ruling 14: a restored pane takes the pins added since and drops the ones gone.
+            let before = await panes.browserSnapshot(paneId: pane)
+            // Ruling 19: and the pull-request list kept, when there is one.
+            await panes.browserApplyPullRequests(paneId: pane, org: await panes.activeScope.organization)
+            // A pane the reconcile leaves with no tab (and no pull-request group) closes, as closing
+            // its last tab does.
+            if await reconcile(pane, action: "browser_restore") != nil,
+               await panes.browserSnapshot(paneId: pane).isEmptyOfTabsAndPullRequests {
+                try await layout?.close(id: pane)
+                await panes.drop(paneId: pane)
+                return .object(["pane": .string(pane), "closed": .bool(true)])
+            }
+            let after = await panes.browserSnapshot(paneId: pane)
+            if after.tabs != before.tabs || after.groups != before.groups { await persist(pane) }
             return await reply(pane)
         }))
 
     actions.append(Action(
         name: "browser_clear_data",
         description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
-            + "in every project, the saved zoom and the organisation's browsing history; bookmarks are kept. `org` is the organisation the operator was asked "
+            + "in every project, the saved zoom and the organisation's browsing history; bookmarks and saved passwords are kept. `org` is the organisation the operator was asked "
             + "about; refused when it is no longer the active one. Asks the operator first. Operator-only.",
         kind: .mutate, audience: .operatorOnly,
         schema: schema(["org": string], required: ["org"]),
@@ -645,8 +1259,21 @@ public func decodeBrowserSettings(fromResult result: JSONValue?) -> SettingsBrow
 /// The keys a focused browser pane takes over (global constraints); `WindowModel.browserKey` acts
 /// on them. Elsewhere each keeps today's meaning.
 public enum BrowserKey: Sendable, Equatable {
-    case newTab, closeTab, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
+    case newTab, closeTab, toggleTabColumn, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
     case zoomIn, zoomOut, zoomReset, nextTab, previousTab, bookmark
+    /// ⌘⇧C: copy the active tab's address (`browser_copy_url`).
+    case copyURL
     /// ⌘1–8 tab N; ⌘9 the last tab.
     case tab(Int)
+}
+
+/// The group header the keyboard is on in a browser pane (3d-i), set by the view:
+/// `WindowModel.browserKey(.reload)` refreshes the pull-request list when it is the `pr` group's.
+public struct BrowserHeaderFocus: Sendable, Equatable {
+    public var pane: String
+    public var group: String
+    public init(pane: String, group: String) {
+        self.pane = pane
+        self.group = group
+    }
 }

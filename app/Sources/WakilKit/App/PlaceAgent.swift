@@ -135,9 +135,36 @@ public final class PlaceAgent {
     public internal(set) var assignedSessionId: String? {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
     }
-    /// The conversation's title: `newConversationTitle` until its first `send` sets it, once,
+    /// The first message's title: `newConversationTitle` until the first `send` sets it, once,
     /// from the typed text.
-    public internal(set) var title = newConversationTitle
+    public internal(set) var messageTitle = newConversationTitle
+    /// The typed text of the first `send` (not the identifier note or instructions update).
+    public internal(set) var firstMessage: String?
+    /// The operator's name for this conversation; it wins over the model's.
+    public internal(set) var operatorName: String?
+    /// The name the model gave it.
+    public internal(set) var aiName: String?
+    /// The agent's text of the first clean turn, joined and cut to `ConversationNames.replyLimit`:
+    /// the start of the reply the naming quick task is sent.
+    var replyStart = ""
+    /// The first turn ending without error has ended: what makes a conversation due to be named.
+    var firstCleanTurnDone = false
+    /// The model was asked to name this conversation, or never will be (a resume). Cleared only by a
+    /// reply dropped by a rebuild or an organisation switch, so it is asked again.
+    var namingAsked = false
+    /// A name landed before the conversation had a lineage root: written when the root is set.
+    var namesUnsaved = false
+    /// The conversation's title: the operator's name, else the model's, else the first message's.
+    public var title: String { displayTitle.title }
+    /// What clearing the operator's name would show: the model's name, else the first message's.
+    public var fallbackTitle: String {
+        conversationDisplayTitle(operatorName: nil, aiName: aiName, messageTitle: messageTitle).title
+    }
+    /// Which of the three slots `title` came from.
+    public var titleSource: ConversationTitleSource { displayTitle.source }
+    private var displayTitle: (title: String, source: ConversationTitleSource) {
+        conversationDisplayTitle(operatorName: operatorName, aiName: aiName, messageTitle: messageTitle)
+    }
     /// Creation, each `send`, each event appended: what "most recent" orders by.
     public internal(set) var lastActivity = Date()
     /// The window-wide creation counter's value when this conversation was made.
@@ -175,8 +202,18 @@ public final class PlaceAgent {
 
     /// A `send`: the first one names the conversation from the typed text.
     func noteSend(_ text: String) {
-        if title == newConversationTitle { title = conversationTitle(text) }
+        if firstMessage == nil {
+            firstMessage = text
+            messageTitle = conversationTitle(text)
+        }
         lastActivity = Date()
+    }
+
+    /// One `assistantText` of the turns before the first clean one ends, kept to the reply limit.
+    func noteReplyText(_ text: String) {
+        guard !firstCleanTurnDone, replyStart.count < ConversationNames.replyLimit else { return }
+        let joined = replyStart.isEmpty ? text : replyStart + "\n" + text
+        replyStart = String(joined.prefix(ConversationNames.replyLimit))
     }
 
     /// Lets every turn waiting on the session's start go on.

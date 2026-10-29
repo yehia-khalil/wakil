@@ -48,7 +48,7 @@ With none of them, `WakilApplication.main()` opens the window.
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
 | `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `EditorTicketView.swift` (the column's Ticket view), `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorReviews` (the review boxes in the file), `editorTicket` (the Ticket view), `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
-| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row, which also draws the site tag chip, the tab dots and the *agent allowed* mark — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
+| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row, which also draws the site tag chip, the tab dots and the *agent allowed* mark — `BrowserGroupViews.swift` (3d-i: the group chips, the rename field, the tab and group menus and the error rows under the strip), `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache`, `browserCloseArm`, `browserHeaderFocus`, `browserPullRequestsOnScreen` |
 | anything else | a "no view for a … pane" line | — |
 
 **Edge to edge** (2026-10-26, `PaneKind.edgeToEdge`, read as `Pane.edgeToEdge`): the editor, the
@@ -85,7 +85,28 @@ drops a report from a place not on screen, and the pane asks for every report ag
 is shown (`reportAll`). Commands go the other way only: an action bumps the tab's `command`, the
 pane's `sync` hands it to the host. A page's own prompts (alert, sign-in, camera) are the host's,
 not store state (`BrowserPrompt`): the page asked, not the operator or the agent.
-`BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, Clear data).
+`BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, tabs, picture in picture, Clear data).
+Two seams reach outside the store from here: `BrowserFaviconLoader` fetches a tab's icon with an ephemeral
+session (no cookies, no credentials, 64 KB, kept in memory by URL), and `WindowSession` hands
+`browser_copy_url` the general pasteboard (`copyBrowserText`). A middle-click on a vertical-column tab is
+`BrowserRowMiddleClick` (one local monitor for all rows, no hits of its own); the strip's is `PaneTabStrip`'s.
+
+**Picture in picture (3d-iii)** is `BrowserPictureInPictureHost` (`BrowserPictureInPictureHost.swift`),
+held by `BrowserTabHost`: it tells WakilKit's `BrowserPictureInPicture` machine what is on screen
+(`show` and `hide` from each pane, `didMiniaturize` and `didDeminiaturize` from the window; focus
+is not listened to) and carries out the effects it returns. `BrowserPictureInPictureScript.swift`
+runs in every frame, in its own content world `wakil.pip`, and posts to the handler
+`wakilPictureInPicture` which frames have a playing video and since when; a float tries those frames,
+newest first, through `callAsyncJavaScript` (a cross-origin iframe floats through its own frame).
+`BrowserPictureInPictureSupport.swift` is the one place that names WebKit's private API: the
+`WKPreferences` key `allowsPictureInPictureMediaPlayback` and the two `WKUIDelegate` callbacks
+`_webView:hasVideoInPictureInPictureDidChange:` and `_webViewFullscreenMayReturnToInline:`. It checks
+each exists and reports what is `missing`; Settings → Browser then turns the row off and says why,
+and nothing floats. Restore docks a view that has no window in the window's content view,
+below its siblings and invisible, so WebKit can bring the video back inline; the pane then takes
+the view, and `WindowModel.browserReturn(to:)` goes to the tab. A place's old name, for a moment after a
+rename, is ignored by the guard (`BrowserRenamedPlaces`, pure). `BrowserPane.isCovered` (a maximised
+sibling) hides its tab; closing a tab or pane ends its float without waiting for WebKit.
 
 **The agent's reach into a page (3c-ii)** is `BrowserPageAgent` (`BrowserPageAgent.swift`), the
 `BrowserPageDriver` WakilKit's actions call, and `BrowserAgentScript.swift`, the script it runs. The
@@ -98,6 +119,14 @@ re-checks the live element at act time. An act waits out the operator's typing (
 1 s quiet, 10 s ceiling) and each call has a 10 s timeout. The driver replaces any script failure that
 is not the script's own fixed sentence with Wakil's, so no page text reaches the agent that way.
 
+**Browser passwords (3d-iv, Decision 49)** are drawn by `BrowserPasswordViews.swift` (the key, its popover list and the
+save bar), driven by `BrowserPasswordMessages.swift` (the `wakilPasswords` handler, which takes only
+main-frame messages from the isolated world `wakil.passwords`, and reads the origin from the frame, never from the
+page) and `BrowserPasswordScript.swift` (the script). `BrowserPasswordAgent.swift` fills and suggests, and only
+after the key's list was opened on that tab. Settings → Browser → Passwords is `BrowserPasswordsSettings.swift`
+(list, reveal and copy behind `LAContext`, edit, delete, never saved) and `BrowserPasswordImport.swift` (the one-time
+import from the Passwords app's CSV).
+
 **This switch is the one view-side place a new pane kind touches**: its view file and one `case`
 (the rest of the recipe is `CONTRIBUTING.md`, "A new pane kind").
 
@@ -106,6 +135,7 @@ is not the script's own fixed sentence with Wakil's, so no page text reaches the
 | View | File | What it is |
 |---|---|---|
 | `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover |
+| `RailPeek` | `RailPeek.swift` | The collapsed rail (⌃⌘R, `rail_set`): the spine of marks, the 6 pt edge zone and the rail sliding out over the canvas on a 150 ms rest |
 | `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line |
 | `ComposerBar` | `ComposerBar.swift` | The bar typed and spoken text land in; Return sends |
 | `ThoughtThread` | `ThoughtThread.swift` | The agent's progress, rising from the bottom edge |

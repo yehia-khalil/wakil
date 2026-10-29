@@ -1,0 +1,34 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStubLive}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page A"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStubLive}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[2].title","equals":"Page B"}}
+{"dispatch":{"action":"browser_pin","params":{"pane":"browser-1","tab":"t1"}}}
+{"dispatch":{"action":"browser_pin","params":{"pane":"browser-1","tab":"t2"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].pinned","equals":"true"}}
+{"dispatch":{"action":"browser_select_tab","params":{"pane":"browser-1","tab":"t1","focus":true}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"contains","text":"Press ⌘W again to close"}}
+{"expect":{"frame":"browser.tab.t1.closeTip","inside":"browser.pane"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"expect":{"tree":"absent","text":"Press ⌘W again to close"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"contains","text":"Press ⌘W again to close"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"do":{"hotkey":"cmd+2"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"frame":"browser.tab.t2.closeTip","inside":"browser.pane"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t2"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t3"}}
+{"expect":{"tree":"absent","text":"Press ⌘W again to close"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-2","field":"tabs[1].url","contains":"localhost:"}}
+{"expect":{"pane":"browser-2","field":"tabs[1].pinned","equals":"true"}}

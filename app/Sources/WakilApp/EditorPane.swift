@@ -320,8 +320,8 @@ struct EditorPane: View {
                 VStack(spacing: 0) {
                     if let comparing { compareHeader(comparing) }
                     if let tab = activeTab, let d = tab.diffState { diffLine(tab, d) }
-                    GitDiffHostView(webView: host.renderer?.webView)
-                        .accessibilityIdentifier(comparing != nil ? "editor.compare.diff" : "editor.monaco")
+                    GitDiffHostView(webView: host.renderer?.webView,
+                                    identifier: comparing != nil ? "editor.compare.diff" : "editor.monaco")
                 }
                 if snapshot.tabs.isEmpty, comparing == nil { emptyState }
             }
@@ -1472,8 +1472,13 @@ enum EditorPaneStyle {
 /// Hosts the pane's Monaco web view in a container the pane owns (3a-i's, moved here with the Git
 /// pane in 3b-iii). The web view outlives this view — a SwiftUI rebuild removes it and puts the same
 /// one back — so dismantling detaches it and nothing more.
+///
+/// The identifier goes on the web view itself, as `browser.page` does: the container is a plain
+/// NSView, which the accessibility tree skips, so SwiftUI's `.accessibilityIdentifier` on this view
+/// named nothing a frame or focus read could find.
 struct GitDiffHostView: NSViewRepresentable {
     let webView: WKWebView?
+    let identifier: String
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -1490,7 +1495,9 @@ struct GitDiffHostView: NSViewRepresentable {
     }
 
     private func attach(to container: NSView) {
-        guard let webView, webView.superview !== container else { return }
+        guard let webView else { return }
+        if webView.accessibilityIdentifier() != identifier { webView.setAccessibilityIdentifier(identifier) }
+        guard webView.superview !== container else { return }
         webView.removeFromSuperview()
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]

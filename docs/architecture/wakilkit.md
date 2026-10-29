@@ -144,6 +144,15 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `BrowserPageDriver` seam WakilApp's `BrowserPageAgent` fills, `browserFitToCap` (the 204,800-byte cap:
   says where it cut, never splits a character), `browserIdleWait` (the 1 s quiet after the operator
   types) and the copy helpers: labels trimmed to 60 characters, `browserThreadLine`, `browserStatement`.
+- **Browser passwords (3d-iv, Decision 49)** — `BrowserSiteKey.swift` and `BrowserPublicSuffixes.swift` (the
+  registrable domain, from a bundled public-suffix list); `BrowserPasswords.swift` (the Keychain names, the
+  site key with no families, the 23-character strong password, `offer`: save, update or nothing, and the
+  org check); `BrowserPasswordStore.swift` (Security.framework: list by attributes, read, save, delete; a
+  value never reaches an error); `BrowserPasswordActions.swift` (`browser_password_fill | suggest | save |
+  delete | never`, all operator-only, `password` a `secretParams` key; the scrub that hides a password the
+  page has held); `BrowserPasswordPageRules.swift` (the page's messages, the key's frame);
+  `BrowserOrgFiles+Passwords.swift` (`passwords-never.json`); `BrowserPasswordCSV.swift` (the Passwords
+  app's export); `BrowserPasswordSettings.swift` (the Settings rules and the import plan).
 - `BrowserFieldRules.swift` — `BrowserFieldRules` (3c-ii): the never-list of fields that are the
   operator's to fill (password, card number and code, one-time code), read from a field's type,
   autocomplete, name, id and label with camelCase split; `scriptSource` generates the same rules as
@@ -215,10 +224,48 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   own suggestions, behind the `searchSuggestions` setting (off by default).
 - `BrowserAddressInput.swift` — `BrowserAddressInput` (3c-iii): the address field's key and completion
   state machine (↓ ↑ Return Esc, ⌫ after a completion); `BrowserBookmarkChoices` is the ★ menu.
+- `BrowserSiteKey.swift` — `BrowserSiteKey` (3d-i): which site a page is, for grouping — a family
+  (YouTube, Atlassian, GitHub, Google Docs), a local address as `host:port`, else the registrable domain
+  from the bundled public-suffix rules (`BrowserPublicSuffixes.swift`); `nil` beyond http and https.
+- `BrowserGrouping.swift` — the grouping rules, pure, as `BrowserSnapshot` methods (3d-i): `placeOpened`
+  (the opener rule, run when a tab is made), the site rule (run when a load finishes; a grouped tab leaves only after two finished loads on
+  the same other site, so a sign-in page on the way back moves nothing; a page with no site is ignored), a group becoming
+  yours, `keptLoose`, colours and `arrange()`, which keeps `tabs` in drawn order (pinned tabs, pinned
+  groups, the pull-request group, groups in the order made, loose tabs). None moves the active tab.
+- `BrowserGroupNames.swift` — `BrowserGroupNames` (3d-i): which automatic groups are due a name, the
+  titles sent (never URLs) and the reply read, for the `respond` quick task; the window asks once per
+  group per launch.
+- `BrowserPins.swift` — `BrowserPin` and the project's pins file (3d-i): read when a pane opens or is
+  restored, written when a pin changes, and a pane brought in line with it; a file that will not parse is
+  never written over.
+- `BrowserPinnedClose.swift` — `BrowserPinnedClose` (3d-i): ⌘W on a pinned tab arms for 2 s
+  (`Press ⌘W again to close`) and closes on the second press; the × closes at once.
+- `BrowserFaviconRules.swift` — `BrowserFaviconRules` (3d-i walk): which address a tab's icon comes from
+  (the page's `link rel=icon`, else `<origin>/favicon.ico`; http and https only) and the size and type rule
+  (at most 64 KB, a 2xx, not a page). The fetch is the app's: an ephemeral session, no cookies or credentials.
+- `BrowserStripEntries.swift` — `BrowserStripEntry` and `BrowserSnapshot.stripEntries` (3d-i walk): what the
+  tab list draws, in order; a collapsed group shows its active tab under its header (`showsTab`); a
+  middle-click on a tab entry closes it (`middleClickCloses`), on a chip does nothing.
+- `BrowserPinnedSection.swift` — the pinned section (3d-i walk): `BrowserSnapshot.pinnedSection` (the tiles,
+  then the pinned groups, above the line), `drop` (a drop's `browser_move_tab`, `browser_pin` on the tiles or
+  `browser_unpin` below the line) and `stripMove`; `BrowserColumnLayout`, the column's geometry (tiles per row
+  by width, the rows, the line's band, the drop under a point); `BrowserStripDrop`, the strip's side of the line.
+- `BrowserLinkOpening.swift` — `BrowserLinkOpening` (3d-i walk): ⌘-click and middle-click (WebKit's button 4;
+  AppKit's 2 kept) open a link in a background tab.
+- `BrowserCopyURL.swift` — `BrowserCopyURL` (3d-i walk): ⌘⇧C's rule, the `Copied` tip (1.5 s) and
+  `BrowserTextCopier`, the seam `browser_copy_url` writes the pasteboard through (only the app can).
+- `BrowserPictureInPicture.swift` — `BrowserTabRef` (a tab anywhere: scope, pane, tab) and
+  `BrowserPictureInPicture` (3d-iii): the pure rules for when a playing video floats, comes back
+  inline, is paused, or goes to its tab. The host says what is on screen and what WebKit reported;
+  it returns `Effect`s (`float`, `inline`, `pause`, `goTo`). Off floats nothing, and coming back from
+  the Dock brings back only a tab that is on screen. `closed` clears a floating tab itself, since WebKit
+  sends no callback. `BrowserRenamedPlaces.swift` is the pure map of a place's old names after a
+  rename, so a pane drawn under one is ignored. `read_pane` gives `pictureInPicture`, the id of the
+  floating tab or null; `WindowModel.browserReturn(to:)` is Restore's way back.
 
-Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
+Uses: `Layout` (`Pane`, `BrowserSavedTab`, `BrowserGroup`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `BrowserFaviconRulesTests`, `BrowserStripEntriesTests`, `BrowserPinnedSectionTests`, `BrowserLinkOpeningTests`, `WindowModelBrowserTests`, `BrowserPictureInPictureTests`, `BrowserRenamedPlacesTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
@@ -481,15 +528,19 @@ Tests: `IdentifierTests`, `IdentifierResolverTests`, `IdentifierSourcesTests`,
   screen raises no focus request); `LayoutSnapshot`; `layoutMigratingGitPanes` (a saved Git pane
   becomes an editor pane on Changes, 3b-iii) and `layoutDroppingUnknownPaneKinds`.
 - `LayoutPersistence.swift` — `LayoutPersistence`: reads and writes a scope's arrangement on disk
-  (see [state.md](state.md)).
+  (see [state.md](state.md)), and the window's own `WindowState` (`window.json`).
+- `RailSpine.swift` — the collapsed rail's rules, pure: `RailSpine.marks` (one per pane, active longer,
+  working green and winning), its accessibility label and value, the peek timings (150 ms in, 300 ms
+  out); `WindowState` (`railCollapsed`). `LayoutStore` holds the flag and `LayoutReading` carries it;
+  `WindowModel.railCollapsed` mirrors it and `toggleRail()` dispatches `rail_set`.
 - `LayoutActions.swift` — `registerLayoutActions` (`pane_open`, `pane_close`, `pane_move`,
   `pane_resize`, `pane_snap`, `pane_focus`, `pane_maximize`, `pane_restore`, `pane_set_density`,
-  `settings_open`). `pane_close` asks an injected `unsavedEditorTabs` closure for a pane's dirty
+  `settings_open`, `rail_set`). `pane_close` asks an injected `unsavedEditorTabs` closure for a pane's dirty
   editor tabs (wired in `App/AppWiring.swift`); Layout does not import Editor.
 - `SnapSolver.swift`, `SnapGraph.swift` — magnetic snapping, as pure functions.
 
 Uses: `Panes`, `Registry`, `Terminal`.
-Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `PaneTests`,
+Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `RailSpineTests`, `PaneTests`,
 `SnapSolverTests`, `SnapGraphTests`, `PaneDrawOriginTests`, `QueryTargetPaneTests`,
 `PaneKindClassificationTests` (which checks `Pane.kinds` against `PaneKinds.standard` and
 `PaneStore`).

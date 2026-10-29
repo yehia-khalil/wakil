@@ -53,6 +53,8 @@ type Org struct {
 	FastPath  *bool `json:"fastPath,omitempty"`
 	// CommitDrafts switches the commit box's ✨ (3a-ii-b). Nil is the default, on.
 	CommitDrafts *bool `json:"commitDrafts,omitempty"`
+	// ConversationNames switches naming conversations with the quick model (names phase). Nil is the default, on.
+	ConversationNames *bool `json:"conversationNames,omitempty"`
 
 	// GitAccounts are the organisation's git accounts, one per host (3a-iii, Decision 44); their
 	// secrets are in the Keychain, never here. PullStrategy is how Pull and Sync integrate:

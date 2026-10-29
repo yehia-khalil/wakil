@@ -190,6 +190,9 @@ func runOrgRm(args []string, stderr io.Writer) int {
 
 	// Read before the directory goes: the id is the only handle on the org's browser store.
 	store := wakilcore.BrowserStoreID(org)
+	// Saved browser passwords live in the Keychain, outside the directory. Attributes only: nothing
+	// is read and nothing prompts. A failed check never blocks the removal.
+	logins, loginsErr := wakilcore.BrowserLoginsPresent(org)
 	if err := wakilcore.RemoveOrg(org, *force); err != nil {
 		fmt.Fprintln(stderr, message(err))
 		return regExitCode(err)
@@ -198,6 +201,11 @@ func runOrgRm(args []string, stderr io.Writer) int {
 	if store != "" {
 		// 3c-i (final review I6): WebKit keeps the org's site logins outside its directory.
 		fmt.Fprintf(stderr, "its browser data stays in WebKit's store %s under ~/Library/WebKit, and Wakil no longer has its id to clear it — next time, clear it first in Wakil (Settings → Browser → Clear this organisation's browsing data…)\n", store)
+	}
+	if loginsErr != nil {
+		fmt.Fprintf(stderr, "could not check the Keychain for its saved browser passwords: %v\n", loginsErr)
+	} else if logins {
+		fmt.Fprintf(stderr, "its saved browser passwords stay in the Keychain under wakil:%s:browser-login:default — next time, delete them first in Wakil (Settings → Browser → Passwords)\n", org)
 	}
 	return 0
 }

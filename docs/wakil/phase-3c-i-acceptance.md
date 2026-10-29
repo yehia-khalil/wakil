@@ -53,8 +53,9 @@ this Mac. Do them in order: each starts where the one before left off.
   through (`WindowModel.openLinkInWakil`).
 - The agent reads the pane (tabs, URL, title) and dispatches its actions; it cannot read or act
   inside the page until 3c-ii.
-- A favicon shows only when the page names a `data:` icon; every other tab shows the globe
-  (no network fetch, Invariant 4).
+- A favicon showed only when the page named a `data:` icon (no network fetch). 3d-i's walk
+  changed that: the page's icon, or `/favicon.ico`, is fetched over http(s) with no cookies or
+  credentials (`phase-3d-i-acceptance.md` row 11); a failed fetch keeps the globe.
 - A load that times out (rather than being refused) shows its error only after WebKit's own
   timeout, a minute or more.
 - **A page's `beforeunload` question is not shown**: leaving a page with an unsent form leaves it
