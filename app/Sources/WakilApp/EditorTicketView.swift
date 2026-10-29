@@ -477,9 +477,9 @@ struct EditorTicketView: View {
     /// is its hover, as every record line's. A Next in the operator's shape (`ticketNextShape`, the
     /// one a handed agent writes) draws its step as the field and its tool and blocker as small dim
     /// chips after it, a blocker other than nothing amber; the operator's own edit of the step is
-    /// theirs, plain (walk 2026-10-28). The chips sit on their own line under the step and shorten
-    /// to fit (walk 2026-10-29): beside it, at full width, a long tool list and blocker made the
-    /// column wider than its pane, cut off on both sides.
+    /// theirs, plain (walk 2026-10-28). The chips sit under the step, one per line, and wrap whole
+    /// (walk 2026-10-29): beside it, at full width, a long tool list and blocker made the column
+    /// wider than its pane, cut off on both sides; shortened, they hid their words (Rule 8).
     private func nextLine(key: String, line: TicketLineState?, text: String, labelled: Bool) -> some View {
         let shape = ticketNextShape(text)
         return VStack(alignment: .leading, spacing: 4) {
@@ -492,11 +492,10 @@ struct EditorTicketView: View {
                 .id("next|\(key)")
             }
             if let shape {
-                HStack(spacing: Space.s) {
+                VStack(alignment: .leading, spacing: 4) {
                     TicketNextChip(label: shape.tool, amber: false)
                         .accessibilityIdentifier("editor.ticket.next.tool")
                     TicketNextChip(label: "Blocked by \(shape.blocker)", amber: shape.blocked)
-                        .layoutPriority(1)
                         .accessibilityIdentifier("editor.ticket.next.blocker")
                 }
             }
@@ -1076,19 +1075,17 @@ private struct TicketBlock<Content: View>: View {
 /// A status pill: a dot in its meaning's hue (§5's reserved green, amber, red; grey for none) and
 /// its word, in a hairline capsule.
 /// A Next's tool or blocker under its step: small, dim, monospaced for the tool; amber when it
-/// blocks. Shortened in the middle when the column is narrow, whole on hover.
+/// blocks. Wraps to as many lines as it holds, never cut (Rule 8).
 private struct TicketNextChip: View {
     let label: String
     let amber: Bool
 
     var body: some View {
         Text(label)
-            .font(.system(size: 10.5, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+            .font(.system(size: 10.5, design: .monospaced)).fixedSize(horizontal: false, vertical: true)
             .foregroundStyle(amber ? EditorPaneStyle.amber : EditorPaneStyle.text.opacity(0.55))
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .overlay(Capsule().strokeBorder((amber ? EditorPaneStyle.amber : EditorPaneStyle.text).opacity(0.18)))
-            .fixedSize(horizontal: false, vertical: true)
-            .help(label)
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder((amber ? EditorPaneStyle.amber : EditorPaneStyle.text).opacity(0.18)))
     }
 }
 
