@@ -385,7 +385,7 @@ struct GitAccountSheet: View {
                 }
                 numbered(2, "Add it on \(providerName)") {
                     if let page = provider?.sshKeyPage {
-                        FormButton(title: "Open \(providerName)'s SSH keys page", tone: SettingsPalette.coolWhite,
+                        FormButton(title: WebLink.label("Open \(providerName)'s SSH keys page"), tone: WebLink.colour,
                                    identifier: "settings.org.git.account.add.openKeys") { NSWorkspace.shared.open(page) }
                     } else {
                         Text("In \(host)'s settings, under SSH keys.")
@@ -464,7 +464,7 @@ struct GitAccountSheet: View {
     private var tokenStep: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let page = provider?.tokenPage {
-                FormButton(title: "Create a token on \(providerName) (\(provider?.tokenScopes ?? ""))", tone: SettingsPalette.coolWhite,
+                FormButton(title: WebLink.label("Create a token on \(providerName) (\(provider?.tokenScopes ?? ""))"), tone: WebLink.colour,
                            identifier: "settings.org.git.account.add.openTokens") { NSWorkspace.shared.open(page) }
             }
             if provider == .bitbucket {
@@ -494,7 +494,7 @@ struct GitAccountSheet: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("settings.org.git.account.add.deviceCode")
                     if let page = devicePage, let url = URL(string: page) {
-                        FormButton(title: "Open \(url.host ?? page)", tone: SettingsPalette.coolWhite,
+                        FormButton(title: WebLink.label("Open \(url.host ?? page)"), tone: WebLink.colour,
                                    identifier: "settings.org.git.account.add.openDevice") { NSWorkspace.shared.open(url) }
                     }
                 }
@@ -745,7 +745,7 @@ struct GitAPIAccessRowView: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("\(id).deviceCode")
                     if let page, let url = URL(string: page) {
-                        FormButton(title: "Open \(url.host ?? page)", tone: SettingsPalette.coolWhite, identifier: "\(id).openDevice") {
+                        FormButton(title: WebLink.label("Open \(url.host ?? page)"), tone: WebLink.colour, identifier: "\(id).openDevice") {
                             NSWorkspace.shared.open(url)
                         }
                     }

@@ -220,6 +220,12 @@ Text is cool white (`#e8ecf6`) stepped down by opacity, never by a different hue
 The background-agent chips (§1, 2026-10-17) use these hues in these meanings — amber
 waiting, green completed, red failed — and luminance violet for an agent at work.
 
+**Blue means "opens a web page"** (added 2026-10-29, ticket noticing walk). A control whose click
+leaves the view for a web page — Wakil's browser pane, or the system browser on ⌥-click — reads
+`<words> ↗` in the void's blue `#4fb9e8`: the ticket key, a check's `details ↗`, Open on GitHub,
+the blame hover's Open on <host>, Settings' provider pages. Blue is used for nothing else in
+Wakil's own voice; a program's blue in the terminal is quoted output (the carve-out below).
+
 **The terminal pane's carve-out, added 2026-09-18 by 2c-iii.** Everything
 above governs Wakil's OWN voice — its chrome, its labels, its status hues.
 A shell's stdout is not Wakil's voice; it is quoted material, and until

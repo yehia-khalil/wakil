@@ -246,8 +246,8 @@ struct EditorTicketView: View {
             Text(ticketOutsideLine).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("editor.ticket.outside")
             if let link = URL(string: url), !url.isEmpty {
-                Button("Open on GitHub ↗") { openLink(link.absoluteString, NSEvent.modifierFlags.contains(.option)) }
-                    .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
+                Button(WebLink.label("Open on GitHub")) { openLink(link.absoluteString, NSEvent.modifierFlags.contains(.option)) }
+                    .buttonStyle(.plain).foregroundStyle(WebLink.colour)
                     .help("Opens in Wakil's browser; ⌥-click for your system browser")
                     .accessibilityIdentifier("editor.ticket.outside.github")
             }
@@ -426,8 +426,11 @@ struct EditorTicketView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // The key opens the ticket in the PM tool, in Wakil's browser (⌥-click: the system's).
                 if !url.isEmpty {
-                    Button { openLink(url, NSEvent.modifierFlags.contains(.option)) } label: { Text(key).ticketKey() }
+                    Button { openLink(url, NSEvent.modifierFlags.contains(.option)) } label: {
+                        Text(WebLink.label(key)).ticketKey().foregroundStyle(WebLink.colour)
+                    }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(key)
                         .help("Open \(key) in Wakil's browser; ⌥-click for your system browser")
                         .accessibilityIdentifier("editor.ticket.key")
                 } else {
@@ -560,8 +563,8 @@ struct EditorTicketView: View {
                     Text("✗ \(c.name)").foregroundStyle(TicketPill.colour(.red)).fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     if let s = c.url, let url = URL(string: s) {
-                        Button("details ↗") { openLink(url.absoluteString, NSEvent.modifierFlags.contains(.option)) }
-                            .buttonStyle(.plain).font(.system(size: 11))
+                        Button(WebLink.label("details")) { openLink(url.absoluteString, NSEvent.modifierFlags.contains(.option)) }
+                            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(WebLink.colour)
                             .help("Opens in Wakil's browser; ⌥-click for your system browser")
                             .accessibilityIdentifier("editor.ticket.check:\(pr.number):\(c.name)")
                     }
