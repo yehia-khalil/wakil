@@ -1001,4 +1001,23 @@ private func quotedBlock(_ brief: String) -> [String] {
         ], tool: "ticket_record")
         #expect(record.handoffs.count == 1 && record.handoffs[0].place == screen && record.handoffs[0].ended == nil)
     }
+
+    /// Walk 2026-10-29: the record shows the live hand-offs; finished ones fold into one line,
+    /// "N earlier · show", newest first either way.
+    @Test func finishedHandOffsFoldUnderTheLiveOnes() {
+        func e(_ id: String, _ at: String, ended: String? = nil) -> TicketHandOffEntryState {
+            TicketHandOffEntryState(id: id, conversation: "c-\(id)", title: "INI-142 · x", at: at, ended: ended)
+        }
+        let entries = [e("1", "2026-10-29T09:00:00Z", ended: "2026-10-29T09:05:00Z"), e("2", "2026-10-29T09:10:00Z"),
+                       e("3", "2026-10-29T09:20:00Z"), e("4", "2026-10-29T09:30:00Z"), e("5", "2026-10-29T09:40:00Z")]
+        let live: [String: TicketHandOffLive] = ["c-2": .done, "c-3": .idle, "c-4": .working, "c-5": .waiting]
+        let folded = ticketHandOffFold(entries, live: live)
+        #expect(folded.shown.map(\.id) == ["5", "4"])
+        #expect(folded.earlier.map(\.id) == ["3", "2", "1"])
+        #expect(folded.earlierLine == "3 earlier · show")
+        // A failed agent is still the operator's to look at; nothing finished, no line.
+        let one = ticketHandOffFold([e("6", "2026-10-29T10:00:00Z")], live: ["c-6": .failed])
+        #expect(one.shown.map(\.id) == ["6"])
+        #expect(one.earlierLine == nil)
+    }
 }

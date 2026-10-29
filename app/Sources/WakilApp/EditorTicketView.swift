@@ -48,6 +48,8 @@ struct EditorTicketView: View {
     @FocusState private var removeFocus: String?
     /// The Hand to agent popover's field as typed, when **Hand to agent** here anchors it.
     @State private var handOffDraft = TicketHandOffDraft()
+    /// The record's finished hand-offs are shown (`N earlier · show` pressed).
+    @State private var showingEarlierHandOffs = false
 
     private var root: String? { ticketFollowedRoot(tab: tab, roots: state.roots) }
     private var branch: TicketBranchState? { root.flatMap { state.branches[$0] } }
@@ -649,22 +651,20 @@ struct EditorTicketView: View {
         let groups = ticketRecordGroups(r, including: adding?.rawValue)
         return TicketBlock {
             Text("Record").microLabel(top: 0)
-            // Each hand-off as an entry by agent, newest first, above the lines (spec, *The hand-off in the record*).
-            ForEach(r.handoffs.sorted { $0.at > $1.at }, id: \.id) { h in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Hand-off").font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
-                            .foregroundStyle(EditorPaneStyle.violet).lineLimit(1).fixedSize()
-                        Spacer(minLength: Space.s)
-                        Text("agent").font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(EditorPaneStyle.text.opacity(0.45)).lineLimit(1).fixedSize()
-                    }
-                    Text(ticketHandOffEntry(h, live: state.handOffLive[h.conversation], now: Date()))
-                        .fixedSize(horizontal: false, vertical: true)
+            // Each live hand-off as an entry by agent, newest first, above the lines (spec, *The hand-off in
+            // the record*); the finished ones fold into one line that shows them (walk 2026-10-29).
+            let fold = ticketHandOffFold(r.handoffs, live: state.handOffLive)
+            ForEach(fold.shown + (showingEarlierHandOffs ? fold.earlier : []), id: \.id) { h in
+                handOffEntry(h)
+            }
+            if let line = fold.earlierLine, !showingEarlierHandOffs {
+                Button { showingEarlierHandOffs = true } label: {
+                    Text(line).font(.system(size: 9, weight: .medium)).tracking(1.2).textCase(.uppercase)
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.5))
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("editor.ticket.handoff:\(h.id)")
+                .buttonStyle(.plain)
+                .help("Show the finished hand-offs")
+                .accessibilityIdentifier("editor.ticket.handoffs.earlier")
             }
             if groups.isEmpty && r.handoffs.isEmpty {
                 Text("Nothing noted yet. Decisions, open work and checks you or an agent note on this ticket stay here for the next session.")
@@ -688,6 +688,24 @@ struct EditorTicketView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("editor.ticket.record")
+    }
+
+    /// A hand-off in the record: its label, "agent", and its line (`ticketHandOffEntry`).
+    private func handOffEntry(_ h: TicketHandOffEntryState) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Hand-off").font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
+                    .foregroundStyle(EditorPaneStyle.violet).lineLimit(1).fixedSize()
+                Spacer(minLength: Space.s)
+                Text("agent").font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.45)).lineLimit(1).fixedSize()
+            }
+            Text(ticketHandOffEntry(h, live: state.handOffLive[h.conversation], now: Date()))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor.ticket.handoff:\(h.id)")
     }
 
     /// One kind's group: its heading — a dot in its hue only where the kind means something (Not

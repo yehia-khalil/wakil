@@ -541,6 +541,24 @@ public func ticketHandOffEntry(_ h: TicketHandOffEntryState, live: TicketHandOff
     return parts.filter { !$0.isEmpty }.joined(separator: " · ")
 }
 
+/// The record's hand-offs, folded (walk 2026-10-29): `shown` the live ones — an agent working,
+/// waiting or failed — and `earlier` the finished ones (ended, done, idle, or no longer live), each
+/// newest first. `earlierLine` is the one line they fold into, `3 earlier · show`; nil with none.
+public struct TicketHandOffFold: Sendable, Equatable {
+    public let shown: [TicketHandOffEntryState]
+    public let earlier: [TicketHandOffEntryState]
+    public var earlierLine: String? { earlier.isEmpty ? nil : "\(earlier.count) earlier · show" }
+}
+
+public func ticketHandOffFold(_ handoffs: [TicketHandOffEntryState], live: [String: TicketHandOffLive]) -> TicketHandOffFold {
+    let newest = handoffs.sorted { $0.at > $1.at }
+    func isLive(_ h: TicketHandOffEntryState) -> Bool {
+        guard h.ended == nil, let state = live[h.conversation] else { return false }
+        return [.working, .waiting, .failed].contains(state)
+    }
+    return TicketHandOffFold(shown: newest.filter(isLive), earlier: newest.filter { !isLive($0) })
+}
+
 /// How long, short: `2 min`, `3 h`, `2 d`; under a minute is `1 min`.
 private func handOffDuration(_ seconds: TimeInterval) -> String {
     let s = max(0, Int(seconds))
