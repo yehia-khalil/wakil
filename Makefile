@@ -56,7 +56,7 @@ BINS := wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall waki
 # `test` did.
 export CGO_ENABLED := 0
 
-.PHONY: build test test-live e2e e2e-full e2e-run e2e-new e2e-night-install e2e-night-status e2e-runbook e2e-agent e2e-agent-checks e2e-retrodict e2e-cover e2e-backlog controls axresolve docs-check vet fmt clean shaders app-build app-test app-bundle captures captures-motion bench-surface
+.PHONY: build test test-live e2e e2e-full e2e-run e2e-new e2e-night-install e2e-night-status e2e-runbook e2e-agent e2e-agent-checks e2e-retrodict e2e-cover e2e-backlog controls axresolve docs-check merge-check vet fmt clean shaders app-build app-test app-bundle captures captures-motion bench-surface
 
 build:
 	@mkdir -p bin
@@ -89,6 +89,17 @@ docs-check:
 		exit 1; \
 	fi; \
 	echo "  $(CHARTER): $$words/$(CHARTER_LIMIT) words"
+
+# merge-check — feature documents leave with their feature
+# Run on the PR that targets main, after the walk; not part of `make test`.
+merge-check:
+	@files=$$(git ls-files docs/superpowers/plans docs/superpowers/specs 'docs/wakil/*-acceptance.md'); \
+	if [ -n "$$files" ]; then \
+		echo "Feature documents must leave with their feature (docs/agents/workflow.md):"; \
+		echo "$$files" | sed 's/^/  /'; \
+		exit 1; \
+	fi; \
+	echo "  merge-check: no feature documents"
 
 # ---------------------------------------------------------------------
 # test-live — the engine-backed tests, which `make test` cannot run
