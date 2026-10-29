@@ -588,11 +588,8 @@ public func ticketColumnThreads(_ pr: PullRequestState) -> [ReviewThreadState] {
     pr.threads.filter { !$0.resolved }.sorted { ($0.path, $0.line, $0.id) < ($1.path, $1.line, $1.id) }
 }
 
-/// The longest first words of a thread's row.
-public let ticketThreadWordsLimit = 40
-
-/// A thread's row: where it is, the first comment's first words (at most 40 characters, cut at a
-/// word and ended with "…"), and its replies counted — or `outdated` for a thread GitHub calls so.
+/// A thread's row: where it is, the first comment whole, its whitespace one space (walk 2026-10-29:
+/// the column cuts no text), and its replies counted — or `outdated` for a thread GitHub calls so.
 ///
 /// `elsewhere` names the project of the organisation the thread's branch is in, when that is not the
 /// project on screen: the row opens nothing there (one place is on screen, Invariant 5) and says
@@ -600,13 +597,7 @@ public let ticketThreadWordsLimit = 40
 public func ticketThreadRow(_ t: ReviewThreadState, elsewhere: String? = nil)
     -> (place: String, words: String, replies: String?, elsewhere: String?) {
     let place = t.line > 0 ? "\(t.path):\(t.line)" : t.path
-    let body = (t.comments.first?.body ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    var words = body
-    if body.count > ticketThreadWordsLimit {
-        let head = String(body.prefix(ticketThreadWordsLimit + 1))
-        let cut = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? String(body.prefix(ticketThreadWordsLimit))
-        words = cut + "…"
-    }
+    let words = (t.comments.first?.body ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
     let n = max(0, t.comments.count - 1)
     let replies: String? = t.outdated ? "outdated" : n == 0 ? nil : n == 1 ? "1 reply" : "\(n) replies"
     return (place, words, replies, elsewhere.map { "in project \($0)" })

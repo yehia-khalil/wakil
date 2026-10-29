@@ -617,7 +617,7 @@ struct EditorTicketView: View {
         } label: {
             // Two lines so a narrow column reads the row whole (walk, 2026-10-27): the avatar, the
             // place — cut from the middle, so the line number always shows — and the replies; then
-            // the comment's first words, wrapping to two lines.
+            // the first comment whole, wrapping (walk 2026-10-29: nothing is cut).
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     TicketAvatar(name: t.comments.first?.author ?? "")

@@ -278,7 +278,8 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
                 == "#9  a → main      merged")
     }
 
-    @Test func threadRowTruncatesAndCountsReplies() {
+    /// Walk 2026-10-29: the first comment whole, its whitespace one space — the column cuts no text.
+    @Test func threadRowSaysTheCommentWholeAndCountsReplies() {
         let long = ReviewThreadState(id: "T1", path: "src/auth/session.go", line: 88, comments: [
             ReviewCommentState(author: "reviewer", body: "Should this read the org from the token instead of the session?",
                                createdAt: ""),
@@ -287,8 +288,7 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         ])
         let row = ticketThreadRow(long)
         #expect(row.place == "src/auth/session.go:88")
-        #expect(row.words == "Should this read the org from the token…")
-        #expect(row.words.count <= 41)
+        #expect(row.words == "Should this read the org from the token instead of the session?")
         #expect(row.replies == "2 replies")
         let short = ReviewThreadState(id: "T2", path: "src/auth/token.go", line: 41, comments: [
             ReviewCommentState(author: "reviewer", body: "Nit: the error should name the host", createdAt: ""),
