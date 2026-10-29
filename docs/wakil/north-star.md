@@ -81,7 +81,8 @@ Rules no phase may break.
    avoided. A **provider** (a Claude subscription, Codex, a local model) owns its own
    authentication; for Claude Code that is a config dir and an OAuth token. One
    organisation may hold several providers, and one provider may serve several
-   organisations.
+   organisations. A saved browser password is a credential too: only in the Keychain, never the
+   agent's, the store's, a file's or a log's.
 
    **Both halves are delivered.** Two Claude accounts on one org since Phase 1; and one
    provider serving several orgs, because `buildLaunch` always passes `--strict-mcp-config`,
@@ -112,7 +113,7 @@ Rules no phase may break.
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
    of the API entry it targets, a command the **agent** runs in a terminal pane — the
    agent already has a bare shell, so a terminal run adds the organisation's credentials,
-   not reach, and the refusal defends Invariant 4 — and a password, card or one-time-code field typed by the agent.
+   not reach, and the refusal defends Invariant 4 — and a password, card or one-time-code field typed or filled by the agent.
 
    **Each write declares its own price** rather than inheriting one from its kind; see
    §9 and Decision 25.
@@ -277,8 +278,13 @@ live app; *accepted* means it was marked met without one.
 | **3c-i** | Pane, tabs, a profile per organisation | — | — |
 | **3c-ii** | Agent reach | **2026-10-27**, walked | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
+| **3d** | The browser you live in | — | 3c |
+| **3d-i** | Tab groups, automatic or your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
+| **3d-iii** | Picture in picture | — | 3c-i |
+| **3d-iv** | Passwords in the Keychain | — | 3c-ii |
 | **Connections** | An organization's MCP servers — Settings → Connections, `wakil-connect` fronting each one with the credentials in place, the operator's Allow agent per tool | — | — |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
+| **Names** | Conversations named by the quick model and renamed anywhere; browser tabs renamed | — | 3d-i (browser half) |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

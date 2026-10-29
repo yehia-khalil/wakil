@@ -48,7 +48,7 @@ private func repoRoot() -> URL {
                       "create_org", "create_project", "derive_config_dir", "editor_settings", "get_context", "get_session",
                       "git_account_add", "git_account_remove", "git_account_test", "git_device_poll",
                       "git_device_start", "git_gh_import", "git_gh_logins", "git_host_suggestions",
-                      "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set", "jira_token_set",
+                      "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set", "github_pull_requests", "jira_token_set",
                       "list_accounts", "list_environments", "list_machine_providers",
                       "list_orgs", "list_projects", "list_providers", "list_sessions",
                       "read_session", "record_capacity", "record_session_parent", "remove_api_entry", "remove_database",

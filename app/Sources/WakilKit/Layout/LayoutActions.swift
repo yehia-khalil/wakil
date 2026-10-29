@@ -23,7 +23,7 @@ public enum LayoutActionError: Error, Sendable, Equatable, CustomStringConvertib
     }
 }
 
-/// Registers the nine layout actions into `registry`, all `.control`.
+/// Registers the layout actions into `registry`, all `.control`.
 ///
 /// **Why these are actions at all.** Invariant 2 says every pane is
 /// dual-driven, and arranging panes is part of driving them: "put the
@@ -394,6 +394,31 @@ func layoutActions(
                 }
                 try await layout.setDensity(density, id: id)
                 return .object([:])
+            }
+        ),
+
+        // §10's collapsible rail. ⌃⌘R reaches the store through this and through nothing else
+        // (Invariant 2). Absolute, not a toggle, as `pane_set_density` is: the window works out
+        // the opposite from what it shows, and an agent that says "collapsed: true" twice has said
+        // the same thing twice. `.control`: it moves Wakil's own chrome and nothing outside it.
+        Action(
+            name: "rail_set",
+            description: "Put the rail of open panes away (collapsed: true) or bring it back "
+                + "(collapsed: false). Collapsed, the rail is a slim spine of one mark per pane "
+                + "at the window's right edge; the operator can still peek it by resting the "
+                + "pointer there. Does not move keyboard focus.",
+            kind: .control,
+            audience: .agentReachable,
+            schema: .object([
+                "type": .string("object"),
+                "properties": .object(["collapsed": .object(["type": .string("boolean")])]),
+                "required": .array([.string("collapsed")]),
+            ]),
+            handler: { params in
+                guard case .object(let object) = params, case .bool(let collapsed)? = object["collapsed"]
+                else { throw LayoutActionError.missingParam(action: "rail_set", param: "collapsed") }
+                let changed = await layout.setRailCollapsed(collapsed)
+                return .object(["collapsed": .bool(collapsed), "changed": .bool(changed)])
             }
         ),
     ]

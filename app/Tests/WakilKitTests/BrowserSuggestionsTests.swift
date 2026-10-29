@@ -22,6 +22,19 @@ import Foundation
         BrowserSuggestions.rank(typed, tabs: tabs, bookmarks: bookmarks, history: history, search: search)
     }
 
+    /// Names (Task 12): an open tab's row is titled with what the tab is called, and found by its
+    /// name or its page's title.
+    @Test func aTabSuggestionMatchesTheNameOrTheTitle() {
+        var named = tab("t1", "https://dashboard.stripe.com/", "Stripe Dashboard")
+        named.name = "Billing"
+        let byName = rank("billing", tabs: [named])
+        #expect(byName.map(\.title) == ["Billing"] && byName.first?.tab == "t1")
+        let byTitle = rank("dashboard", tabs: [named])
+        #expect(byTitle.map(\.title) == ["Billing"])
+        #expect(rank("billing stripe", tabs: [named]).map(\.tab) == ["t1"])
+        #expect(rank("invoices", tabs: [named]).isEmpty)
+    }
+
     @Test func groupsComeTabsBookmarksHistorySearch() {
         let rows = rank("ex",
                         tabs: [tab("t1", "https://ex.com/t")],

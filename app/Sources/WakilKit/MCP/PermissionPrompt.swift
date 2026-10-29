@@ -127,11 +127,16 @@ public let operatorOnlyActions: Set<String> = [
     // 3c-i. Putting back a browser pane's saved tabs is the window's own relaunch step; the
     // agent opens and selects tabs through the browser actions instead.
     "browser_restore",
-    // 3c-i. Deleting an organisation's browsing data signs it out of every site, in every project, and deletes its history (bookmarks stay).
+    // 3c-i. Deleting an organisation's browsing data signs it out of every site, in every project, and deletes its history (bookmarks and saved passwords stay).
     "browser_clear_data",
     // 3c-ii. Which sites the agent may act on is the operator's consent; the agent never takes one
     // off its own list, nor anyone else's.
     "browser_revoke_site",
+    // 3d-iv (ruling 10). A saved password is the operator's: only their press in a field fills or
+    // suggests one, and only their bar or Settings saves, deletes or stops offering one. No action
+    // returns a password, and the agent never carries one in its parameters.
+    "browser_password_fill", "browser_password_suggest", "browser_password_save",
+    "browser_password_delete", "browser_password_never",
     // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
     "ctx_set_local_provider",
     // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
@@ -355,13 +360,17 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "and browser_reopen_tab."
     case "browser_clear_data":
         return "\(toolName): only the operator deletes an organisation's browsing data. It signs "
-            + "every site out, in every project, and deletes the organisation's history (bookmarks stay). Ask the operator to do it in Settings → Browser (\u{2318},)."
+            + "every site out, in every project, and deletes the organisation's history (bookmarks and saved passwords stay). Ask the operator to do it in Settings → Browser (\u{2318},)."
     case "browser_revoke_site":
         return "\(toolName): only the operator takes a site off the agent's list for a conversation. "
             + "Ask them to press \u{00D7} on its agent allowed mark."
+    case "browser_password_fill", "browser_password_suggest", "browser_password_save",
+         "browser_password_delete", "browser_password_never":
+        return "\(toolName): only the operator fills, saves or deletes a saved password, by pressing the "
+            + "key in a field or in Settings → Browser → Passwords. You never see a password and never fill one."
     case "ctx_set_browser_settings":
-        return "\(toolName): only the operator changes the browser's search engine and start "
-            + "page. You may READ them: ctx_browser_settings answers the settings in force. "
+        return "\(toolName): only the operator changes the browser's search engine, start "
+            + "page, search suggestions and picture in picture. You may READ them: ctx_browser_settings answers the settings in force. "
             + "Ask the operator to change them in the settings pane (\u{2318},)."
     case "ctx_set_editor_settings", "ctx_set_project_editor_settings":
         return "\(toolName): only the operator changes editor settings. Autosave "

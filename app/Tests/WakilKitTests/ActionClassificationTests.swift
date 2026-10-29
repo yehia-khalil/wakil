@@ -123,6 +123,10 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "api_remove_entry", "api_set_entry", "api_update_entry",
             // 3c-i: signing the organisation out of every site is the operator's.
             "browser_clear_data",
+            // 3d-iv: filling, suggesting, saving, deleting and the never list are the operator's; the
+            // agent never sees a saved password and never fills one.
+            "browser_password_delete", "browser_password_fill", "browser_password_never",
+            "browser_password_save", "browser_password_suggest",
             // 3c-i (final review I6): printing raises the system's print panel on the operator's window.
             "browser_print",
             // 3c-i: the window's own relaunch step for a browser pane's saved tabs.

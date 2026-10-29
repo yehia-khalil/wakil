@@ -433,3 +433,36 @@ func TestAGitIdentityWithANewlineIsRefused(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestUpdateOrgConversationNamesFalseIsKept(t *testing.T) {
+	localOrg(t)
+	off := false
+	if err := UpdateOrg("initech", OrgPatch{ConversationNames: &off}); err != nil {
+		t.Fatal(err)
+	}
+	o, err := LoadOrgFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.ConversationNames == nil || *o.ConversationNames {
+		t.Fatalf("conversationNames=%v", o.ConversationNames)
+	}
+	tree, err := LoadConfigTreeFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Org.ConversationNames {
+		t.Fatal("tree reads conversationNames on after it was switched off")
+	}
+}
+
+func TestConfigTreeConversationNamesDefaultsOn(t *testing.T) {
+	localOrg(t)
+	tree, err := LoadConfigTreeFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tree.Org.ConversationNames {
+		t.Fatal("defaults: conversationNames off")
+	}
+}

@@ -66,6 +66,8 @@ final class WindowSession {
         // 3c-ii. The agent reads and acts in a tab's page through the window's web views, which exist
         // once the model does: the driver is made here and given the host below, as the box is.
         let browserPageAgent = BrowserPageAgent()
+        // 3d-iv. Fills a tab's login form on the key's press; made here and given the host below, too.
+        let browserPasswordAgent = BrowserPasswordAgent()
         let wiring = await WakilWiring.build(
             journalDirectory: journalDirectory, sessionId: sessionId,
             // `browser_clear_data`: the store's web views go and none is built on it (beginClear),
@@ -84,7 +86,15 @@ final class WindowSession {
                 }
                 await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
             },
-            browserPageDriver: browserPageAgent)
+            browserPageDriver: browserPageAgent,
+            browserPasswordPage: browserPasswordAgent,
+            // `browser_copy_url` (⌘⇧C): the address goes on the general pasteboard.
+            copyBrowserText: { text in
+                await MainActor.run {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+            })
         notes.append(contentsOf: wiring.diagnostics)
 
         // Each agent session has a socket of its own (background agents 3 of 4, Task 4), at
@@ -396,6 +406,11 @@ final class WindowSession {
             }
         }
 
+        // The rail's collapse is remembered across a relaunch (`WindowState`): the store is seeded
+        // with it before the model's first read, which would otherwise overwrite the file.
+        let layoutPersistence = LayoutPersistence(
+            directory: LayoutPersistence.defaultDirectory(home: home))
+        await wiring.layout.setRailCollapsed(layoutPersistence.loadWindowState().railCollapsed)
         let model = WindowModel(
             registry: wiring.registry,
             panes: wiring.panes,
@@ -404,8 +419,7 @@ final class WindowSession {
             // is, so an overridden `HOME` moves both together. This is the
             // only place a `LayoutPersistence` is constructed against a
             // real home directory; every test builds its own scratch one.
-            persistence: LayoutPersistence(
-                directory: LayoutPersistence.defaultDirectory(home: home)),
+            persistence: layoutPersistence,
             context: wiring.contextClient.map(ContextStore.init(client:)),
             harnessFactory: harnessFactory,
             // One broker per window, shared with the agent's `session_resume`
@@ -524,6 +538,8 @@ final class WindowSession {
         let browserTabs = BrowserTabHost(model: model)
         browserTabsBox.host = browserTabs
         browserPageAgent.host = browserTabs
+        browserPasswordAgent.host = browserTabs
+        browserTabs.passwordStore = wiring.browserPasswords
         // A place's new name carries its pages with it (final review I1), as `terminals.rehome`.
         model.onBrowserRehome = { [weak browserTabs] from, to in browserTabs?.rehome(from: from, to: to) }
         screen.model = model

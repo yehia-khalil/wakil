@@ -1,0 +1,27 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false,"tabs":"vertical"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"frame":"browser.tabColumn","inside":"browser.pane"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t1","name":"Quarterly ledger"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"tree":"contains","text":"Quarterly ledger"}}
+{"expect":{"frame":"browser.tab.t1.customMark","inside":"browser.tabColumn"}}
+{"expect":{"frame":"browser.tab.t1","inside":"browser.tabColumn"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"browser.tabColumn","inside":"browser.pane"}}
+{"expect":{"frame":"browser.tab.t1.customMark","inside":"browser.tabColumn"}}
+{"dispatch":{"action":"browser_select_tab","params":{"pane":"browser-1","tab":"t1"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"tree":"contains","text":"Quarterly ledger"}}
+{"expect":{"frame":"browser.tab.t1.customMark","inside":"browser.tabColumn"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t1","name":""}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}
+{"expect":{"tree":"absent","text":"Quarterly ledger"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"tabs":"horizontal"}}}

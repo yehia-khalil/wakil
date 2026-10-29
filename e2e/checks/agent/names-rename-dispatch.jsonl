@@ -1,0 +1,11 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"dispatch":{"action":"conversation_rename","params":{"name":"Dispatched Name"}}}
+{"expect":{"journal":{"contains":"\"action\":\"conversation_rename\""}}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"Dispatched Name"}}
+{"dispatch":{"action":"conversation_rename","params":{"conversation":"c-nowhere","name":"Zzz Elsewhere"},"refuses":"an agent renames only its own conversation"}}
+{"expect":{"tree":"absent","text":"Zzz Elsewhere"}}

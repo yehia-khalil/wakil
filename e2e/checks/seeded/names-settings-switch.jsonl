@@ -1,0 +1,12 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"Name conversations with AI"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.org.conversationNames.on","inside":"settings.pane"}}
+{"expect":{"frame":"settings.org.conversationNames.off","inside":"settings.pane"}}
+{"expect":{"frame":"settings.org.conversationNames.off","clear":"settings.org.conversationNames.on"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.conversationNames","equals":"true"}}
+{"do":{"click":"settings.org.conversationNames.off"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.conversationNames","equals":"false"}}
+{"do":{"click":"settings.org.conversationNames.on"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.conversationNames","equals":"true"}}

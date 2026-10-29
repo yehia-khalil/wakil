@@ -1,0 +1,61 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t1","name":"Quarterly ledger"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"tree":"contains","text":"Quarterly ledger"}}
+{"expect":{"frame":"browser.tab.t1.customMark","inside":"browser.tabs"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_rename_tab\""}}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"browser.tab.t1.customMark","inside":"browser.tabs"}}
+{"expect":{"frame":"browser.tabs","inside":"browser.pane"}}
+{"dispatch":{"action":"browser_select_tab","params":{"pane":"browser-1","tab":"t1"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
+{"expect":{"tree":"contains","text":"Quarterly ledger"}}
+{"expect":{"frame":"browser.tab.t1.customMark","inside":"browser.tabs"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"browser-1"}}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"rename tab"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Tab name"}}
+{"expect":{"focus":"palette.query"}}
+{"expect":{"tree":"contains","text":"Keep “Quarterly ledger”"}}
+{"do":{"keys":"Budget review"}}
+{"expect":{"tree":"contains","text":"Rename to “Budget review”"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Budget review"}}
+{"expect":{"tree":"contains","text":"Budget review"}}
+{"expect":{"tree":"absent","text":"Quarterly ledger"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Page B"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"rename tab"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Tab name"}}
+{"expect":{"tree":"contains","text":"Keep “Budget review”"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"tree":"contains","text":"Clear name — back to “Page B”"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}
+{"expect":{"tree":"absent","text":"Budget review"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t1","name":"Again"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Again"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t1","name":""}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}
+{"expect":{"tree":"absent","text":"Again"}}
+{"dispatch":{"action":"browser_rename_tab","params":{"pane":"browser-1","tab":"t9","name":"Nobody"},"refuses":"the browser pane has no tab t9"}}
