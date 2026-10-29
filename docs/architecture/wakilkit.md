@@ -778,11 +778,18 @@ an agent's write finds its checkout.
   briefs, `savingDraft`, and `running_draft_propose` — agent-reachable, `.control`, only the
   conversation Wakil started for that repo — through `RecipeDraftLookup`);
   `App/WindowModel+RecipeDrafts.swift` starts that conversation off screen in Main and asks it for a fix.
+- `Crews.swift` (piece 5) — `TeammateProposals` (pending proposals, replace, dismissals per workspace and
+  repo), `checkTeammateProposal`, `crewBriefLines` (who holds what), `teammateProposalLine`,
+  `nothingToDoWords`. `TeammateProposal` itself is in `Core/` so `LiveConversation` can carry it.
+- `CrewWorkspace.swift` — the router's `crewWorkspace` (the ticket's, else a record with no copies) and `join`.
+- `CrewActions.swift` — `CrewLookup` (the window's side, `WindowModel.useCrew`) and `registerCrewActions`:
+  `conversation_propose_teammate`, `conversation_nothing_to_do` (agent), `conversation_teammate_start`,
+  `conversation_teammate_dismiss`, `conversation_teammate_brief` (operator-only).
 
 Uses: `Editor` (the tickets in flight), `Harness`, `MCP`, `Registry`.
 Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `HomeScreenTests`, `WorkspacePaletteTests` (⌘P's Running
 grouped by workspace, `Command/PaletteSources.swift`), `WindowModelWorkspacesTests` (the window's side, in
-`App/WindowModel+Workspaces.swift`, and the view doors, `WindowModelWorkspaceViewsTests`), `RecipeDraftingTests`.
+`App/WindowModel+Workspaces.swift`, and the view doors, `WindowModelWorkspaceViewsTests`), `RecipeDraftingTests`, `CrewsTests`, `CrewWindowTests` (the window's side, in `App/WindowModel+Crews.swift`).
 
 ### Visual/ — design-language values
 

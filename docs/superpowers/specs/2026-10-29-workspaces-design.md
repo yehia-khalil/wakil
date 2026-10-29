@@ -1015,3 +1015,35 @@ Calls the build made where the piece above is silent (plan:
   you · N messages* on its home line (`HomeConversationLine.detail`), where the Landing's Running row
   said it. Its own organisation's chips are gone (piece 3), so *waiting for you · N messages* on a chip
   is another organisation's only.
+## Amendment 2026-10-30 — piece 5, as built
+
+Calls the build made where the piece above is silent (plan:
+`docs/superpowers/plans/2026-10-29-workspaces-5-crews.md`).
+
+- **A proposal belongs to the proposer's workspace and one repo** — piece 4's key (a workspace id, or
+  `main/<org>/<project>/<environment>`) and Main's folder of the repo, named by its folder name or
+  path. A second proposal for the same repo there **replaces** the first, keeping its id (Rule 7).
+- **Refused, whole:** an empty brief; one over 4,000 characters; no proposing conversation; a repo not
+  of the project (the project's repos are named); the proposer's own repo; a repo another live
+  conversation of the workspace holds (named — message it instead); a dismissed one (decision 17).
+- **Start, Dismiss and the brief's edit are operator-only actions** (`conversation_teammate_start`,
+  `_dismiss`, `_brief`); proposing and `conversation_nothing_to_do` are the agent's. Nothing asks:
+  none destroys or is *gate* (Rule 1). A proposal goes with its proposer when that conversation closes.
+- **Where it shows until piece 3's card:** a row in the proposer's thread, a **Teammates** strip over
+  the thread of the conversation on screen while its workspace has proposals (the line, the brief
+  editable and kept on blur, **Start**, **Dismiss**), and `session_list`'s `proposals`. The strip is
+  not focused when it appears: an agent's proposal does not take the keyboard (Rule 6 over Rule 3).
+- **A proposer in Main gets a workspace at Start**: a record with no copies (the umbrella's "Start on
+  a ticket", built here as `WorkspaceRouter.crewWorkspace`), named after its ticket, else its title,
+  and the proposer moved in — it holds nothing in Main, so nothing is stranded (decision 6). The
+  teammate joins before its first message, so its first write makes a copy there, not a workspace of
+  its own. A handed proposer's teammate is handed on the same ticket with **May push off**.
+- **One per repo** is offered only for a project with more than one repo; it pre-ticks the subject's
+  repo and each repo where the ticket's branch is read or an In flight row of the key sits. Each
+  member's brief is the operator's, then the record as the subject's read gives it for that repo
+  (else the subject's), then *who holds what*. Titles are `<KEY> · <repo>`. A member that fails to
+  start stops the rest; those started stay and the error says how many. Cancel does not stop a crew
+  start already under way (Rule 4 holds for one agent only; recorded as not done).
+- **Nothing to do** reads `done · nothing to do in <repo>` (its crew repo, else the repo it holds),
+  else `done · nothing to do: <why>`, in `LiveConversation.stateWords` and `session_list`'s
+  `nothingToDo`, until the operator's next message. **Close** is the existing close.

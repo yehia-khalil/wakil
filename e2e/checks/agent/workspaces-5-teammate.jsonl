@@ -1,0 +1,27 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"window.composer","text":"propose a portal teammate"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"proposed a portal teammate"}}
+{"expect":{"tree":"contains","text":"Suggested a teammate for e2e-portal"}}
+{"expect":{"tree":"contains","text":"‘propose a portal teammate’ suggests a teammate for e2e-portal:"}}
+{"expect":{"focus":"window.composer"}}
+{"dispatch":{"action":"conversation_propose_teammate","params":{"repo":"billing","brief":"x"},"refuses":"billing is not a repo of this project"}}
+{"dispatch":{"action":"conversation_propose_teammate","params":{"repo":"e2e-portal","brief":"   "},"refuses":"the brief is empty"}}
+{"dispatch":{"action":"conversation_teammate_start","params":{"proposal":"teammate-1"},"refuses":"only the operator starts, dismisses or edits a proposed teammate"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"window.teammates.start.e2e-portal","inside":"window.teammates"}}
+{"expect":{"frame":"window.teammates.dismiss.e2e-portal","clear":"window.teammates.start.e2e-portal"}}
+{"do":{"click":"window.teammates.start.e2e-portal"}}
+{"expect":{"tree":"contains","text":"Started ‘e2e-portal · propose a portal teammate’ for e2e-portal, in this workspace."}}
+{"expect":{"tree":"contains","text":"Moved to workspace ‘propose a portal teammate’."}}
+{"expect":{"tree":"absent","text":"suggests a teammate for e2e-portal:"}}
+{"expect":{"tree":"contains","text":"proposed a portal teammate"}}
+{"expect":{"journal":{"contains":"\"action\":\"conversation_teammate_start\""}}}
+{"do":{"click":"window.agentChip.e2e-fixture/e2e-git/staging#2"}}
+{"expect":{"tree":"contains","text":"portal teammate started on the form"}}
+{"expect":{"tree":"contains","text":"Moved to workspace ‘propose a portal teammate’."}}

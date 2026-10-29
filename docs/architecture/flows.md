@@ -149,3 +149,16 @@ sender's thread and "From ‘…’ · <workspace>" in the recipient's, and queu
 and its workspace's `MessageWakeBudgets` has a wake; otherwise it waits for the turn's end (`append`'s
 `.result`) or the operator's next message, whose `send` resets the budget and carries the block at
 the head of its input. The gate and the plane never read it.
+
+**A teammate, proposed** (workspaces piece 5). `conversation_propose_teammate {repo, brief}` is
+`.control` and agent-reachable; its handler asks the window through `CrewLookup`, and
+`WindowModel.proposeTeammate` refuses what it must (`checkTeammateProposal`), holds it in
+`teammateProposals` (keyed by piece 4's workspace key and the repo) and writes a row in the proposer's
+thread. The strip over the thread (`TeammateProposalsStrip`) and `session_list`'s `proposals` show it.
+`conversation_teammate_start` (operator-only) runs `startTeammate`: the proposer's workspace, or a
+record-only one made now (`WorkspaceRouter.crewWorkspace`) that the proposer `join`s; then a
+background conversation that joins it before its first message — `startHandOff` with May push off for
+a handed proposer, else `startCrewConversation` — its brief followed by `crewBriefLines`.
+`conversation_teammate_dismiss` remembers the repo for that workspace. **One per repo** in Hand to
+agent sends `ticket_hand_off {agents: perRepo, repos}`, which reaches `WindowModel.startCrew` through
+`TicketHandOffLookup.startCrew`: one handed conversation per repo in the ticket's workspace.

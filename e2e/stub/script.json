@@ -10,6 +10,20 @@
       "reply": "asked the first where it works"
     },
     {
+      "match": "build the portal login form against post /login",
+      "reply": "portal teammate started on the form"
+    },
+    {
+      "match": "propose a portal teammate",
+      "call": { "action": "conversation_propose_teammate", "echo": true, "params": { "repo": "e2e-portal", "brief": "Build the portal login form against POST /login." } },
+      "reply": "proposed a portal teammate"
+    },
+    {
+      "match": "nothing for this crew member",
+      "call": { "action": "conversation_nothing_to_do", "echo": true, "params": { "why": "the portal needs nothing" } },
+      "reply": "said there is nothing to do"
+    },
+    {
       "match": "message from another conversation (‘send word to the first conversation’",
       "reply": "read the word from the other conversation"
     },
