@@ -246,17 +246,8 @@ struct Rail: View {
     private func row(_ pane: Pane) -> some View {
         let lifted = promoted && hoveredRow == pane.id
         let needs = needsYou(pane)
-        // A needs-you editor row: focused, then its column on the Ticket view (`ticket_show` with no
-        // key — the followed branch's own), the scroll where it was.
-        let press = {
-            Task {
-                await model.focusPane(id: pane.id)
-                if needs {
-                    await model.dispatchFromSurface(
-                        "ticket_show", .object(["pane": .string(pane.id), "key": .null]))
-                }
-            }
-        }
+        // Focused; a needs-you editor row shows its Ticket view as it was left (`railRowPressed`).
+        let press = { Task { await model.railRowPressed(pane: pane.id) } }
         return rowText(pane.title, pane.kind + (needs ? RailTreatment.countSuffix(needsCount) ?? "" : ""))
         .padding(.vertical, 10)
         .padding(.horizontal, 12)

@@ -225,3 +225,79 @@ private func until(_ done: @MainActor () async -> Bool) async {
         #expect(window.ticketNeedsRows.map(\.urgent) == [TicketUrgent(tier: 9, words: "local branch")])
     }
 }
+
+/// A window with the editor, ticket and browser actions over one pane store and layout, In flight's
+/// INI-142 row read, and one editor pane open.
+@MainActor
+private func pickWindow() async throws -> (WindowModel, String) {
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent("ticket-pick-\(UUID().uuidString)"), sessionId: "t")
+    let panes = PaneStore(kinds: PaneKinds.standard)
+    let layout = LayoutStore()
+    await registerLayoutActions(
+        into: registry, layout: layout, panes: panes, unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
+    let fake = FakeTicket()
+    await fake.set("ticket_in_flight", inFlightJSON(threads: 3))
+    let store = EditorTicketStore(ticket: fake)
+    let roots = ["/p/api"]
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout, persistence: nil,
+        context: ContextStore(client: GitRootsContext(roots: roots)),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
+        rootPath: "/tmp", providerId: "",
+        lookupFactory: { _ in EditorWindowLookup() },
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, ticket: store,
+        paletteClients: PaletteClients(), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
+    model.ticketPollSleep = { _ in try await Task.sleep(for: .seconds(3600)) }
+    model.setOrganizationForTesting("initech")
+    await registerEditorActions(into: registry, panes: panes, layout: layout, files: FakeFiles(), fileLists: nil,
+                                gitStatus: nil, roots: { roots }, ticket: store, organization: { "initech" })
+    await registerBrowserActions(into: registry, panes: panes, layout: layout,
+                                 settings: { SettingsBrowser(searchEngine: "google", startPage: "") })
+    await model.ticketNeedsRead(force: true)
+    _ = await model.openPane(kind: "editor")
+    let editor = try #require(model.layoutSnapshot.panes.first { $0.kind == "editor" }?.id)
+    return (model, editor)
+}
+
+/// Walk 2026-10-29: a ticket picked from Waiting on you stays shown while a link in it opens Wakil's
+/// browser (focus moves there) and the operator comes back to the editor — by a click on the pane, or
+/// by its rail row, which shows the Ticket view as it was left (spec, Rule 6 row: "the column scrolled
+/// where it was"), not the branch's own.
+@Suite @MainActor struct WindowModelTicketPickSurvivesTests {
+    @Test func aPickedTicketStaysShownWhenALinkOpensTheBrowserAndFocusComesBack() async throws {
+        let (window, editor) = try await pickWindow()
+        await window.dispatchFromSurface("ticket_show", .object(["pane": .string(editor), "key": .string("INI-142")]))
+        #expect(await window.editorSnapshot(pane: editor).column?.ticketShown == "INI-142")
+
+        await window.openLinkInWakil("https://github.com/initech/api/pull/212")
+        let browser = try #require(window.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+        #expect(window.layoutSnapshot.focusedId == browser)
+        #expect(window.editor(editor)?.column?.ticketShown == "INI-142")
+
+        // Back by a click on the pane.
+        _ = await window.focusPane(id: editor)
+        #expect(window.editor(editor)?.column?.ticketShown == "INI-142")
+
+        // Away again, then back by the rail's row, the needs-you tick on it.
+        await window.openLinkInWakil("https://github.com/initech/api/pull/212/checks")
+        #expect(window.ticketNeeds?.count == 3)
+        await window.railRowPressed(pane: editor)
+        #expect(window.layoutSnapshot.focusedId == editor)
+        let c = try #require(window.editor(editor)?.column)
+        #expect(c.ticketShown == "INI-142" && c.view == .ticket && c.shown)
+        #expect(c.ticketShownAt == TicketShownAt(root: "/p/api", branch: "ini-142-login"))
+        window.stopTicketPoll()
+    }
+
+    /// The rail's row on a pane showing Files: the column goes to Ticket, the branch's own.
+    @Test func theRailRowShowsTheTicketView() async throws {
+        let (window, editor) = try await pickWindow()
+        await window.dispatchFromSurface("editor_tree", .object(["pane": .string(editor), "view": .string("files")]))
+        await window.railRowPressed(pane: editor)
+        let c = try #require(window.editor(editor)?.column)
+        #expect(c.view == .ticket && c.shown && c.ticketShown == nil)
+        window.stopTicketPoll()
+    }
+}

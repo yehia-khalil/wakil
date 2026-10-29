@@ -10,6 +10,18 @@ extension WindowModel {
         layoutSnapshot.panes.filter { PaneKinds.is($0.kind, EditorPaneKind.self) }.map(\.id)
     }
 
+    /// A rail row pressed: the pane focused, and an editor row with the needs-you tick shows its
+    /// Ticket view (the count's home) as it was left — a ticket picked from In flight still shown,
+    /// the column scrolled where it was (spec, Rule 6). `editor_tree`, not `ticket_show` with no key,
+    /// which is ← Back to this branch and dropped the pick (walk 2026-10-29).
+    public func railRowPressed(pane: String) async {
+        _ = await focusPane(id: pane)
+        guard layoutSnapshot.panes.contains(where: { $0.id == pane && PaneKinds.is($0.kind, EditorPaneKind.self) }),
+              ticketNeedsCount(ticketNeeds) > 0 else { return }
+        await dispatchFromSurface("editor_tree", .object([
+            "pane": .string(pane), "view": .string(EditorColumnView.ticket.rawValue), "shown": .bool(true)]))
+    }
+
     /// Reads every root whose branch is not the one it was at the last status read, while an editor
     /// pane is open. Started, not awaited: a read can take 15 s and the status must not wait for it.
     func ticketBranchesChanged(_ roots: [GitRootState]) async {
