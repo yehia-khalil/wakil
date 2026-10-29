@@ -79,6 +79,30 @@ public struct Keymap: Sendable, Equatable {
         !resolve(chord, paneKind: paneKind).isEmpty
     }
 
+    /// The commands that are always Wakil's, even in a focused web page: their chords in force are
+    /// offered to the menu bar before the page sees them, so ⌘K opens the palette on a page that
+    /// listens for ⌘K. Every other chord is the page's first, as Safari does it, so ⌘F or ⌘B
+    /// still reach a web app that handles them.
+    public static let beforePage: Set<String> = {
+        var ids: Set<String> = [
+            "window.commands", "window.open", "conversation.new", "conversation.close",
+            "editor.newScratch", "browser.newTab", "pane.close", "browser.closeTab",
+            "browser.focusAddress", "window.settings", "browser.bookmark", "browser.copyURL",
+            "window.toggleRail", "browser.lastTab", "browser.toggleTabColumn",
+        ]
+        for n in 1...8 { ids.insert("browser.tab\(n)") }
+        return ids
+    }()
+
+    /// Whether a focused web page's press of `chord` goes to the menu bar first: some `beforePage`
+    /// command holds it in a browser pane. Toggle Tab Column counts only with the tabs vertical
+    /// (`tabColumn`); with them horizontal it does nothing there, so the page keeps the chord.
+    public func takesBeforePage(_ chord: KeyChord, tabColumn: Bool) -> Bool {
+        resolve(chord, paneKind: "browser").contains { id in
+            Self.beforePage.contains(id) && (id != "browser.toggleTabColumn" || tabColumn)
+        }
+    }
+
     /// The command whose menu item carries `chord` as its shortcut, since SwiftUI gives a chord to
     /// one menu item only: the one in force anywhere, else the first in table order in force in
     /// its pane. Nil when no command holds it.

@@ -29,6 +29,24 @@ import Testing
         #expect(!f5.claims(c("F7"), paneKind: "browser"))
     }
 
+    /// A focused web page is offered a key after the menu only for the always-Wakil commands, by
+    /// their chords in force: a rebound one moves with its command, and the page keeps ⌘F or ⌘B.
+    @Test func takesBeforePageFollowsTheChordsInForce() {
+        for chord in ["⌘K", "⌘P", "⌘N", "⌘T", "⌘W", "⌘L", "⌘1", "⌘8", "⌘9", "⌘,", "⌘D", "⇧⌘W", "⇧⌘C", "⌃⌘R"] {
+            #expect(plain.takesBeforePage(c(chord), tabColumn: false), "\(chord)")
+        }
+        for chord in ["⌘F", "⌘B", "⌘S", "⌘R", "⌘G", "⌃⌘J"] {
+            #expect(!plain.takesBeforePage(c(chord), tabColumn: false), "\(chord) is the page's first")
+        }
+        #expect(!plain.takesBeforePage(c("⌃⌘S"), tabColumn: false), "horizontal tabs: the page's")
+        #expect(plain.takesBeforePage(c("⌃⌘S"), tabColumn: true))
+        let moved = Keymap(overrides: ["window.commands": "⌃⌘K", "conversation.new": "⌃⌘J"])
+        #expect(moved.takesBeforePage(c("⌃⌘K"), tabColumn: false))
+        #expect(moved.takesBeforePage(c("⌃⌘J"), tabColumn: false))
+        #expect(!moved.takesBeforePage(c("⌘K"), tabColumn: false), "the old chord is the page's now")
+        #expect(Keymap.beforePage.allSatisfy { KeyCommand.byID[$0] != nil })
+    }
+
     /// The menu bar's one item per chord: the anywhere command's, else the first pane command's.
     @Test func menuHolderPrefersTheAnywhereCommand() {
         #expect(plain.menuHolder(of: c("⌘T")) == "editor.newScratch")
