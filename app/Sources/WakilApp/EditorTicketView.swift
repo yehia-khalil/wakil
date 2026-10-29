@@ -166,7 +166,6 @@ struct EditorTicketView: View {
                     .help("Read the ticket, pull requests and checks again")
                     .accessibilityIdentifier("editor.ticket.refresh")
             }
-            handOffButton
         }
     }
 
@@ -257,21 +256,21 @@ struct EditorTicketView: View {
     @ViewBuilder
     private func ownTicket(_ b: TicketBranchState) -> some View {
         let t = b.tickets[0]
-        TicketBlock(first: true) {
-            header(key: t.key, url: t.url.isEmpty ? t.record.seen.url : t.url, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record),
-                   threads: ticketThreadsWaitingOnViewer(b), linked: b.linked)
-            nextField(b)
+        TicketSlab(title: "Ticket", id: "editor.ticket.pm") {
+            header(key: t.key, url: t.url.isEmpty ? t.record.seen.url : t.url, title: t.title, status: t.status, linked: b.linked)
         }
-        pullRequests(b)
-        record(t.record)
+        pullRequests(b, waiting: ticketWaitingOn(b, record: t.record), threads: ticketThreadsWaitingOnViewer(b))
+        context {
+            nextField(b)
+            record(t.record)
+        }
     }
 
     /// Each ticket the branch or its stack carries, the branch's own marked; a stack's never is.
     /// Picking one shows it (Rule 9), the branch unchanged.
     @ViewBuilder
     private func severalTickets(_ b: TicketBranchState) -> some View {
-        TicketBlock(first: true) {
-        Text("Tickets").microLabel(top: 0)
+        TicketSlab(title: "Tickets", id: "editor.ticket.pm") {
         VStack(alignment: .leading, spacing: Space.s) {
             ForEach(b.tickets, id: \.key) { t in
                 Button { Task { await dispatch("ticket_show", ["key": .string(t.key)]) } } label: {
@@ -293,15 +292,17 @@ struct EditorTicketView: View {
             }
             if b.linked { unlinkButton(b) }
         }
-        nextField(b)
         }
-        pullRequests(b)
-        if let target = ticketNextTarget(b), let t = b.tickets.first(where: { $0.key == target.key }) { record(t.record) }
+        pullRequests(b, waiting: [], threads: ticketThreadsWaitingOnViewer(b))
+        context {
+            nextField(b)
+            if let target = ticketNextTarget(b), let t = b.tickets.first(where: { $0.key == target.key }) { record(t.record) }
+        }
     }
 
     @ViewBuilder
     private func noTicket(_ b: TicketBranchState, name: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.s) {
+        TicketSlab(title: "Ticket", id: "editor.ticket.pm") {
             Text("No ticket found for `\(name)`")
                 .accessibilityIdentifier("editor.ticket.notFound")
             if let looked = ticketLookedLine(b.looked) {
@@ -326,7 +327,14 @@ struct EditorTicketView: View {
                 whole(linkNote, id: "editor.ticket.linkNote")
             }
         }
-        pullRequests(b)
+        pullRequests(b, waiting: [], threads: ticketThreadsWaitingOnViewer(b))
+        // A pull request with no ticket keeps no record; it can still be handed to an agent.
+        if ticketHandOffHeaderParams(state, column: column, root: root) != nil {
+            context {
+                Text("No record: a pull request with no ticket keeps none.").dimmed().font(.system(size: 11.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     /// The default or a long-lived branch: no header — Waiting on you, then In flight. Picking a row
@@ -392,36 +400,44 @@ struct EditorTicketView: View {
         let shownRecord = ticketShownRecord(state, key: key, ref: ref)
         let record: TicketRecordState? = if case .record(let r) = shownRecord { r } else { nil }
         backButton
-        TicketBlock(first: true) {
+        TicketSlab(title: "Ticket", id: "editor.ticket.pm") {
             header(key: key, url: [ref?.url, record?.seen.url].compactMap { $0 }.first { !$0.isEmpty } ?? "", title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                    status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
-                   waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
-                   threads: own.map(ticketThreadsWaitingOnViewer) ?? 0, linked: false)
+                   linked: false)
+        }
+        if let own {
+            pullRequests(own, waiting: ticketWaitingOn(own, record: record), threads: ticketThreadsWaitingOnViewer(own))
+        } else if let failure = state.shownBranchFailures[key] {
+            TicketSlab(title: "Pull requests", id: "editor.ticket.prs") { whole(failure, id: "editor.ticket.shownFailure") }
+        } else if let row, !row.branch.isEmpty {
+            TicketSlab(title: "Pull requests", id: "editor.ticket.prs") {
+                Text("Reading \(row.branch)…").dimmed().accessibilityIdentifier("editor.ticket.shownReading")
+            }
+        }
+        context {
             if let record {
                 nextLine(key: key, line: record.next, text: record.next?.text ?? "", labelled: false)
             }
+            switch shownRecord {
+            case .record(let r): self.record(r)
+            case .failure(let failure):
+                // A record that could not be read says so, whole (Rule 8) — never drawn as an empty one.
+                whole(failure, id: "editor.ticket.recordFailure")
+            case .none: EmptyView()
+            }
         }
-        if let own {
-            pullRequests(own)
-        } else if let failure = state.shownBranchFailures[key] {
-            whole(failure, id: "editor.ticket.shownFailure")
-        } else if let row, !row.branch.isEmpty {
-            Text("Reading \(row.branch)…").dimmed().accessibilityIdentifier("editor.ticket.shownReading")
-        }
-        switch shownRecord {
-        case .record(let r): self.record(r)
-        case .failure(let failure):
-            // A record that could not be read says so, whole (Rule 8) — never drawn as an empty one.
-            whole(failure, id: "editor.ticket.recordFailure")
-        case .none: EmptyView()
-        }
+    }
+
+    /// **Context**: what Wakil and its agents keep on the ticket — the agent it is with (or **Hand to
+    /// agent**), Next and the record — apart from what the PM tool and GitHub say (walk 2026-10-29).
+    private func context(@ViewBuilder _ content: () -> some View) -> some View {
+        TicketSlab(title: "Context", id: "editor.ticket.context", trailing: { handOffButton }, content: content)
     }
 
     // MARK: - The header and Next
 
     @ViewBuilder
-    private func header(key: String, url: String, title: String, status: String, waiting: [String], threads: Int, linked: Bool) -> some View {
-        Text("Ticket").microLabel(top: 0)
+    private func header(key: String, url: String, title: String, status: String, linked: Bool) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // The key opens the ticket in the PM tool, in Wakil's browser (⌥-click: the system's).
@@ -438,18 +454,7 @@ struct EditorTicketView: View {
                 }
                 Text(title).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
             }
-            let line = ticketWaitingLine(waiting, threads: threads)
-            if !status.isEmpty || line != nil {
-                HStack(alignment: .center, spacing: 6) {
-                    if !status.isEmpty { TicketPill(label: status, hue: ticketStatusHue(status)) }
-                    if let line {
-                        // The pill is the separator on screen; read aloud, the header stays one line:
-                        // "In Progress · waiting on reviewer, you".
-                        Text(line).dimmed().font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel(status.isEmpty ? line : "· " + line)
-                    }
-                }
-            }
+            if !status.isEmpty { TicketPill(label: status, hue: ticketStatusHue(status)) }
             if linked, let b = branch { unlinkButton(b) }
         }
         .accessibilityElement(children: .contain)
@@ -509,24 +514,28 @@ struct EditorTicketView: View {
 
     // MARK: - Pull requests
 
-    /// **Pull requests** as hairline cards — number and title, the state and checks pills, the base —
-    /// each failing check under its card; then **Threads**, every open one across them.
+    /// **Pull requests**: what GitHub says, in one slab (walk 2026-10-29) — whom it waits on, the PRs
+    /// as hairline cards (number and title, the state and checks pills, the base, each failing check),
+    /// then **Threads**, every open one across them.
     @ViewBuilder
-    private func pullRequests(_ b: TicketBranchState) -> some View {
-        if !b.prs.isEmpty {
-            TicketBlock {
-                Text("Pull requests").microLabel(top: 0)
-                ForEach(b.prs, id: \.number) { pr in prCard(pr) }
-            }
-        }
+    private func pullRequests(_ b: TicketBranchState, waiting: [String], threads waitingThreads: Int) -> some View {
+        let line = ticketWaitingLine(waiting, threads: waitingThreads)
         let threads = ticketBranchThreads(b.prs)
-        if !threads.isEmpty {
-            TicketBlock {
+        TicketSlab(title: "Pull requests", id: "editor.ticket.prs") {
+            if let line {
+                Text(line).dimmed().font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("editor.ticket.waiting")
+            }
+            if b.prs.isEmpty {
+                Text("None open for this branch").dimmed().font(.system(size: 11.5))
+            }
+            ForEach(b.prs, id: \.number) { pr in prCard(pr) }
+            if !threads.isEmpty {
                 // The label and its count at either end; read aloud as one: "Threads · 2 open".
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Threads").microLabel(top: 0)
+                    Text("Threads").microLabel(top: 4)
                     Spacer(minLength: Space.s)
-                    Text("\(threads.count) open").microLabel(top: 0)
+                    Text("\(threads.count) open").microLabel(top: 4)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Threads · \(threads.count) open")
@@ -658,8 +667,7 @@ struct EditorTicketView: View {
     /// drawing five empty headings.
     private func record(_ r: TicketRecordState) -> some View {
         let groups = ticketRecordGroups(r, including: adding?.rawValue)
-        return TicketBlock {
-            Text("Record").microLabel(top: 0)
+        return VStack(alignment: .leading, spacing: 7) {
             // Each live hand-off as an entry by agent, newest first, above the lines (spec, *The hand-off in
             // the record*); the finished ones fold into one line that shows them (walk 2026-10-29).
             let fold = ticketHandOffFold(r.handoffs, live: state.handOffLive)
@@ -695,6 +703,8 @@ struct EditorTicketView: View {
             .accessibilityIdentifier("editor.ticket.add")
             if picking { kindMenu }
         }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("editor.ticket.record")
     }
@@ -1046,7 +1056,7 @@ private extension View {
 
 private extension Text {
     /// §6's micro-label: uppercase, tracked .2em, 9 pt, low opacity — a section's name.
-    /// In a `TicketBlock` it sits at the block's top (`top: 0`): the hairline and its space set it off.
+    /// Inside a section, a sub-heading (Threads, In flight's lists).
     func microLabel(top: CGFloat = 6) -> some View {
         font(.system(size: 9, weight: .semibold)).tracking(1.8).textCase(.uppercase)
             .foregroundStyle(EditorPaneStyle.text.opacity(0.42))
@@ -1059,19 +1069,45 @@ private extension Text {
     }
 }
 
-/// One section of the view as a block (the calmer column, 2026-10-28): a hairline above it, except
-/// the first, and room around it, so Ticket, Pull requests, Threads and Record read apart.
-private struct TicketBlock<Content: View>: View {
-    var first = false
-    @ViewBuilder let content: Content
+/// One of the view's three sections as a slab (walk 2026-10-29): **Ticket** (the PM tool's),
+/// **Pull requests** (GitHub's) and **Context** (Wakil's and its agents'), each under its own title,
+/// apart on a faint surface so the three never read as one list. A control of the section's own may
+/// sit at the title's right.
+private struct TicketSlab<Trailing: View, Content: View>: View {
+    let title: String
+    let id: String
+    let trailing: Trailing
+    let content: Content
+
+    init(title: String, id: String, @ViewBuilder trailing: () -> Trailing, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.id = id
+        self.trailing = trailing()
+        self.content = content()
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) { content }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, first ? 0 : 10)
-            .padding(.bottom, 4)
-            .overlay(alignment: .top) {
-                if !first { Rectangle().fill(EditorPaneStyle.text.opacity(0.08)).frame(height: 1) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title).font(.system(size: 10, weight: .semibold)).tracking(1.6).textCase(.uppercase)
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.62)).fixedSize()
+                Spacer(minLength: 8)
+                trailing
             }
+            content
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(EditorPaneStyle.text.opacity(0.025)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(EditorPaneStyle.text.opacity(0.08)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(id)
+    }
+}
+
+extension TicketSlab where Trailing == EmptyView {
+    init(title: String, id: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, id: id, trailing: { EmptyView() }, content: content)
     }
 }
 

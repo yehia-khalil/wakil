@@ -564,6 +564,19 @@ back on GitHub; production red on a handed chip; narrow widths.
 - **A done conversation opens readable.** A canvas brought back by a switch, or read off disk, has its
   maximized panes fill the window's canvas; the thought thread at rest sits below the panes, not over
   them (design language §9, amended).
+- **The Ticket view is three sections, apart.** **Ticket**: what the PM tool says — key ↗, title,
+  status (Unlink with it). **Pull requests**: what GitHub says — whom it waits on, the PR cards with
+  their checks, then the open threads. **Context**: what Wakil and its agents keep — the agent it is
+  with or **Hand to agent** at the section's title, Next, the record and its hand-offs. Each is a slab
+  under its own title; nothing of one is drawn in another. ↻ stays alone on the top line.
+- **No text is cut.** Every line in the column wraps whole; nothing ends in "…" or runs past the pane.
+- **Web links read `<words> ↗` in blue** (design language §5, amended): the ticket key, a check's
+  `details`, Open on GitHub, the blame hover's Open on <host>, Settings' provider pages.
+- **A picked ticket stays fresh.** The 2-minute read and Wakil coming back (over 60 s) read a ticket
+  picked from In flight as well as the branch's own; the 2 minutes run from the last read, not from
+  Wakil coming back.
+- **A handed session is titled by its ticket** on the Landing — Continue and Running read
+  `<KEY> · <first line>`, as its chip did.
 
 ## Open questions
 
