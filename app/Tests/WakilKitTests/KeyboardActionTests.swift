@@ -5,15 +5,23 @@ import Testing
 /// A context client whose `keyboard` answers `keys`, recording every `set_keys` it is sent.
 private actor KeysContext: ToolCaller {
     let keys: [String: String]
+    /// settings.json's error as `keyboard` answers it; "" when it reads.
+    private(set) var appError: String
     private(set) var writes: [JSONValue] = []
 
-    init(keys: [String: String] = [:]) { self.keys = keys }
+    init(keys: [String: String] = [:], appError: String = "") {
+        self.keys = keys
+        self.appError = appError
+    }
+
+    /// The file fixed by hand: `keyboard` reads it again.
+    func fix() { appError = "" }
 
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
         switch name {
         case "keyboard":
             return .object(["structuredContent": .object([
-                "keys": .object(keys.mapValues { .string($0) }), "appError": .string(""),
+                "keys": .object(keys.mapValues { .string($0) }), "appError": .string(appError),
             ])])
         case "set_keys":
             writes.append(arguments)
@@ -220,6 +228,21 @@ private func focusedBrowserWindow(keys: KeysContext = KeysContext()) async throw
             .object(["keys": .object([:])]),
         ])
         #expect(model.keymap.chord("pane.close") == KeyChord("⌃⌘W"), "re-read after each change")
+        await model.shutdown()
+    }
+
+    /// A settings.json fixed by hand clears the error at the next settings refresh (opening
+    /// Settings, or any write there), with no relaunch: the keymap is read again with the tree.
+    @Test @MainActor func testSettingsRefreshReadsTheKeymapAgain() async throws {
+        let keys = KeysContext(keys: ["editor.save": "⌃⌘J"], appError: "settings.json: unexpected end of JSON input")
+        let (model, _, _) = try await focusedBrowserWindow(keys: keys)
+        await model.refreshKeymap()
+        #expect(model.keymapError == "settings.json: unexpected end of JSON input")
+        #expect(model.keymap.chord("editor.save") == KeyChord("⌘S"), "the defaults while it can't be read")
+        await keys.fix()
+        await model.refreshSettings()
+        #expect(model.keymapError == nil)
+        #expect(model.keymap.chord("editor.save") == KeyChord("⌃⌘J"))
         await model.shutdown()
     }
 

@@ -3007,6 +3007,9 @@ public final class WindowModel {
     /// that never answered has learned nothing about whether it does.
     public func refreshSettings() async {
         let asked = browserSitesKey
+        // The keymap is its own read, so settings.json fixed by hand clears Settings → Keyboard's
+        // error here, with no relaunch, whether or not the tree's read answers.
+        await refreshKeymap()
         do {
             let result = try await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
