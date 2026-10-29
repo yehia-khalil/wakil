@@ -746,6 +746,16 @@ an agent's write finds its checkout.
 - `WorkspaceActions.swift` — `registerWorkspaceActions`: `workspace_list` (agent and operator),
   `workspace_start` (the agent's copy from a base it chose),
   `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only).
+- Piece 2, running the app: `RunPlan.swift` (`RunPlan`, `RunStepResult`, `RunTryResult`,
+  `readyOutputMatches`), `WorkspacePorts.swift` (the router's `ensurePorts`: blocks from wakil-ctx's
+  `ports_allocate`, recorded in `workspaces.json`; `markSetUp`), `WorkspaceRunner.swift`
+  (`WorkspaceRunner` actor: run — needs and services once per workspace, copy, clone and setup once
+  per checkout, each process in a terminal through the `RunTerminals` seam, ready —, stop, build,
+  Try; `RepoRunState`, `runStatusLine`; Archive's hook), `RunActions.swift` (`workspace_run`,
+  `workspace_stop`, `workspace_build`, `workspace_running`: agent-reachable, its own workspace only),
+  `RunningActions.swift` (`running_*`, operator-only), `RunningSettings.swift` (the Running settings'
+  decisions: groups, a field's source, an edit as an override, Draft all and Detect proposals).
+  `App/WorkspaceRunTerminals.swift` is the window's `RunTerminals` (panes in the workspace's view).
 
 Uses: `Harness`, `MCP`, `Registry`.
 Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `WindowModelWorkspacesTests` (the window's side, in `App/WindowModel+Workspaces.swift`).

@@ -84,7 +84,13 @@ How a repo runs (workspaces piece 2, `cmd/wakil-ctx/recipes.go`): `recipe_detect
 ten from 41200; `ports.go`) and `compose_override` (fixed compose ports moved into the block with
 `!override`; `compose.go`). Only `recipe_save` writes. Folders read are confined to the project's
 repos and the organisation's `workspaces/` (`ConfineRunDir`). Compose files are read with
-`go.yaml.in/yaml/v3`.
+`go.yaml.in/yaml/v3`. Running a plan (`cmd/wakil-ctx/reciperun.go`, `reciperun.go`): `recipe_list`
+(the Running settings as stored, each repo's effective recipe), `recipe_prepare` (the plan's files,
+copy and clone on a first run, the `.env` lines, and the secrets read for the processes' terminals),
+`recipe_run_steps` (the saved one-shot steps by phase, in the operator's login shell, output whole,
+cancellable), `recipe_try` (Try headless: services, setup, processes, ready, stop, teardown) and
+`recipe_secret_set` (a Running secret under `run:<project>:<owner>:<variable>`). None runs a command
+the caller names: only the saved recipe's.
 
 ### wakil-db
 

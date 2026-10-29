@@ -362,6 +362,35 @@ What building the Go side settled (plan `docs/superpowers/plans/2026-10-29-works
 - **Where.** The tools are on `wakil-ctx` (window-owned, not agent-facing); the agent reaches running
   only through piece 2's Swift actions. `recipe_ready_wait` polls loopback URLs only.
 
+#### Amendment 2026-10-30: piece 2's Swift half
+
+What building Run, Stop, Build, Try and the Running settings settled (plan, part two):
+
+- **One-shot steps run headless, processes in terminals.** Services, setup, build and teardown run
+  in Go (`recipe_run_steps`: the operator's login shell, output whole, cancellable) so a failure is
+  shown whole (Rule 8); each process gets a terminal pane `<repo> · <process>` in the workspace's own
+  view, opened unfocused wherever the screen is (Rule 6), with the plan's env and secrets. Files,
+  copy, clone and `.env` are Go's (`recipe_prepare`).
+- **Once-ness.** Needs and services run once per workspace per app session (kept in memory: a compose
+  `up -d` is safe to repeat); copy, clone and setup once per checkout, recorded as the checkout's
+  `setUp` in `workspaces.json`. Ports are allocated at the first Run or Build, not at the checkout's
+  making.
+- **A repo with no copy is not run** (decision 12): Run is refused naming the decision, and from Main
+  the agent's call is refused (Main has no ports). A need on a repo without a copy is refused the same
+  way.
+- **Stop with no repo** closes every process and runs each started repo's and shared service's
+  teardown; Archive calls it first (the router's run hook).
+- **Agent reach.** `workspace_run`, `workspace_stop`, `workspace_build` and the read
+  `workspace_running` are agent-reachable in the agent's own workspace only; the run three are
+  `.mutate` priced *allow* outside production, *gate* in it. The `running_*` actions are operator-only.
+- **Secrets** are typed in the Env row and kept by `recipe_secret_set` under
+  `run:<project>:<owner>:<VAR>`; a step's output has their values masked.
+- **Try's workspace** is a record named *Try <repo>* on a `wakil-try/<slug>` branch; ending it (the
+  form closing, another Try) archives and forgets the record. The branch stays, as Archive keeps
+  branches.
+- **Not built here:** the card's ▶ Run / Stop and its run line (piece 3 draws `runStatusLine` and
+  calls the actions), the drafting conversation of Detect step 2, and Try's fix proposal.
+
 ### 3. The home screen and ⌘P
 
 Replaces the Landing's columns (Running, Tickets in flight, Continue, Open). Mockup: `home.html`.
