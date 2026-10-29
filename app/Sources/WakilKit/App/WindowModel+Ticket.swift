@@ -36,12 +36,15 @@ extension WindowModel {
     }
 
     /// Wakil became the active app: each root an editor pane shows on its Ticket view is read again
-    /// when its last read is over 60 s old.
+    /// when its last read is over 60 s old, and so is each ticket picked into one (walk 2026-10-29).
     func ticketActivated() async {
         guard let ticket else { return }
         let now = Date()
         for root in await ticketViewRoots() where ticketStale(lastRead: await ticket.lastRead(root: root), now: now) {
             ticketRead(root)
+        }
+        for key in await ticketShownKeys() where await ticket.shownStale(key: key) {
+            Task { await ticket.refreshShown(key: key) }
         }
     }
 

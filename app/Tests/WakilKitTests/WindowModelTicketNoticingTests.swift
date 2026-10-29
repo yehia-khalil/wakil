@@ -61,6 +61,23 @@ private func until(_ done: @MainActor () async -> Bool) async {
         window.stopTicketPoll()
     }
 
+    /// Walk 2026-10-29: the 2-minute clock runs from the last read, not from Wakil coming back — a
+    /// focus change no longer puts the next read off by a whole interval.
+    @Test func pollWaitsOnlyWhatIsLeftOfTheInterval() async {
+        let (window, _, _, clock) = await noticingWindow()
+        await window.ticketNeedsRead(force: true)
+        clock.advance(90)
+        var slept: [Duration] = []
+        window.ticketPollSleep = { d in
+            slept.append(d)
+            try await Task.sleep(for: .seconds(3600))
+        }
+        window.updateTicketPoll()
+        await until { !slept.isEmpty }
+        #expect(slept.first == .seconds(30))
+        window.stopTicketPoll()
+    }
+
     @Test func pollStopsOnResignAndLock() async {
         let (window, _, _, _) = await noticingWindow()
         window.updateTicketPoll()
@@ -229,7 +246,7 @@ private func until(_ done: @MainActor () async -> Bool) async {
 /// A window with the editor, ticket and browser actions over one pane store and layout, In flight's
 /// INI-142 row read, and one editor pane open.
 @MainActor
-private func pickWindow() async throws -> (WindowModel, String) {
+private func pickWindow(clock: NeedsClock? = nil) async throws -> (WindowModel, String) {
     let registry = ActionRegistry(
         journalDirectory: testScratchRoot.appendingPathComponent("ticket-pick-\(UUID().uuidString)"), sessionId: "t")
     let panes = PaneStore(kinds: PaneKinds.standard)
@@ -238,7 +255,7 @@ private func pickWindow() async throws -> (WindowModel, String) {
         into: registry, layout: layout, panes: panes, unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
     let fake = FakeTicket()
     await fake.set("ticket_in_flight", inFlightJSON(threads: 3))
-    let store = EditorTicketStore(ticket: fake)
+    let store = clock.map { c in EditorTicketStore(ticket: fake, now: { c.now }) } ?? EditorTicketStore(ticket: fake)
     let roots = ["/p/api"]
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: nil,
@@ -311,6 +328,33 @@ private func pickWindow() async throws -> (WindowModel, String) {
             if ticks > 1 { try await Task.sleep(for: .seconds(3600)) }
         }
         window.updateTicketPoll()
+        await until { await picked() > before }
+        #expect(await picked() == before + 1)
+        window.stopTicketPoll()
+    }
+
+    /// Walk 2026-10-29: Wakil coming back reads a picked ticket's branch again when its read is over
+    /// 60 s old, as it does the branch's own — the operator retitled the PR in Terminal and came back.
+    @Test func comingBackReadsAPickedTicketWhenStale() async throws {
+        let clock = NeedsClock()
+        let (window, editor) = try await pickWindow(clock: clock)
+        await window.dispatchFromSurface("ticket_show", .object(["pane": .string(editor), "key": .string("INI-142")]))
+        let fake = try #require(window.ticket?.ticket as? FakeTicket)
+        let picked: @Sendable () async -> Int = {
+            await fake.calls.filter { c in
+                guard c.name == "ticket_branch", case .object(let a) = c.args else { return false }
+                return a["branch"] == .string("ini-142-login")
+            }.count
+        }
+        await until { await picked() >= 1 }
+        let before = await picked()
+        window.setAppActive(false)
+        window.setAppActive(true)
+        for _ in 0..<50 { await Task.yield() }
+        #expect(await picked() == before, "a fresh read is not read again")
+        clock.advance(61)
+        window.setAppActive(false)
+        window.setAppActive(true)
         await until { await picked() > before }
         #expect(await picked() == before + 1)
         window.stopTicketPoll()

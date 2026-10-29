@@ -118,8 +118,16 @@ extension WindowModel {
     private func startTicketPoll() {
         guard ticketPollTask == nil else { return }
         ticketPollTask = Task { @MainActor [weak self] in
+            // The clock runs from the last read, not from Wakil coming back (walk 2026-10-29): a focus
+            // change waits only what is left of the interval.
+            let interval = self?.ticketPollInterval ?? .seconds(120)
+            var wait = interval
+            if let age = await self?.ticket?.inFlightAge() {
+                wait = min(interval, max(.zero, interval - .seconds(age)))
+            }
             while let self, !Task.isCancelled {
-                do { try await self.ticketPollSleep(self.ticketPollInterval) } catch { return }
+                do { try await self.ticketPollSleep(wait) } catch { return }
+                wait = interval
                 // A resign or a lock that landed during the sleep reads nothing, cancelled or not.
                 guard !Task.isCancelled, self.ticketPollWantedNow else { return }
                 // In flight, and each shown Ticket view's branch — a picked ticket's own too, as ↻

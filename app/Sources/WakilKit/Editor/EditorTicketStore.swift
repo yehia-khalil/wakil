@@ -53,6 +53,8 @@ public actor EditorTicketStore {
     /// The branch of a ticket picked from In flight, read by its row's root and branch, by key; and
     /// why one could not be read. The root's own read and current branch are untouched (Rule 6).
     private var shownReads: [String: TicketBranchState] = [:]
+    /// When each picked ticket's branch last came back, by the store's clock.
+    private var shownReadAt: [String: Date] = [:]
     private var shownFailures: [String: String] = [:]
     /// Where each picked ticket's branch is read from, so a resolve, a push or ↻ reads it again.
     private var shownWhere: [String: (root: String, branch: String)] = [:]
@@ -392,6 +394,7 @@ public actor EditorTicketStore {
             }
             guard gen == generation else { return }
             shownReads[key] = state
+            shownReadAt[key] = now()
             shownFailures[key] = nil
         } catch {
             guard gen == generation else { return }
@@ -419,6 +422,13 @@ public actor EditorTicketStore {
             Task { await self.refreshShown(key: key) }
         }
     }
+
+    /// Whether a picked ticket's branch is old enough that Wakil coming back reads it again: never
+    /// read, or over 60 s, by the store's clock.
+    public func shownStale(key: String) -> Bool { ticketStale(lastRead: shownReadAt[key], now: now()) }
+
+    /// How long ago In flight last came back, by the store's clock; nil before a read.
+    public func inFlightAge() -> TimeInterval? { inFlightReadAt.map { now().timeIntervalSince($0) } }
 
     /// The branches read for tickets picked from In flight, by key, and why one was not.
     public func shownBranches() -> [String: TicketBranchState] { shownReads }
@@ -711,6 +721,7 @@ public actor EditorTicketStore {
         records = [:]
         recordFailures = [:]
         shownReads = [:]
+        shownReadAt = [:]
         shownFailures = [:]
         shownWhere = [:]
         handOffShown = nil
