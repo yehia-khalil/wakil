@@ -24,8 +24,8 @@ import Testing
 
     /// The tip names Close Tab's chord in force, so a rebinding reaches it.
     @Test func tipNamesTheChordInForce() {
-        #expect(BrowserPinnedClose.tip(KeyChord("⌘W")) == "Press ⌘W again to close")
-        #expect(BrowserPinnedClose.tip(KeyChord("⌃⌘W")) == "Press ⌃⌘W again to close")
+        #expect(BrowserPinnedClose.tip("⌘W") == "Press ⌘W again to close")
+        #expect(BrowserPinnedClose.tip("⌃⌘W") == "Press ⌃⌘W again to close")
         #expect(BrowserPinnedClose.tip(nil) == "Choose Close Tab again to close")
     }
 }

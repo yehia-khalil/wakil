@@ -18,9 +18,9 @@ public struct BrowserCloseArm: Sendable, Equatable {
 /// tab, or after the window, arms again instead.
 public enum BrowserPinnedClose {
     public static let window: TimeInterval = 2
-    /// The tip under an armed pinned tab, naming Close Tab's chord in force (`chord`).
-    public static func tip(_ chord: KeyChord?) -> String {
-        chord.map { "Press \($0.text) again to close" } ?? "Choose Close Tab again to close"
+    /// The tip under an armed pinned tab, naming Close Tab's chord in force (`chord`, its text).
+    public static func tip(_ chord: String?) -> String {
+        chord.map { "Press \($0) again to close" } ?? "Choose Close Tab again to close"
     }
 
     public enum Outcome: Sendable, Equatable { case arm, close }

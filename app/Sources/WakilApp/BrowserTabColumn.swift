@@ -372,7 +372,7 @@ struct BrowserTabColumn: View {
     private func tip(_ list: BrowserStripEntries) -> PaneStripTip? {
         closeArmed.flatMap { tab in
             list.index(ofTab: tab).map {
-                PaneStripTip(index: $0, text: BrowserPinnedClose.tip(keymap.chord("browser.closeTab")), identifier: "browser.tab.\(tab).closeTip")
+                PaneStripTip(index: $0, text: BrowserPinnedClose.tip(keymap.chord("browser.closeTab")?.text), identifier: "browser.tab.\(tab).closeTip")
             }
         }
     }

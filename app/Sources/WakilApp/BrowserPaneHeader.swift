@@ -351,7 +351,7 @@ struct BrowserTabList: View {
             bare: { if case .chip = entries[$0] { true } else { false } },
             tip: closeArmed.flatMap { tab in
                 list.index(ofTab: tab).map {
-                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip(keymap.chord("browser.closeTab")), identifier: "browser.tab.\(tab).closeTip")
+                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip(keymap.chord("browser.closeTab")?.text), identifier: "browser.tab.\(tab).closeTip")
                 }
             },
             section: PaneStripSection(
