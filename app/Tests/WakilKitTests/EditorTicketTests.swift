@@ -6,6 +6,8 @@ import Testing
 /// `ticket_branch` until `release()`, latched; `hangBranch` sleeps until cancelled.
 actor FakeTicket: ToolCaller {
     var replies: [String: JSONValue] = [:]       // tool -> structuredContent
+    var branchReplies: [String: JSONValue] = [:] // "<root>:<branch>" -> ticket_branch's structuredContent
+    var branchErrors: [String: String] = [:]     // "<root>:<branch>" -> ticket_branch's isError text
     var errors: [String: String] = [:]           // tool -> isError text
     var calls: [(name: String, args: JSONValue)] = []
     var slowBranch = false
@@ -19,6 +21,9 @@ actor FakeTicket: ToolCaller {
     private var parked: [CheckedContinuation<Void, Never>] = []
 
     func set(_ tool: String, _ content: JSONValue) { replies[tool] = content }
+    /// `ticket_branch`'s answer for one root and branch, over `set`'s.
+    func setBranch(root: String, branch: String, _ content: JSONValue) { branchReplies["\(root):\(branch)"] = content }
+    func failBranch(root: String, branch: String, _ text: String) { branchErrors["\(root):\(branch)"] = text }
     func fail(_ tool: String, _ text: String?) { errors[tool] = text }
     func setSlowBranch(_ on: Bool) { slowBranch = on; released = false }
     func setHangBranch(_ on: Bool) { hangBranch = on }
@@ -48,14 +53,17 @@ actor FakeTicket: ToolCaller {
             || (name == "ticket_drafts" && slowDrafts) || (name == "ticket_in_flight" && slowInFlight) {
             await withCheckedContinuation { c in Task { self.park(c) } }
         }
-        if let e = errors[name] {
+        var at = ""
+        if name == "ticket_branch", case .object(let a) = arguments, case .string(let root)? = a["root"],
+           case .string(let branch)? = a["branch"] { at = "\(root):\(branch)" }
+        if let e = branchErrors[at] ?? errors[name] {
             return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(e)])])])
         }
         if replies[name] == nil, name == "ticket_draft_write" { writeDraft(arguments) }
         if replies[name] == nil, name == "ticket_drafts" || name == "ticket_draft_write" {
             return .object(["structuredContent": .object(["drafts": .object(drafts)])])
         }
-        return .object(["structuredContent": replies[name] ?? .object([:])])
+        return .object(["structuredContent": branchReplies[at] ?? replies[name] ?? .object([:])])
     }
 
     /// `WriteTicketDraft`'s rule (internal/wakilcore/ticketdrafts.go): no text removes; an agent's draft
@@ -77,15 +85,17 @@ actor FakeTicket: ToolCaller {
 
 /// `ticket_branch`'s answer for `ini-142-login` on `/p/api`: INI-142 marked, PR #212 with two open
 /// threads, one outdated and one resolved.
-func ticketBranchJSON(root: String = "/p/api", branch: String = "ini-142-login") -> JSONValue {
+func ticketBranchJSON(root: String = "/p/api", branch: String = "ini-142-login", repo: String = "github.com/initech/api",
+                      pr: Int = 212, threads: String = "T") -> JSONValue {
+    let prefix = threads
     func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = false, resolved: Bool = false) -> JSONValue {
-        .object(["id": .string(id), "path": .string(path), "line": .integer(Int64(line)),
+        .object(["id": .string(prefix + id.dropFirst()), "path": .string(path), "line": .integer(Int64(line)),
                  "outdated": .bool(outdated), "resolved": .bool(resolved),
                  "comments": .array([.object(["author": .string("reviewer"), "body": .string("Nit: the error should name the host"),
                                               "createdAt": .string("2026-10-26T09:00:00Z")])])])
     }
     return .object([
-        "root": .string(root), "repo": .string("github.com/initech/api"), "branch": .string(branch),
+        "root": .string(root), "repo": .string(repo), "branch": .string(branch),
         "viewer": .string("me"), "longLived": .bool(false),
         "tickets": .array([.object(["key": .string("INI-142"), "title": .string("Sign-in keeps the last organization"),
                                     "status": .string("In Progress"), "assignee": .string("me"), "url": .string(""),
@@ -95,7 +105,7 @@ func ticketBranchJSON(root: String = "/p/api", branch: String = "ini-142-login")
                                                        "decisions": .array([]), "notDone": .array([]), "waitingOn": .array([]),
                                                        "verified": .array([]), "rulings": .array([])])])]),
         "looked": .array([]), "linked": .bool(false),
-        "prs": .array([.object(["number": .integer(212), "title": .string("Sign-in"), "body": .string(""), "url": .string(""),
+        "prs": .array([.object(["number": .integer(Int64(pr)), "title": .string("Sign-in"), "body": .string(""), "url": .string(""),
                                 "state": .string("open"), "head": .string(branch), "base": .string("main"),
                                 "headSHA": .string("abc123"), "author": .string("me"), "checks": .array([]),
                                 "threads": .array([thread("T2", "src/auth/token.go", 41), thread("T1", "src/auth/session.go", 88),
@@ -440,6 +450,58 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(await store.branch(root: "/p/api") == nil)
         #expect(await store.allDrafts().isEmpty)
         #expect(!(await store.reading(root: "/p/api")))
+    }
+
+    // MARK: A ticket's pull requests across repositories and branches (walk 2026-10-29)
+
+    /// The other branches carrying a shown ticket — any root, any repository — are read, each failure
+    /// kept whole by its branch; the branch already shown is not read again; their threads are found.
+    @Test(.timeLimit(.minutes(1))) func aTicketsOtherBranchesAreRead() async throws {
+        let fake = FakeTicket()
+        await fake.set("ticket_in_flight", .object([
+            "waitingOnYou": .array([]), "partial": .array([]), "count": .integer(0),
+            "inFlight": .array([
+                .object(["key": .string("INI-142"), "root": .string("/p/api"), "branch": .string("ini-142-login"), "pr": .integer(212)]),
+                .object(["key": .string("INI-142"), "root": .string("/p/web"), "branch": .string("ini-142-web"), "pr": .integer(7)]),
+                .object(["key": .string("INI-142"), "root": .string("/p/api"), "branch": .string("ini-142-hotfix")]),
+                .object(["key": .string("INI-150"), "root": .string("/p/web"), "branch": .string("ini-150-other")]),
+            ]),
+        ]))
+        await fake.setBranch(root: "/p/web", branch: "ini-142-web",
+                             ticketBranchJSON(root: "/p/web", branch: "ini-142-web", repo: "github.com/initech/web", pr: 7, threads: "W"))
+        await fake.failBranch(root: "/p/api", branch: "ini-142-hotfix", "GitHub said no")
+        let store = EditorTicketStore(ticket: fake)
+        _ = try await store.inFlight()
+        await store.readTicketBranches(key: "INI-142", except: TicketShownAt(root: "/p/api", branch: "ini-142-login"))
+        let also = await store.ticketBranchReads()["INI-142"] ?? []
+        #expect(also.map(\.branch) == ["ini-142-web"])
+        #expect(also.first?.prs.map(\.number) == [7])
+        #expect(await store.ticketBranchFailures()["INI-142"] == ["ini-142-hotfix: GitHub said no"])
+        let read = await fake.calls.filter { $0.name == "ticket_branch" }.compactMap { c -> String? in
+            guard case .object(let a) = c.args, case .string(let b)? = a["branch"] else { return nil }
+            return b
+        }
+        #expect(read.sorted() == ["ini-142-hotfix", "ini-142-web"])
+        #expect(await store.branch(holding: "W2")?.branch == "ini-142-web")
+    }
+
+    /// The Pull requests section's groups: one per repository, the shown branch's first, each PR once.
+    @Test func aTicketsPullRequestsGroupByRepository() throws {
+        func b(_ json: JSONValue) throws -> TicketBranchState {
+            guard case .object(let o) = json else { throw TicketReadError(description: "not an object") }
+            return try ticketDecode(TicketBranchState.self, o, tool: "t")
+        }
+        let api = try b(ticketBranchJSON())
+        let hotfix = try b(ticketBranchJSON(branch: "ini-142-hotfix", pr: 213, threads: "H"))
+        let web = try b(ticketBranchJSON(root: "/p/web", branch: "ini-142-web", repo: "github.com/initech/web", pr: 7, threads: "W"))
+        let again = try b(ticketBranchJSON(root: "/p/api-2", branch: "ini-142-login"))
+        let groups = ticketPRGroups(primary: api, others: [web, hotfix, again])
+        #expect(groups.map(\.name) == ["api", "web"])
+        #expect(groups.map { $0.prs.map(\.number) } == [[212, 213], [7]])
+        let merged = ticketMergedBranch(primary: api, others: [web, hotfix, again])
+        #expect(merged.prs.map(\.number) == [212, 213, 7])
+        #expect(merged.viewer == "me")
+        #expect(ticketPRGroups(primary: api, others: []).map(\.name) == ["api"])
     }
 
     // MARK: Cover fixes

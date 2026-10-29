@@ -781,6 +781,10 @@ public struct EditorTicketViewState: Sendable, Equatable {
     /// The branch of a ticket picked from In flight, by key, and why one could not be read.
     public var shownBranches: [String: TicketBranchState]
     public var shownBranchFailures: [String: String]
+    /// A shown ticket's other branches — any root or repository — by key, and why one could not be
+    /// read, whole (walk 2026-10-29: the Pull requests section is the ticket's).
+    public var ticketBranches: [String: [TicketBranchState]]
+    public var ticketBranchFailures: [String: [String]]
     /// Why the organisation's reply drafts could not be read, whole; nil after a load that came back.
     public var draftsFailure: String?
     /// The Hand to agent popover, while it is open (ticket noticing, Task 10).
@@ -795,12 +799,14 @@ public struct EditorTicketViewState: Sendable, Equatable {
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
                 failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],
                 recordFailures: [String: String] = [:], shownBranches: [String: TicketBranchState] = [:],
-                shownBranchFailures: [String: String] = [:], draftsFailure: String? = nil,
+                shownBranchFailures: [String: String] = [:], ticketBranches: [String: [TicketBranchState]] = [:],
+                ticketBranchFailures: [String: [String]] = [:], draftsFailure: String? = nil,
                 handoff: TicketHandOffState? = nil, handOffLive: [String: TicketHandOffLive] = [:],
                 liveHandOffs: [TicketLiveHandOff] = []) {
         self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
         self.inFlight = inFlight; self.records = records; self.recordFailures = recordFailures
         self.shownBranches = shownBranches; self.shownBranchFailures = shownBranchFailures
+        self.ticketBranches = ticketBranches; self.ticketBranchFailures = ticketBranchFailures
         self.draftsFailure = draftsFailure; self.handoff = handoff; self.handOffLive = handOffLive
         self.liveHandOffs = liveHandOffs
     }
@@ -872,4 +878,38 @@ public struct TicketFieldCommits: Sendable, Equatable {
         sent = now
         return now
     }
+}
+
+/// One repository's pull requests in a ticket's Pull requests section (walk 2026-10-29): the
+/// repository's key and its name as drawn (`api` of `github.com/initech/api`).
+public struct TicketPRGroup: Sendable, Equatable {
+    public let repo: String
+    public let name: String
+    public let prs: [PullRequestState]
+}
+
+/// A ticket's pull requests by repository: the shown branch's repository first, then each other in the
+/// order its branches come; a PR two branches or roots both read (one repository, one number) once.
+public func ticketPRGroups(primary: TicketBranchState?, others: [TicketBranchState]) -> [TicketPRGroup] {
+    var order: [String] = []
+    var prs: [String: [PullRequestState]] = [:]
+    for b in [primary].compactMap { $0 } + others {
+        if prs[b.repo] == nil { order.append(b.repo); prs[b.repo] = [] }
+        for pr in b.prs where !(prs[b.repo] ?? []).contains(where: { $0.number == pr.number }) {
+            prs[b.repo, default: []].append(pr)
+        }
+    }
+    return order.compactMap { repo in
+        guard let list = prs[repo], !list.isEmpty || repo == primary?.repo else { return nil }
+        let name = repo.split(separator: "/").last.map(String.init) ?? repo
+        return TicketPRGroup(repo: repo, name: name.isEmpty ? repo : name, prs: list)
+    }
+}
+
+/// The shown branch with every pull request of the ticket in it (`ticketPRGroups`' order): what the
+/// section's waiting-on line and threads count over.
+public func ticketMergedBranch(primary: TicketBranchState, others: [TicketBranchState]) -> TicketBranchState {
+    var merged = primary
+    merged.prs = ticketPRGroups(primary: primary, others: others).flatMap(\.prs)
+    return merged
 }

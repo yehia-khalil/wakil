@@ -259,6 +259,12 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
     /// branch reads and shows the second's branch, never the first's; the key alone picks the first.
     @Test func aPickedRowShowsItsOwnBranch() async throws {
         let f = try await ticketFixture()
+        // Its branch was read — among the ticket's other branches, which are read beside it (walk 2026-10-29).
+        func branchRead(_ branch: String) async -> Bool {
+            await f.ticket.calls.contains { c in
+                c.name == "ticket_branch" && c.args == .object(["root": .string("/p/api"), "branch": .string(branch)])
+            }
+        }
         _ = try await f.store.read(root: "/p/api")
         func row(_ branch: String, pr: Int) -> JSONValue {
             .object(["key": .string("INI-140"), "title": .string("Deploy"), "status": .string("To Do"),
@@ -274,7 +280,7 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140"),
                                              "root": .string("/p/api"), "branch": .string("ini-140-hotfix")],
                              origin: .ui, confirmation: nil)
-        #expect(await f.ticket.args("ticket_branch") == ["root": .string("/p/api"), "branch": .string("ini-140-hotfix")])
+        #expect(await branchRead("ini-140-hotfix"))
         let c = await f.editor.snapshot().column
         #expect(c?.ticketShown == "INI-140")
         #expect(c?.ticketShownAt == TicketShownAt(root: "/p/api", branch: "ini-140-hotfix"))
@@ -289,7 +295,7 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         // The key alone (the several pick, an agent naming a key) picks the first row, as before.
         await f.ticket.set("ticket_branch", ticketBranchJSON(branch: "ini-140-deploy"))
         try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140")], origin: .ui, confirmation: nil)
-        #expect(await f.ticket.args("ticket_branch") == ["root": .string("/p/api"), "branch": .string("ini-140-deploy")])
+        #expect(await branchRead("ini-140-deploy"))
         #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/p/api", branch: "ini-140-deploy"))
     }
 

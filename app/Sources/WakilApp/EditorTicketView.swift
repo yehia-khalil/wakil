@@ -259,7 +259,7 @@ struct EditorTicketView: View {
         TicketSlab(title: "Ticket", id: "editor.ticket.pm") {
             header(key: t.key, url: t.url.isEmpty ? t.record.seen.url : t.url, title: t.title, status: t.status, linked: b.linked)
         }
-        pullRequests(b, waiting: ticketWaitingOn(b, record: t.record), threads: ticketThreadsWaitingOnViewer(b))
+        pullRequests(b, key: t.key, record: t.record)
         context {
             nextField(b)
             record(t.record)
@@ -293,7 +293,7 @@ struct EditorTicketView: View {
             if b.linked { unlinkButton(b) }
         }
         }
-        pullRequests(b, waiting: [], threads: ticketThreadsWaitingOnViewer(b))
+        pullRequests(b, key: nil, record: nil)
         context {
             nextField(b)
             if let target = ticketNextTarget(b), let t = b.tickets.first(where: { $0.key == target.key }) { record(t.record) }
@@ -327,7 +327,7 @@ struct EditorTicketView: View {
                 whole(linkNote, id: "editor.ticket.linkNote")
             }
         }
-        pullRequests(b, waiting: [], threads: ticketThreadsWaitingOnViewer(b))
+        pullRequests(b, key: nil, record: nil)
         // A pull request with no ticket keeps no record; it can still be handed to an agent.
         if ticketHandOffHeaderParams(state, column: column, root: root) != nil {
             context {
@@ -406,7 +406,7 @@ struct EditorTicketView: View {
                    linked: false)
         }
         if let own {
-            pullRequests(own, waiting: ticketWaitingOn(own, record: record), threads: ticketThreadsWaitingOnViewer(own))
+            pullRequests(own, key: key, record: record)
         } else if let failure = state.shownBranchFailures[key] {
             TicketSlab(title: "Pull requests", id: "editor.ticket.prs") { whole(failure, id: "editor.ticket.shownFailure") }
         } else if let row, !row.branch.isEmpty {
@@ -516,20 +516,36 @@ struct EditorTicketView: View {
 
     /// **Pull requests**: what GitHub says, in one slab (walk 2026-10-29) — whom it waits on, the PRs
     /// as hairline cards (number and title, the state and checks pills, the base, each failing check),
-    /// then **Threads**, every open one across them.
+    /// then **Threads**, every open one across them. The ticket's (`key`), not one branch's: every
+    /// branch In flight holds for it, any root or repository, its PRs under its repository's name when
+    /// there are two or more; a branch that could not be read says so, whole (Rule 8).
     @ViewBuilder
-    private func pullRequests(_ b: TicketBranchState, waiting: [String], threads waitingThreads: Int) -> some View {
-        let line = ticketWaitingLine(waiting, threads: waitingThreads)
-        let threads = ticketBranchThreads(b.prs)
+    private func pullRequests(_ b: TicketBranchState, key: String?, record: TicketRecordState?) -> some View {
+        let others = key.flatMap { state.ticketBranches[$0] } ?? []
+        let groups = ticketPRGroups(primary: b, others: others)
+        let merged = ticketMergedBranch(primary: b, others: others)
+        let line = key == nil ? nil : ticketWaitingLine(ticketWaitingOn(merged, record: record), threads: ticketThreadsWaitingOnViewer(merged))
+        let threads = ticketBranchThreads(merged.prs)
         TicketSlab(title: "Pull requests", id: "editor.ticket.prs") {
             if let line {
                 Text(line).dimmed().font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("editor.ticket.waiting")
             }
-            if b.prs.isEmpty {
-                Text("None open for this branch").dimmed().font(.system(size: 11.5))
+            if merged.prs.isEmpty {
+                Text("None open for this ticket").dimmed().font(.system(size: 11.5))
             }
-            ForEach(b.prs, id: \.number) { pr in prCard(pr) }
+            ForEach(groups, id: \.repo) { g in
+                if groups.count > 1 {
+                    Text(g.name).font(.system(size: 11, design: .monospaced)).foregroundStyle(EditorPaneStyle.text.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                        .accessibilityIdentifier("editor.ticket.repo:\(g.name)")
+                }
+                ForEach(g.prs, id: \.number) { pr in prCard(pr) }
+            }
+            ForEach(key.flatMap { state.ticketBranchFailures[$0] } ?? [], id: \.self) { failure in
+                whole(failure, id: "editor.ticket.branchFailure")
+            }
             if !threads.isEmpty {
                 // The label and its count at either end; read aloud as one: "Threads · 2 open".
                 HStack(alignment: .firstTextBaseline) {

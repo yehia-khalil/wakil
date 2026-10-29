@@ -53,6 +53,13 @@ public actor EditorTicketStore {
     /// The branch of a ticket picked from In flight, read by its row's root and branch, by key; and
     /// why one could not be read. The root's own read and current branch are untouched (Rule 6).
     private var shownReads: [String: TicketBranchState] = [:]
+    /// Each shown ticket's other branches — every In flight row of its key, any root or repository, but
+    /// the one shown — by key, then by `<root>:<branch>`; and why one could not be read, whole (walk
+    /// 2026-10-29: the Pull requests section is the ticket's, not one branch's).
+    private var alsoReads: [String: [String: TicketBranchState]] = [:]
+    private var alsoFailures: [String: [String]] = [:]
+    /// The branch each key's other branches were read beside, so In flight landing can read them again.
+    private var alsoExcept: [String: TicketShownAt?] = [:]
     /// When each picked ticket's branch last came back, by the store's clock.
     private var shownReadAt: [String: Date] = [:]
     private var shownFailures: [String: String] = [:]
@@ -175,6 +182,11 @@ public actor EditorTicketStore {
         current[key.root] = branch
         failures[key.root] = nil
         flights[key] = nil
+        // The tickets it carries: their other branches, for the Pull requests section.
+        for t in state.tickets {
+            let at = TicketShownAt(root: key.root, branch: branch)
+            Task { await self.readTicketBranches(key: t.key, except: at) }
+        }
     }
 
     private func fail(_ key: ReadKey, id: UUID, generation gen: Int, _ error: Error) {
@@ -248,9 +260,14 @@ public actor EditorTicketStore {
         inFlightFlight = nil
         switch outcome {
         case .success(let state):
+            let rowsBefore = inFlightRead.map { Self.branchRows($0) }
             inFlightRead = state
             inFlightReadAt = now()
             inFlightFailureText = nil
+            // A ticket whose rows changed has its other branches read again.
+            for (key, except) in alsoExcept where rowsBefore?[key] != Self.branchRows(state)[key] {
+                Task { await self.readTicketBranches(key: key, except: except) }
+            }
         case .failure(let error) where error is CancellationError: break
         case .failure(let error): inFlightFailureText = String(describing: error)
         }
@@ -395,6 +412,7 @@ public actor EditorTicketStore {
             guard gen == generation else { return }
             shownReads[key] = state
             shownReadAt[key] = now()
+            Task { await self.readTicketBranches(key: key, except: TicketShownAt(root: root, branch: branch)) }
             shownFailures[key] = nil
         } catch {
             guard gen == generation else { return }
@@ -421,6 +439,58 @@ public actor EditorTicketStore {
         for (key, at) in shownWhere where at.root == root && (branch == nil || at.branch == branch) {
             Task { await self.refreshShown(key: key) }
         }
+    }
+
+    /// Reads every branch In flight holds for `key` — any root, any repository — but `except`, the one
+    /// already shown, all at once, and keeps each by `<root>:<branch>`; one that fails is kept whole,
+    /// named by its branch (Rule 8). Not a key In flight holds: nothing is read.
+    public func readTicketBranches(key: String, except: TicketShownAt?) async {
+        let wanted = (Self.branchRows(inFlightRead ?? InFlightState())[key] ?? []).filter { $0 != except }
+        alsoExcept[key] = except
+        guard !wanted.isEmpty || alsoReads[key] != nil else { return }
+        let (ticket, limit, gen) = (self.ticket, self.readLimit, generation)
+        var got: [String: TicketBranchState] = [:]
+        var failed: [String] = []
+        await withTaskGroup(of: (TicketShownAt, Result<TicketBranchState, Error>).self) { group in
+            for at in wanted {
+                group.addTask {
+                    do {
+                        let state = try await ActionRegistry.$dispatchCaller.withValue(nil) {
+                            try await Self.readBranch(ticket, root: at.root, branch: at.branch, limit: limit)
+                        }
+                        return (at, .success(state))
+                    } catch { return (at, .failure(error)) }
+                }
+            }
+            for await (at, outcome) in group {
+                switch outcome {
+                case .success(let state): got[at.id] = state
+                case .failure(let error): failed.append("\(at.branch): \(error)")
+                }
+            }
+        }
+        guard gen == generation else { return }
+        alsoReads[key] = got
+        alsoFailures[key] = failed.isEmpty ? nil : failed.sorted()
+        await changed()
+    }
+
+    /// A shown ticket's other branches, by key, in `<root>:<branch>` order.
+    public func ticketBranchReads() -> [String: [TicketBranchState]] {
+        alsoReads.mapValues { m in m.keys.sorted().compactMap { m[$0] } }
+    }
+
+    /// Why a shown ticket's other branch could not be read, whole, by key.
+    public func ticketBranchFailures() -> [String: [String]] { alsoFailures }
+
+    /// Each key's branches In flight holds, once each, in the order first seen.
+    private static func branchRows(_ s: InFlightState) -> [String: [TicketShownAt]] {
+        var out: [String: [TicketShownAt]] = [:]
+        for r in s.waitingOnYou + s.inFlight where !r.key.isEmpty && !r.root.isEmpty && !r.branch.isEmpty {
+            let at = TicketShownAt(root: r.root, branch: r.branch)
+            if !(out[r.key] ?? []).contains(at) { out[r.key, default: []].append(at) }
+        }
+        return out
     }
 
     /// Whether a picked ticket's branch is old enough that Wakil coming back reads it again: never
@@ -495,7 +565,7 @@ public actor EditorTicketStore {
 
     /// The thread by its id, in any cached read.
     public func thread(_ id: String) -> ReviewThreadState? {
-        for state in cache.values.map(\.state) + shownReads.values {
+        for state in cache.values.map(\.state) + shownReads.values + alsoReads.values.flatMap(\.values) {
             for pr in state.prs { if let t = pr.threads.first(where: { $0.id == id }) { return t } }
         }
         return nil
@@ -593,6 +663,7 @@ public actor EditorTicketStore {
     public func branch(holding thread: String) -> TicketBranchState? {
         let reads = cache.filter { current[$0.key.root] == $0.key.branch }.map(\.value.state)
             + cache.filter { current[$0.key.root] != $0.key.branch }.map(\.value.state) + shownReads.values
+            + alsoReads.values.flatMap(\.values)
         return reads.first { $0.prs.contains { $0.threads.contains { $0.id == thread } } }
     }
 
@@ -722,6 +793,9 @@ public actor EditorTicketStore {
         recordFailures = [:]
         shownReads = [:]
         shownReadAt = [:]
+        alsoReads = [:]
+        alsoFailures = [:]
+        alsoExcept = [:]
         shownFailures = [:]
         shownWhere = [:]
         handOffShown = nil

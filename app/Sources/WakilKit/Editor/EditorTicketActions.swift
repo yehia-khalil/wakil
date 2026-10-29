@@ -112,6 +112,8 @@ func registerTicketActions(
                                          recordFailures: await store.shownRecordFailures(),
                                          shownBranches: await store.shownBranches(),
                                          shownBranchFailures: await store.shownBranchFailures(),
+                                         ticketBranches: await store.ticketBranchReads(),
+                                         ticketBranchFailures: await store.ticketBranchFailures(),
                                          draftsFailure: await store.draftsFailure(), handoff: await store.handOff())
         await panes.setEditorTicketMirror(
             EditorTicketMirror(roots: rs, byRoot: byRoot,
