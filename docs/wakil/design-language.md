@@ -11,7 +11,7 @@
    One sidebar is sanctioned, inside a pane: the editor's left column (§11), shown and
    hidden only by the operator or the agent — ⌘B, ⌘⇧F, ⌘⇧G, its toggle, `editor_tree` —
    and never by width.
-   **The background-agent chips are the only always-on chrome outside the context line**
+   **The background-agent chips are the first always-on chrome outside the context line**
    (Decision 41). One chip per agent in another place, top right of the window, reading
    `<org> · <project> · <environment>`; a click goes there. They exist only while there is
    work elsewhere: no agents elsewhere, no chips. At most two are drawn in full; the rest
@@ -527,7 +527,8 @@ size, word wrap, autosave and whether gitignored files are shown. Keyboard (Deci
 lists every menu command with its chord and a recorder, and the keys that are fixed.
 
 A Jira account is one login serving every project → Organization. A database belongs to a
-specific project's environment → Project → environment.
+specific project's environment → Project → environment. This is why the DB user/password
+fields sit under Project, and Jira auth under Organization.
 
 **The org owns the set of providers, not which one is running.** An org may hold several
 (`wakil provider add <id> --kind claude-code --config-dir <dir> --org <org>`, run more
@@ -591,6 +592,8 @@ closed; the state is the window's, never persisted, and changes only by the oper
 - Commit-history / branch graph in the editor's Changes (deferred).
 - Side-by-side diff in the editor's Changes (deferred; inline only).
 - Grid snapping in addition to pane-to-pane magnetism.
+- **Settled:** a standalone dual-driven project-explorer pane — no. The editor's left column
+  (§11) is the explorer, dual-driven through `editor_tree`, with ⌘P beside it.
 - **The room's motion numbers are untuned.** Thinking's 12s turnover and drift magnitude,
   and the other states' amplitude ranges, were invented, not measured. They live in one
   file (`WakilKit/Visual/CoreMotion.swift`) so tuning is a one-file edit. The open

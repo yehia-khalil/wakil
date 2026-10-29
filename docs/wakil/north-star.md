@@ -167,12 +167,12 @@ true of 55 of the 92 entries and 14 listed here.
 | 24 | A pane's readable state is a discriminated union keyed by `kind` | a pane kind needs a second discriminator |
 | 25 | A write's price rides on the action, not on its kind | a price must vary on a second axis |
 | 26 | An environment declares whether it is production; its name supplies only the default | the flag is edited so rarely the name still rules |
-| 27 | An agent's write to a draft request is refused while the operator has unsaved edits in it | the refusal fires in ordinary two-handed work |
+| 27 | An agent's write to a draft request is refused while the operator has unsaved edits in it; the DB pane's adopt-when-untouched rule does not transfer | the refusal fires in ordinary two-handed work |
 | 28 | A provider's credential is the config dir plus a `setup-token` Wakil mints itself, and Wakil never implements refresh | the CLI can refresh an idle config dir |
 | 29 | Go is the only process that writes the Keychain; a provider credential is minted and stored atomically there | the journal can carry a secret without serialising it |
 | 30 | Settings is a pane the agent may read and never drive | a settings action carries no credential |
 | 31 | `ProviderLogin` is a kind-keyed protocol; the seam splits at the human, not the language | a second kind shares Claude's mint shape |
-| 32 | An organisation unlinks a binding, never removes a provider; `home` is an artefact | `claude` revokes per config dir, not per machine |
+| 32 | An organisation unlinks a binding, never removes a provider; `home` is an artefact, not a setting | `claude` revokes per config dir, not per machine |
 | 36 | The editor is the project's one code surface: file write earns its way in, and the Git pane folds into it | an editor write reaches what the agent's own tools cannot |
 | 41 | Each agent keeps the place it started in, and switching tears nothing down | agents should follow the operator |
 
@@ -256,10 +256,7 @@ exit criterion; walk findings are in `phase-log.md`.
 | **Keyboard** | One keymap; Settings → Keyboard rebinds menu commands | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
-
 ## 9. Glossary
-
-Terms coined for this project. Phase specs must use them consistently.
 
 Terms coined for this project. Phase specs must use them consistently.
 
@@ -272,7 +269,7 @@ Terms coined for this project. Phase specs must use them consistently.
 | **Connection** | An authenticated account at the organization level: a Jira site, a Slack workspace, a mailbox. |
 | **Scope** | A project-level narrowing of a connection: a Jira project key, a channel list, an email label set. |
 | **Layout scope** | What a pane arrangement is filed under: the organization, project, environment and — once a conversation exists — its lineage root. The one key both pane stores and layout persistence share. **Not a Scope** — that narrows a connection; this names a canvas. |
-| **Lineage root** | The oldest ancestor of a session: the identity a conversation — a chain of sessions — keeps across every resume that forked it. What ⌘P collapses a chain to. |
+| **Lineage root** | The oldest ancestor of a session: the identity a conversation — a chain of sessions — keeps across every resume that forked it. What ⌘P collapses a chain to, and what an arrangement is filed under. |
 | **Place** | An (organization, project, environment); one agent at most (Decision 41). |
 | **Active context** | The place on screen. Agents resolve against their own. |
 | **Capability layer** | Headless, UI-free operations ("run this SQL, return rows"). Separate processes, usable without Wakil.app. |
