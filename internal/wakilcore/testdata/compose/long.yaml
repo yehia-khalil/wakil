@@ -1,0 +1,19 @@
+x-common: &common
+  image: redis:7
+services:
+  cache:
+    <<: *common
+    ports:
+      - target: 6379
+        published: 6380
+        protocol: tcp
+        mode: host
+      - target: 80
+        published: "${WEB_PORT}"
+      - target: 9229
+  "odd name":
+    image: busybox
+    ports:
+      - target: 7000
+        published: "7000-7001"
+        host_ip: 127.0.0.1
