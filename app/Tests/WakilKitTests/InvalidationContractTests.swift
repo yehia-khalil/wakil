@@ -34,6 +34,12 @@ private let orgDerived: Set<String> = [
     // 3a-v-b: the outgoing org's roots' stash clashes (R4, mirrored from the status, which resets) and the
     // operations whose prepared message already filled a box.
     "changesClashes", "changesFilledFrom",
+    // Ticket view: the branch each of the outgoing org's roots was on; `invalidateForOrgChange` empties it.
+    "ticketBranches",
+    // Ticket noticing: the outgoing org's last In flight read, and the 2-minute read that would read it
+    // again. `invalidateForOrgChange` empties the one and cancels the other; the switch reads the
+    // incoming org and starts the read again (WindowModelTicketNoticingTests.orgSwitchEmptiesNeedsAndReadsTheNewOrg).
+    "ticketNeeds", "ticketPollTask",
     "project", "projectKey", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
@@ -122,6 +128,12 @@ private let orgDerived: Set<String> = [
     // 3b-ii PR 7: the trees' mirror of the file list — the outgoing project's listings. Emptied
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "editorFiles",
+    // Ticket view: the review boxes' threads, drafts and head texts — the outgoing org's reads.
+    // Emptied, with the panes' own copy (`resetEditorTicket`).
+    "editorReviews",
+    // Ticket view: what the Ticket views draw — the outgoing org's reads, In flight and records.
+    // Emptied, with the panes' own copy (`resetEditorTicket`).
+    "editorTicket",
     // 3b-iii PR 1: the window's mirror of the git status, the outgoing org's roots. Reset in the
     // same place as `gitStatus` (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitRoots",
@@ -207,8 +219,16 @@ private let orgIndependent: Set<String> = [
     // app's activity are no organisation's.
     "backgroundFetchInterval", "backgroundFetchSleep", "backgroundFetchTask", "appActive",
     "backgroundFetchTimeout", "backgroundFetchCurrent",
+    // Ticket noticing: whether the screen is locked is the Mac's, and the 2-minute read's interval and
+    // sleep are no organisation's.
+    "screenLocked", "ticketPollInterval", "ticketPollSleep",
     // 3a-iii-b: the box is keyed by organisation itself; no switch empties it.
     "agentInstructionsBox",
+    // Keyed by organisation like the box above.
+    "agentConnectionsBox", "connectionsUnavailable", "agentConnectionsReadTimeout",
+    // Settings → Connections: how a check runs and how a page opens are wiring, and the accounts
+    // are keyed by organisation.
+    "connectionLister", "openURL", "connectionAccounts",
     // 2d-ii: the operator's hand on ⌥, not either organisation's state.
     "isListening",
     // 2e (#202). Both are injected at construction and describe HOW to
@@ -412,6 +432,9 @@ private let orgDerivedBehindAReference: Set<String> = [
     // 3b-iii PR 1: one for the window's life (the wiring's), its CONTENTS the status of the screen's
     // roots. `invalidateForOrgChange` resets it (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitStatus",
+    // Ticket view: one store for the window's life (the wiring's), its CONTENTS the outgoing org's
+    // reads, drafts and flights. `invalidateForOrgChange` resets it (EditorTicketTests.aReadFromTheOldOrgIsDropped).
+    "ticket",
     // 2e (#202). `providerLoginSession` is exactly the shape this third
     // bucket was created for: the reference is stable — every login goes
     // through the one session this window owns — while its CONTENTS are

@@ -76,7 +76,7 @@ Rules no phase may break.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Ten have earned in; the justification
+   deliberate justification, never by default. Twelve have earned in; the justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
    writes that have earned in"*.
 
@@ -91,7 +91,9 @@ Rules no phase may break.
    | Fetch, pull, push, sync, clone — remote git, with the organisation's account | wakil-git | 2026-10-22 |
    | Switch, create, rename, delete branches; stash, apply, pop, drop — local git inside the roots | wakil-git | 2026-10-23 |
    | Merge, rebase, continue, skip, abort, resolve — local git inside the roots | wakil-git | 2026-10-24 |
+   | A connection's tool the operator allowed | wakil-connect | 2026-10-25 |
    | Act in a web page — click, type, select, press — on a site the operator allowed for the conversation; every act on a production host gated | the browser | 2026-10-25 |
+   | Reply to a review thread; resolve and unresolve one | wakil-ticket | 2026-10-26 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
@@ -251,9 +253,11 @@ exit criterion; walk findings are in `phase-log.md`.
 | **3d-i** | Tab groups, automatic or your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
 | **3d-iii** | Picture in picture | — | 3c-i |
 | **3d-iv** | Passwords in the Keychain | — | 3c-ii |
+| **Connections** | An organization's MCP servers — Settings → Connections, `wakil-connect` fronting each one with the credentials in place, the operator's Allow agent per tool | — | — |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
 | **Names** | Conversations named by the quick model and renamed anywhere; browser tabs renamed | — | 3d-i (browser half) |
 | **Keyboard** | One keymap; Settings → Keyboard rebinds menu commands | — | — |
+| **Ticket view** | The editor column's Ticket view: a branch's tickets, pull requests, review threads and record | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

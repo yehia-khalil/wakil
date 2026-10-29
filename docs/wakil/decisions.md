@@ -924,6 +924,53 @@ by date. The charter's §4 keeps the rule and the table.
     Reverse if: not stated.
     Commit: c591a5d3 · `e2e/night/fixer-prompt.md`.
 
+51. **A handed agent is an ordinary conversation started off screen; its push asks unless the operator
+    ticked May push; what needs the operator is counted from the read, with no seen store.**
+    *(2026-10-28, operator, during the ticket-noticing design —
+    `docs/superpowers/specs/2026-10-27-ticket-noticing-design.md`.)*
+    **Hand to agent** (the Ticket header, a thread's box, ⌘P's ⌘↩) opens a popover with a prefilled
+    brief, harness, provider and **May push**; **Start** is the operator's alone. It starts a
+    conversation through the one start path (`send`, `WindowModel.startHandOff`) in the ticket's place
+    with no screen showing it: the screen, its conversation and its canvas are untouched, and it appears
+    as a chip. `ticket_hand_off` and `ticket_hand_off_cancel` are `operatorOnlyActions`, so an agent that
+    calls them is refused with "ticket_hand_off is the operator's: an agent does not start
+    conversations."; a spoken turn may open the popover but never press Start (Invariant 7). An agent
+    may edit the brief's text (`ticket_hand_off_brief`; the start message marks what it wrote), but
+    only the operator sets May push, the harness and the provider, and an agent's open never changes
+    them, never takes the keyboard and never replaces a popover the operator has open.
+    **The price.** A caller is *handed* when the conversation has a stored hand-off (`handedLookup` on the
+    registry, beside the production lookup; `handedAgentPrice` in `Gate/WriteGate.swift`).
+    `editor_changes_publish`, `_merge` and `_rebase` are *gate* for a handed agent always; `_push` and
+    `_sync` (a pull, then a push) are *gate* unless the operator switched **May push** on, and then
+    *allow*, as any agent's under Decision 44. File writes, stage and commit stay as Decision 36 prices
+    them; PR merges and every other GitHub write stay refused. **May push is read fail-closed**: it is
+    stored with the hand-off (in the ticket's record, or its PR's file; written by Wakil only), on only when exactly one hand-off
+    names the conversation and says on, and any unreadable file reads off. It survives a resume or a
+    fork (`CarryTicketHandoff`), a resume that cannot tell whether the session was handed stays handed
+    with May push off, and it reads off while a spoken message in the conversation is unanswered. An
+    agent's gated push, sync, publish, merge or rebase now parks on the plane with its own sentence
+    (`push <root>'s current branch to its upstream`) instead of being refused with none.
+    **Kept on disk, per organisation, written by the window only** (each write refuses unless
+    `WAKIL_IN_WINDOW` is `1`): reply drafts in `tickets/drafts.json` by thread id (text, who wrote it,
+    conversation, root, branch, and the operator's text an agent's draft replaced, for **Restore
+    yours**); the hand-off in the ticket's record (`handoffs`; a PR with no ticket key in
+    `tickets/pr-handoffs.json`); and the last harness, provider and May push in `tickets/handoff.json`,
+    which prefill the next popover.
+    **The count is derived, not stored.** One per review thread on the operator's open PR (unresolved,
+    not outdated, last word not theirs), one per own PR with a failing check, one per PR asking for their
+    review, from the last `ticket_in_flight` read (every 2 minutes while Wakil is the active app and the
+    screen unlocked, when Wakil returns after 60 s, after a write from Wakil, on an org switch). There is
+    no seen store and no snooze: a count lowers when the thing is dealt with. It draws as an amber tick
+    and ` · N` on the editor rail row, `Tickets · N` when no editor is open, and on the Ticket label;
+    nothing appears at the top of the window.
+    *Why:* a handed agent is only worth handing to if it can finish without the operator watching, and
+    only worth trusting if the one thing that publishes beyond this Mac asks by default; counting from
+    what GitHub says, rather than from what was looked at, cannot drift from it.
+    *Reverse if:* a handed agent's push asks so often May push is ticked by habit (then the default
+    price, not the switch, is wrong), or an operator wants a thing they have seen to stop counting.
+    The charter (`north-star.md`) carries no row for this decision yet: it is over its word limit
+    and is trimmed first.
+
 ## Invariant 6 — the writes that have earned in
 
 Moved out of `north-star.md` §4 on 2026-09-17; §4 keeps the rule and the table. Entries are
@@ -997,6 +1044,10 @@ shell can; reads run none. **Refused:** any flag off a tool's list. Reasoning: D
 forced, journalled with its caller. A remote operation lets only Wakil's own ssh and credential
 helper run, and refuses a repository's `remote.<name>.uploadpack` or `receivepack`.
 
+**A handed agent (2026-10-28, Decision 51).** For a conversation the operator handed a ticket to, push
+and sync are *gate* unless the operator switched May push on in the Hand to agent popover (then
+*allow*, as above), and publish, merge and rebase are *gate* always. No new earned write.
+
 ### 2026-10-23 — branches and stash, inside the project's roots
 
 Through `GitWriter`. Switch, create, rename, stash, apply and pop are allow everywhere. Branch
@@ -1015,6 +1066,40 @@ and Undo Apply lose work, so they carry Decision 46's agent price. Every call pa
 terminal is resolved and aborted like a merge), interactive rebase, `merge --squash`, a chosen
 strategy, tags. Reasoning: Decision 47.
 
+### 2026-10-25 — a connection's tool, allowed by the operator
+
+An organization's own MCP server (Jira, Notion, a custom one), fronted by `wakil-connect`. The
+operator ticks **Allow agent** per tool, per organization; that tick is the operator earning that
+write in. A tool the server marks read-only runs once ticked, voice included. A tool that writes
+runs once ticked, from a typed turn. **A destructive tool can never be ticked.** It earns in because
+the server is the organization's own, the operator chose each tool one by one, and the gate sits in
+`wakil-connect`, where the harness cannot skip it.
+
+Still asks: a locked (destructive) tool, always; a ticked write reached by a spoken turn (Invariant
+7: it raises the plane once, as a *gate* write does); a tool the operator has not ticked. With Wakil
+not running, only ticked tools run and everything else is refused.
+
+The threat model the reviews surfaced: the gate is in `wakil-connect`, not the harness. The switches
+are files on disk and the approval socket is local, so the gate rests on two other layers: the
+CLI/harness permission layer, which decides whether a shell command the agent proposes may run (and
+so whether it can edit the switches or reach the socket), and `ActionRegistry.dispatch` refusing an
+operator-only action — `ctx_connection_allow_set`, `ctx_connection_update`, `ctx_config_tree_for` among
+them — when the agent asks. The socket can only ask and never approve; the tick protects against a
+tool being used unasked.
+
+Two routes reach those operator-only actions without being the agent, and both rest on the same
+CLI permission layer, since each needs a shell command or a file edit by the operator's user:
+
+- **The e2e harness socket** (`<session id>-e2e.sock`, `MCP/HarnessChannel.swift`) runs any
+  operator-only action with origin `.debug`. Only an app whose bundle id is `dev.wakil.e2e` opens
+  it, at mode 0600 beside each agent socket. Its path is derived from the agent socket's, so it
+  is not a secret. What protects it is the bundle-id gate and the file mode. That gate is only as
+  strong as the bundle's `Info.plist`, which the user can edit: Wakil.app has no bundle seal, so
+  setting that id makes a real Wakil open the socket on its next launch.
+- **`Wakil --dispatch <file> [--environment <name>]`** (`main.swift`) runs a script of actions
+  with origin `.debug` in every build, production included, against the real `$HOME`. It is the
+  older of the two and needs no relaunch.
+
 ### 2026-10-25 — acting in a web page
 
 `browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll`
@@ -1028,3 +1113,20 @@ operator typing in the page holds an act for up to 10 s. **Refused:** a password
 one-time-code field typed or filled by the agent (a saved password is filled only on the
 operator's press, Decision 49), a script the agent supplies, and the operator's own `.ui` acts
 on a production site (no surface yet).
+
+### 2026-10-26 — reply to and resolve a review thread
+
+`wakil-ticket`'s `review_reply` and `review_resolve`, from the Ticket view, on the organization's
+pull requests. **Only these two.** Both go out with the organization's own git account for the
+remote's host, never `gh` and never a connection. A reply joins a conversation the other person
+is already waiting in, and Resolve is undone by Unresolve. A reply is *gate* for every channel
+(`review_reply_send`): the plane shows the thread's place and the text verbatim. Before an
+agent's reply or resolve reaches the plane, the thread is described from GitHub by its id
+(`review_thread`), so the plane shows GitHub's words, not the caller's; a mismatched repository
+or pull request is refused. The operator's Resolve runs in place; an agent's is *gate*.
+**Refused:** a top-level PR comment, a review, editing or deleting a comment, merge or close,
+labels, assignees, every other GitHub write, and any GitHub write by a connection or `gh`.
+The ticket record (`tickets/<KEY>.json`, `ticket_record_update`, `ticket_link`, *allow*) is
+Wakil's own store, not an earned write; a Jira ticket is never written from the Ticket view.
+*Reverse if:* an organization's automation reacts to a resolved thread (a bot that merges on
+zero open threads), so Unresolve no longer undoes it (§7 q15).

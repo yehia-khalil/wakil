@@ -118,6 +118,22 @@ func RemoteHost(remote RemoteURL) string {
 	return strings.ToLower(remote.Host)
 }
 
+// RemoteURLOf is root's URL for the named remote, read from the repository's config; no
+// repository program runs and nothing is fetched.
+func RemoteURLOf(root, remote string) (string, error) {
+	if remote == "" || strings.HasPrefix(remote, "-") {
+		return "", UserError("not a remote name: " + remote)
+	}
+	cmd := exec.Command("git", "-C", root, "remote", "get-url", remote)
+	cmd.Env = gitScrubbedEnv(root)
+	out, err := cmd.Output()
+	url := strings.TrimSpace(string(out))
+	if err != nil || url == "" {
+		return "", UserError("no remote named " + remote)
+	}
+	return url, nil
+}
+
 // GitHostSuggestion is a host the organisation's projects push to, and how many roots do.
 type GitHostSuggestion struct {
 	Host         string `json:"host"`

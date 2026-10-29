@@ -299,5 +299,5 @@ public func editorBlameHover(_ b: GitBlameInfo, now: Date = Date()) -> String? {
     }
     return "**\(escaped(b.subject))**\n\n\(escaped(b.author)) · \(editorRelativeAge(b.date, now: now)) · `\(b.id.prefix(7))`"
         + "\n\n[Open Changes](command:wakil.blame.open) · [Copy Commit ID](command:wakil.blame.copy)"
-        + (b.web.map { " · [Open on \(escaped($0.host))](command:wakil.blame.web)" } ?? "")
+        + (b.web.map { " · [Open on \(escaped($0.host)) ↗](command:wakil.blame.web)" } ?? "")
 }

@@ -399,6 +399,9 @@ func ListSessions() (SessionList, error) {
 	if err != nil {
 		parents = map[string]string{}
 	}
+	// A handed session reads as its hand-off's chip (`INI-142 · …`), and so does one resumed from
+	// it, through its lineage root.
+	handed := HandoffTitles(r.Org)
 
 	var out []SessionMeta
 	skipped := 0
@@ -474,13 +477,20 @@ func ListSessions() (SessionList, error) {
 					continue
 				}
 				id := strings.TrimSuffix(f.Name(), ".jsonl")
+				root := LineageRootIn(parents, id)
+				title := lastAITitle(path)
+				if h, ok := handed[id]; ok {
+					title = h
+				} else if h, ok := handed[root]; ok {
+					title = h
+				}
 				out = append(out, SessionMeta{
 					ID:       id,
 					Root:     name,
 					Provider: p.ID,
 					ModTime:  info.ModTime(),
 					Cwd:      cwd,
-					Title:    lastAITitle(path),
+					Title:    title,
 					// ⌘P's fallback when Title is empty; without it an
 					// untitled session is labelled by its id.
 					FirstPrompt: firstPrompt(path),
@@ -489,7 +499,7 @@ func ListSessions() (SessionList, error) {
 					// already loaded above for Parent — not against the
 					// sessions in this listing, which is filtered to the
 					// active project's roots. See the field's own comment.
-					LineageRoot: LineageRootIn(parents, id),
+					LineageRoot: root,
 				})
 			}
 		}

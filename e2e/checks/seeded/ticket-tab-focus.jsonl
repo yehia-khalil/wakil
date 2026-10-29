@@ -1,0 +1,16 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"parity":{"action":"editor_tree","params":{"pane":"editor-1","view":"ticket","shown":true},"click":"editor.column.ticket","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"focus":"editor.ticket"}}
+{"expect":{"tree":"contains","text":"Log in with a token"}}

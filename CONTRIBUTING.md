@@ -43,6 +43,8 @@ The folders and what each may use: `docs/architecture/wakilkit.md`.
 5. A control that dispatches it gets an e2e check, or a line in `e2e/checks/uncoverable.tsv` with
    its reason (see `docs/agents/e2e.md`).
 
+An action that starts a conversation is operator-only; a handed agent's price is `handedAgentPrice` (`Gate/WriteGate.swift`).
+
 ### A new shortcut
 
 1. Add a `KeyCommand` row in `app/Sources/WakilKit/Keyboard/KeyCommands.swift`: stable id, title,
@@ -118,6 +120,15 @@ Two traps met while building this:
 3. Add a line to `app/Tests/WakilKitTests/Fixtures/layering-allowed.txt` for each link it makes
    (`wakilKitKeepsItsLayering` fails otherwise). Links into `Core/` need none; links into `App/` are
    not allowed.
+
+### A new ready-made connection
+
+One `ConnectionKind` entry in `internal/wakilcore/connectioncatalog.go`, with the vendor's doc URL for
+its server in a comment. Nothing else changes: Settings → Connections and `wakil-connect` read the catalog.
+
+### A row drawn inside the file
+
+A review thread is drawn as the conflict row is: `wakilSetReviews` in `monaco-host.html`.
 
 ### A new provider
 

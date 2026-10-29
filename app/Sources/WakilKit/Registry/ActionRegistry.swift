@@ -12,6 +12,10 @@ public enum ActionError: Error, Equatable {
     /// on a closed conversation's still-open connection (`setCallerRefusal`). `reason` is the
     /// whole sentence, beginning `"<action>: "`.
     case callerGone(String, reason: String)
+    /// Refused before anything ran because the agent asked for an action only the operator may
+    /// run: one registered `.operatorOnly`, or named in `operatorOnlyActions`. The permission
+    /// prompt denies these first; this is the refusal that holds when it is not in the way.
+    case operatorOnly(String)
 }
 
 /// **The operator reads these**, so they are sentences rather than the
@@ -53,6 +57,9 @@ extension ActionError: CustomStringConvertible {
             return "\(name): blocked in production \u{2014} not gated, so no confirmation will run it"
         case .callerGone(_, let reason):
             return reason
+        case .operatorOnly(let name):
+            return "\(name): only the operator can run this \u{2014} the agent may not. "
+                + "Ask the operator to do it in the Wakil window."
         }
     }
 }
@@ -160,6 +167,18 @@ public actor ActionRegistry {
         callerRefusal.set(lookup)
     }
 
+    /// The hand-off of a caller's conversation, when it is handed (ticket noticing, Task 9), with
+    /// May push as the gate prices it now: read before the gate for an agent's `.mutate` that a
+    /// handed agent pays more for (`handedAgentPrice`), which then replaces the action's agent
+    /// price. Nil — or no lookup, as in `--dispatch` and in tests with no window — is a caller not
+    /// handed.
+    ///
+    /// Installed by `WindowModel`, nonisolated for `setProductionLookup`'s reason.
+    public nonisolated func setHandedLookup(_ f: @escaping @Sendable (DispatchCaller) async -> PlaceAgentHandoff?) {
+        handedLookup.set(f)
+    }
+
+    private nonisolated let handedLookup = CallerLookupBox<PlaceAgentHandoff>()
     private nonisolated let callerRefusal = CallerRefusalBox()
     private nonisolated let productionLookup = CallerLookupBox<EnvironmentProduction>()
     private nonisolated let scopeLookup = CallerLookupBox<LayoutScope>()
@@ -218,6 +237,27 @@ public actor ActionRegistry {
         all().first { $0.name == name }
     }
 
+    /// The words the confirmation plane shows for a gated `name`, in one order for the operator's
+    /// window and the agent's server alike: the action's own `describe` (which may ask a service
+    /// where the write goes, and refuses by throwing), else Wakil's `confirmationDescription`, else
+    /// the caller's own `statement` (SQL, an HTTP request). `own` says the words are the caller's,
+    /// the only case `affectsEveryRow` is read from. Nil when there is nothing to show.
+    ///
+    /// **Wakil's words first.** A caller's `statement` beside a described action is ignored, so a
+    /// stray one can never put other words on the plane than the ones the write carries.
+    public func planeStatement(name: String, params: JSONValue, origin: ActionOrigin,
+                               caller: DispatchCaller) async throws -> (text: String, own: Bool)? {
+        if let describe = actions[name]?.describe {
+            let text = try await Self.$dispatchOrigin.withValue(origin) {
+                try await Self.$dispatchCaller.withValue(caller) { try await describe(params) }
+            }
+            return (text, false)
+        }
+        if let text = confirmationDescription(action: name, params: params) { return (text, false) }
+        if case .object(let o) = params, case .string(let own)? = o["statement"], !own.isEmpty { return (own, true) }
+        return nil
+    }
+
     /// Runs `name`'s handler and returns its result, or throws without
     /// running it. Every outcome this method can produce — an unrecognized
     /// name, a gated refusal, an outright block, a handler that throws, or
@@ -262,6 +302,14 @@ public actor ActionRegistry {
             throw ActionError.unknown(name)
         }
 
+        // An operator-only action is never the agent's, whatever let the call through.
+        if origin == .agent, action.audience == .operatorOnly || operatorOnlyActions.contains(name) {
+            try appendJournalEntry(action: name, params: params, origin: origin,
+                                   caller: caller, outcome: "refused",
+                                   secretParams: action.secretParams)
+            throw ActionError.operatorOnly(name)
+        }
+
         // A caller with nothing left to act for is refused before anything reads or writes.
         if let refusal = await callerRefusal.current()?(name, caller) {
             try appendJournalEntry(action: name, params: params, origin: origin,
@@ -289,6 +337,11 @@ public actor ActionRegistry {
             }
             price = (priced, priced)
             agentPrice = nil
+        }
+        // A handed agent's push, sync, publish, merge and rebase cost more; asked only for those.
+        if origin == .agent, action.kind == .mutate, handedAgentPrice(name, mayPush: false) != nil,
+           let handed = await handedLookup.current()?(caller) {
+            agentPrice = handedAgentPrice(name, mayPush: handed.mayPush) ?? agentPrice
         }
         let decision = writeGate(
             environment: caller.place.environment,
@@ -523,6 +576,19 @@ public actor ActionRegistry {
             secretParams: actions[action]?.secretParams)
     }
 
+    /// A handler's own second line after its dispatch's, for what the dispatch line cannot hold: what
+    /// was asked is the dispatch's params, what was done is this (`ticket_hand_off`'s `started`
+    /// line: the whole text Wakil sent, the operator's brief with what Wakil appended). The
+    /// action's secret parameters are redacted here as in the dispatch line.
+    public func journalFollowUp(
+        action: String, params: JSONValue, origin: ActionOrigin, caller: DispatchCaller, outcome: String
+    ) throws {
+        try appendJournalEntry(
+            action: action, params: params, origin: origin,
+            caller: caller, outcome: outcome,
+            secretParams: actions[action]?.secretParams)
+    }
+
     /// 2d-ii: a turn whose text landed from speech. Carries no transcript —
     /// the turn itself is the agent's record; this line says only how it
     /// was entered.
@@ -530,6 +596,17 @@ public actor ActionRegistry {
         try appendJournalEntry(
             action: "voice_turn", params: .object(["via": .string("voice")]), origin: .ui,
             caller: caller, outcome: "ok", secretParams: [])
+    }
+
+    /// A connection call `wakil-connect` asked the app about, and how it was decided
+    /// (`ConnectionApprovalServer`). Not a registered action; nothing it records is a credential —
+    /// the arguments are the agent's own words — so its secret parameters are declared empty.
+    public func journalConnectionCall(
+        _ request: ConnectionCallRequest, outcome: String, caller: DispatchCaller
+    ) throws {
+        try appendJournalEntry(
+            action: "connection_call", params: request.params, origin: .agent,
+            caller: caller, outcome: outcome, secretParams: [])
     }
 
     /// 2d-i: a note handed to the agent, or a vocabulary source that

@@ -81,6 +81,16 @@ green, the work committed.
    `ctx_set_environment` sent this way is refused (an agent cannot move its own place).
    Switch with a `do` step instead.
 
+   **An operator-only action goes over the operator channel.** The agent socket refuses
+   operator-only actions (`ActionError.operatorOnly`), so the staged fixture (bundle id
+   `dev.wakil.e2e`, `startHarnessSocket`) opens `<dir>/<session id>-e2e.sock` beside each
+   agent socket, serving only those actions with origin `debug`. The runner sends a
+   `dispatch` there when the app lists the action on it (`channelFor`) — except a `refuses`
+   the operator-only refusal would satisfy, which stays on the agent socket. A refusal on
+   either is the step's failure, never retried on the other. A build without the socket
+   (the merge-base under `make e2e-new`) uses the agent socket; a current build whose socket
+   failed to start fails the run (`wakil/harnessFailure`), never falls back.
+
    **Cover the interaction rules as well as the actions.** For each rule in `PRODUCT.md`
    §Interaction Rules that a touched surface can break, write a check: for example, type
    into a field, move focus away and expect the value kept (rule 2). A rule no step kind

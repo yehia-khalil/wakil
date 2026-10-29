@@ -61,6 +61,15 @@ public enum RailTreatment {
     /// and a luminous tick is the one such mark §8 already permits.
     public static let workingTickColour = TerminalPalette.green
 
+    /// The tick's third hue (ticket noticing): an editor row while something waits on the operator —
+    /// a review thread, a failing check, a review request. §5's amber is *pending*, read from the
+    /// palette (`#e8b45a`) for the reason the green is. It carries the working tick's glow, at rest
+    /// too, because it is the state the operator is meant to notice from the corner of the eye; the
+    /// number itself is text after the kind (`countSuffix`), so the tick only has to say "something".
+    public static let needsTickColour = TerminalPalette.amber
+    public static let needsGlow: Double = 0.85
+    public static let needsGlowRadius: CGFloat = 5
+
     /// §10's maximize fade: "the rail and Core fade back" — not to zero,
     /// which would read as a bug rather than as deference. The room defers
     /// too while maximized, by a different mechanism and to a different
@@ -174,4 +183,51 @@ public enum RailTreatment {
             alpha: elementOpacity * opacity(promoted: promoted, isMaximized: false),
             over: Contrast.voidBase)
     }
+
+    // MARK: - The tick
+
+    /// One mark, one hue, by precedence: working (a dispatch naming the pane, brief) beats needs you
+    /// (an editor row while the count is above 0), which beats active. The operator already knows
+    /// which pane they focused; what waits on them is the louder news, and a pane that has just
+    /// started working louder still.
+    public static func tick(busy: Bool, needsYou: Bool, active: Bool) -> RailTick {
+        if busy { return .working }
+        if needsYou { return .needsYou }
+        return active ? .active : .none
+    }
+
+    /// The tick's hue; nil draws no mark.
+    public static func colour(_ t: RailTick) -> RGB? {
+        switch t {
+        case .none: nil
+        case .working: workingTickColour
+        case .needsYou: needsTickColour
+        case .active: activeTickColour
+        }
+    }
+
+    /// Working and needs you glow at rest and promoted — they are the periphery §10 means. Active's
+    /// glow arrives with promotion: at rest the rail says what is open, and which pane is focused is
+    /// the canvas's own news.
+    public static func glow(_ t: RailTick, promoted: Bool) -> (opacity: Double, radius: Double) {
+        switch t {
+        case .working, .needsYou: (needsGlow, Double(needsGlowRadius))
+        case .active: promoted ? (0.70, 4) : (0, 4)
+        case .none: (0, 4)
+        }
+    }
+
+    /// Operator decision 2 (2026-10-28): with no editor pane on the canvas the rail carries one extra
+    /// row, `Tickets · N`; with one, the editor rows carry the count and there is no extra row.
+    public static func ticketsRowShown(count: Int, hasEditorPane: Bool) -> Bool {
+        count > 0 && !hasEditorPane
+    }
+
+    /// The count as text after the kind, ` · 4`; nil at 0, when the tick and the count both go.
+    public static func countSuffix(_ count: Int) -> String? {
+        count > 0 ? " · \(count)" : nil
+    }
 }
+
+/// The rail's one tick, by `RailTreatment.tick`'s precedence.
+public enum RailTick: Equatable { case none, working, needsYou, active }

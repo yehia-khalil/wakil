@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
@@ -98,6 +99,11 @@ func seedGitProject(root string, spec SeedSpec) (string, error) {
 	}); err != nil {
 		return "", err
 	}
+	if spec.TicketRepo {
+		if err := seedTicketRepo(root, api); err != nil {
+			return "", err
+		}
+	}
 	if spec.GitHook {
 		// Written after the seed's own commit, so the seed never runs it; reads never run hooks.
 		hook := filepath.Join(portal, ".git", "hooks", "pre-commit")
@@ -113,6 +119,11 @@ func seedGitProject(root string, spec SeedSpec) (string, error) {
 		Environments: map[string]wakilcore.Environment{
 			spec.Environment: {Databases: []wakilcore.Database{}, API: []wakilcore.ApiConfig{}},
 		},
+	}
+	if spec.TicketRepo {
+		// The Ticket view reads a branch's key only when its prefix is one of the organisation's
+		// PM project keys. No Jira site is configured, so every Jira read says so, whole.
+		project.Scopes.PM = &wakilcore.PMScope{Provider: "jira", ProjectKey: "INI"}
 	}
 	encoded, err := json.MarshalIndent(project, "", "  ")
 	if err != nil {
@@ -198,6 +209,63 @@ func WantsCloneFolder(checks []Check) bool {
 	return false
 }
 
+// ticketRepoChecks names the checks whose launch seeds the ticket repository
+// (SeedSpec.TicketRepo): every `ticket-*.jsonl`.
+const ticketRepoChecks = "ticket-"
+
+// WantsTicketRepo reports whether a launch running these checks seeds the ticket repository.
+func WantsTicketRepo(checks []Check) bool {
+	for _, check := range checks {
+		if strings.HasPrefix(check.Name, ticketRepoChecks) {
+			return true
+		}
+	}
+	return false
+}
+
+// seedTicketRepo gives e2e-api an `origin` on github.com/initech/api and the branches the GitHub
+// stub answers by, with TicketBranchOwn checked out; the seed's staged and unstaged edits ride
+// along, since every branch is at the seed commit.
+//
+// **No act may reach github.com through this origin.** The window fetches every root in the
+// background, so the repository's own `http.proxy` points at a closed loopback port: a fetch fails
+// at once, on this Mac, while `git remote get-url` — what the Ticket view reads — still names
+// GitHub.
+func seedTicketRepo(root, api string) error {
+	return seedRepoSteps(root, api, []gitSeedStep{
+		{git: []string{"remote", "add", "origin", "https://github.com/initech/api.git"}},
+		{git: []string{"config", "http.proxy", "http://127.0.0.1:9"}},
+		{git: []string{"branch", TicketBranchBroken}},
+		{git: []string{"branch", TicketBranchStall}},
+		{git: []string{"branch", TicketBranchNone}},
+		{git: []string{"branch", TicketBranchSeveral}},
+		{git: []string{"checkout", "-q", "-b", TicketBranchOwn}},
+	})
+}
+
+// seedTicketRecord writes INI-142's record through wakilcore's own writers — the title and status
+// Jira last answered, and one decision — and answers e2e-api's HEAD for the GitHub stub. HOME and
+// WAKIL_ORG must already be the fixture's (Seed).
+func seedTicketRecord(root, org string) (string, error) {
+	seen := wakilcore.TicketSeen{Title: "Log in with a token", Status: "In Progress"}
+	if err := wakilcore.RecordTicketSeen(org, "INI-142", seen, nil, nil); err != nil {
+		return "", fmt.Errorf("seed: INI-142's record: %w", err)
+	}
+	if _, err := wakilcore.UpdateTicketRecord(org, "INI-142", wakilcore.TicketEdit{
+		Section: "decisions", Op: "add", By: "operator",
+		Line: wakilcore.TicketLine{Text: "Tokens live in the Keychain", Why: "Invariant 4"},
+	}, time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)); err != nil {
+		return "", fmt.Errorf("seed: INI-142's decision: %w", err)
+	}
+	cmd := exec.Command("git", "-C", filepath.Join(root, GitRootAPI), "rev-parse", "HEAD")
+	cmd.Env = seedGitEnv(root)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("seed: e2e-api's HEAD: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // gitSeedStep is one thing done to a seeded repository: files written, or one
 // git command run. Exactly one of the two.
 type gitSeedStep struct {
@@ -224,6 +292,20 @@ func seedRepo(root, dir string, steps []gitSeedStep) error {
 	}
 	if err := run("init", "-q", "-b", "main"); err != nil {
 		return err
+	}
+	return seedRepoSteps(root, dir, steps)
+}
+
+// seedRepoSteps applies steps to the repository at dir, under seedRepo's environment.
+func seedRepoSteps(root, dir string, steps []gitSeedStep) error {
+	run := func(args ...string) error {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = seedGitEnv(root)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("seed: git %s in %s: %w: %s", strings.Join(args, " "), dir, err,
+				strings.TrimSpace(string(out)))
+		}
+		return nil
 	}
 	for _, step := range steps {
 		for name, content := range step.write {

@@ -146,3 +146,16 @@ public func writeGate(
     }
 }
 
+
+/// A handed agent's price for `action` (ticket noticing, Task 9; spec, *What a handed agent may do
+/// without asking*), or nil for the action's own: publish, merge and rebase ask always; push and
+/// sync (a pull, then a push) ask unless the operator's May push is on, which prices them as any
+/// agent's (allow, Decision 44). Everything else is unchanged, so a handed agent's file writes,
+/// stage and commit stay as they are, and GitHub writes stay refused.
+public func handedAgentPrice(_ action: String, mayPush: Bool) -> GateDecision? {
+    switch action {
+    case "editor_changes_publish", "editor_changes_merge", "editor_changes_rebase": .gate
+    case "editor_changes_push", "editor_changes_sync": mayPush ? nil : .gate
+    default: nil
+    }
+}

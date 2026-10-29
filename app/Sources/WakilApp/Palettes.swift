@@ -60,6 +60,18 @@ final class PaletteController {
         guard !closed else { return }
         palette.type(text)
         syncRoot()
+        syncTickets()
+    }
+
+    /// Open mode's ticket rows follow the line: the last read's at once, and a fresh read's when a `#`
+    /// or key-shaped line asked for one (`WindowModel.paletteTicketsTyped`).
+    private func syncTickets() {
+        guard palette.steps.isEmpty, palette.mode == .open else { return }
+        let line = palette.line
+        palette.replaceTickets(model.paletteTicketsTyped(line: line) { [weak self] rows in
+            guard let self, !self.closed, self.palette.mode == .open, self.palette.line == line else { return }
+            self.palette.replaceTickets(rows)
+        })
     }
 
     func move(_ delta: Int) {
@@ -72,6 +84,7 @@ final class PaletteController {
         guard !closed else { return }
         palette.modeKey(mode)
         syncRoot()
+        syncTickets()
     }
 
     /// A click on a row: select it, then Return.
@@ -106,6 +119,17 @@ final class PaletteController {
             // In flight under the name step's `commandId` (`PaletteModel.inFlight`).
             run(effect, inFlight: palette.steps.last?.commandId ?? selectedId)
         }
+    }
+
+    /// ⌘↩: the selected row's alternate — a ticket handed to an agent. Answers whether there was one,
+    /// so ⌘↩ on any other row is left to whatever else wants it.
+    @discardableResult
+    func confirmAlternate() -> Bool {
+        guard !closed else { return false }
+        let selectedId = palette.selected?.id ?? ""
+        guard let effect = palette.confirmAlternate() else { return false }
+        run(effect, inFlight: selectedId)
+        return true
     }
 
     /// ⌘R: the selected row's name step (names, Calls made 11). Only called while the row offers
@@ -153,7 +177,7 @@ final class PaletteController {
         Task {
             // Held strongly, briefly: `WindowModel` stops delivering once `paletteClosed()` bumps
             // its generation, and `landed` drops anything after a close.
-            let root = await model.paletteRoot(mode: mode) { late in
+            let root = await model.paletteRoot(mode: mode, line: palette.line) { late in
                 Task { @MainActor in self.landed(late, mode: mode, serial: serial) }
             }
             landed(root, mode: mode, serial: serial)
@@ -385,15 +409,23 @@ struct PalettePlane: View {
                 micro(step.title.uppercased())
                     .accessibilityIdentifier("palette.step")
             } else {
-                micro(palette.mode == .open ? "OPEN OR SWITCH TO" : "RUN A COMMAND")
+                micro(modeTitle)
             }
             Spacer()
-            if let chord = keymap.chord(palette.mode == .open ? "window.open" : "window.commands") {
+            if let chord = keymap.chord(palette.mode == .commands ? "window.commands" : "window.open") {
                 Text(chord.text)
                     .font(.system(size: 9, design: .monospaced))
                     .tracking(1.2)
                     .foregroundStyle(Self.ink.opacity(0.52))
             }
+        }
+    }
+
+    private var modeTitle: String {
+        switch palette.mode {
+        case .open: "OPEN OR SWITCH TO"
+        case .commands: "RUN A COMMAND"
+        case .tickets: "TICKETS IN FLIGHT"
         }
     }
 
@@ -425,7 +457,7 @@ struct PalettePlane: View {
         if let step = palette.steps.last {
             total = step.isText || step.isName ? palette.results.count : step.choices.count
         } else {
-            total = palette.rootEntries.count
+            total = palette.rootRows.count
         }
         let shown = palette.results.filter { $0.id != "no-results" }.count
         return words.isEmpty ? "\(total)" : "\(shown) of \(total)"
@@ -576,12 +608,15 @@ struct PalettePlane: View {
     // MARK: Footer
 
     /// `↑↓ move · ⏎ <verb> · esc to dismiss`, the verb the selected row's; with nothing
-    /// Return would run, `⏎` is left out rather than promised. A row's second key (`⌘R rename`)
-    /// goes before `esc`.
+    /// Return would run, `⏎` is left out rather than promised. A ticket or PR row adds ⌘↩, a row that
+    /// offers a rename `⌘R rename`; both go before `esc`:
+    /// `↑↓ move · ⏎ open · ⌘↩ hand to agent · esc to dismiss`.
     private var footer: some View {
         let verb = palette.footerVerb
+        let alt = palette.footerAlt
         // `⌘R rename` while the selected row offers it (names, Calls made 11).
-        let keys = ["↑↓ move"] + (verb.isEmpty ? [] : ["⏎ \(verb)"]) + palette.footerHints + ["esc to dismiss"]
+        let keys = ["↑↓ move"] + (verb.isEmpty ? [] : ["⏎ \(verb)"]) + (alt.isEmpty ? [] : [alt])
+            + palette.footerHints + ["esc to dismiss"]
         return Text(keys.joined(separator: " · "))
             .font(.system(size: 10, weight: .medium))
             .tracking(1.2)
@@ -597,8 +632,9 @@ struct PalettePlane: View {
 
     // MARK: Keys
 
-    /// ↑ ↓ Return Esc, unmodified, in this plane's own window while it is key, and ⌘R while the
-    /// selected row offers a rename. Mid-composition (marked text) all four are the input method's.
+    /// ↑ ↓ Return Esc, unmodified, in this plane's own window while it is key; ⌘↩ on a row that has an
+    /// alternate; and ⌘R while the selected row offers a rename. Mid-composition (marked text) every
+    /// one is the input method's.
     private func installMonitor() {
         guard monitor == nil, let host else { return }
         let controller = self.controller
@@ -606,6 +642,10 @@ struct PalettePlane: View {
             let taken: Bool = MainActor.assumeIsolated {
                 guard !controller.closed, let host, event.window === host, host.isKeyWindow else { return false }
                 let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+                if flags == .command, [36, 76].contains(event.keyCode) {
+                    if let editor = host.firstResponder as? NSTextView, editor.hasMarkedText() { return false }
+                    return controller.confirmAlternate()
+                }
                 // ⌘R on a row that offers a rename (names, Calls made 11); on any other row it goes
                 // on to the menu, as before.
                 if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "r",

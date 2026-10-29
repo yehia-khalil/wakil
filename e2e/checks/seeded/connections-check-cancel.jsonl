@@ -1,0 +1,14 @@
+{"dispatch":{"action":"ctx_connection_add","params":{"id":"e2e-fixture","kind":"custom","name":"stall","transport":"stdio","command":"/bin/sleep","args":["600"]}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.org.connections.stall"}}
+{"expect":{"tree":"contains","text":"Checking…"}}
+{"expect":{"process":{"any-matching":"list --connection stall"}}}
+{"do":{"click":"settings.org.connections.stall.check.cancel"}}
+{"expect":{"tree":"absent","text":"Checking…"}}
+{"expect":{"frame":"settings.org.connections.stall.check","minWidth":1}}
+{"expect":{"process":{"none-matching":"list --connection stall"}}}
+{"expect":{"process":{"none-matching":"/bin/sleep 600"}}}
+{"do":{"click":"settings.org.connections.stall.check"}}
+{"expect":{"tree":"contains","text":"Checking…"}}
+{"expect":{"process":{"any-matching":"list --connection stall"}}}

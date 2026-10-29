@@ -42,5 +42,37 @@ import Testing
         #expect(await model.gitGhLogins().map(\.user) == ["octo"])
         #expect(await model.gitDeviceStart(provider: .github).userCode == "AB-CD")
     }
+
+    @Test func devicePollPassesAPIAccess() async {
+        let model = WindowModel.forTesting(scratchRoot: testScratchRoot)
+        let seen = ParamsBox()
+        await model.registryForTesting.register(Action(
+            name: "ctx_git_device_poll", description: "stub", kind: .control, audience: .operatorOnly, schema: .object([:]),
+            handler: { params in
+                await seen.add(params)
+                return .object(["structuredContent": .object(["pending": .bool(true)])])
+            }))
+        _ = await model.gitDevicePoll(provider: .github, host: "github.com", deviceCode: "dc", apiAccess: true)
+        _ = await model.gitDevicePoll(provider: .github, host: "github.com", deviceCode: "dc")
+        let calls = await seen.all
+        #expect(calls.count == 2)
+        guard case .object(let first) = calls[0], case .object(let second) = calls[1] else { return }
+        #expect(first["apiAccess"] == .bool(true))
+        #expect(second["apiAccess"] == nil)
+    }
+
+    @Test func theAPIAccessCallsGoToTheirActions() async {
+        let model = await window(answering: [
+            "ctx_git_api_access_token_set": [:], "ctx_git_api_access_remove": [:],
+            "ctx_git_api_access_test": ["user": .string("octo")],
+        ])
+        #expect(await model.setGitAPIAccessToken(host: "github.com", token: "t") == nil)
+        #expect(await model.testGitAPIAccess(host: "github.com").user == "octo")
+        #expect(await model.removeGitAPIAccess(host: "github.com") == nil)
+    }
 }
 
+private actor ParamsBox {
+    private(set) var all: [JSONValue] = []
+    func add(_ p: JSONValue) { all.append(p) }
+}

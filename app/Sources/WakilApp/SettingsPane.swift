@@ -97,6 +97,8 @@ struct SettingsPane: View {
     var removeLocalProvider: (String) async -> String? = { _ in nil }
     /// 3a-iii: the organisation's git accounts.
     var git = GitAccountActions()
+    /// Connections: the organisation's own MCP servers, and the Jira entry (its site and token).
+    var connections = ConnectionActions()
     /// Each quick-task provider's last error whole and which have answered, by id; the provider
     /// code completion goes to; and why the configuration could not be read.
     var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
@@ -993,11 +995,19 @@ struct SettingsPane: View {
                 organisationEditor(.defaultProvider, label: "Default", in: tree)
                 speechRow(tree: tree)
             }
-            SettingsSection("Jira") {
-                organisationEditor(.jiraBase, label: "Site", in: tree)
+            // Connections: the Jira entry (its site moved here from its own section) and the
+            // organisation's own MCP servers, each with its page.
+            SettingsSection("Connections") {
+                ConnectionsBlock(org: tree.org, actions: connections,
+                                 jiraSite: AnyView(organisationEditor(.jiraBase, label: "Site", in: tree)))
+                    // Its page, statuses and checks are one organisation's: a switch starts afresh.
+                    .id(tree.org.id)
+                    .padding(.vertical, 6)
             }
             // 3a-ii: who commits from the Changes view.
-            SettingsSection("Git") {
+            SettingsSection("Git", accessory: {
+                SettingsAboutButton(label: "About git accounts", id: "settings.git.about", text: gitAbout)
+            }) {
                 // Who commits are by (3a-ii) — not who may push, which the accounts below are.
                 authorRow(in: tree)
                 FormHint("Who Wakil's commits are by; empty uses your git config.")
@@ -1041,7 +1051,9 @@ struct SettingsPane: View {
                         return refusal
                     })
             }
-            SettingsSection("Quick tasks", accessory: { QuickTasksAboutButton() }) {
+            SettingsSection("Quick tasks", accessory: {
+                SettingsAboutButton(label: "About quick tasks", id: "settings.quickTasks.about", text: quickTasksAbout)
+            }) {
                 quickTasksRow(tree: tree)
             }
         case .editor:
@@ -3017,9 +3029,13 @@ enum SettingsNode: Hashable {
     }
 }
 
-/// The ⓘ beside QUICK TASKS. A click, not a hover tooltip: the text is a dozen lines, and a
-/// tooltip can be neither reached by keyboard nor read at leisure. Click away or Esc closes it.
-private struct QuickTasksAboutButton: View {
+/// A section's ⓘ: QUICK TASKS' and GIT's. A click, not a hover tooltip: the text can run a dozen
+/// lines, and a tooltip can be neither reached by keyboard nor read at leisure. Click away or Esc
+/// closes it.
+private struct SettingsAboutButton: View {
+    let label: String
+    let id: String
+    let text: String
     @State private var open = false
 
     var body: some View {
@@ -3030,22 +3046,30 @@ private struct QuickTasksAboutButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("About quick tasks")
-        .accessibilityIdentifier("settings.quickTasks.about")
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             Text((try? AttributedString(
-                markdown: quickTasksAbout,
-                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(quickTasksAbout))
+                markdown: text,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
                 .font(.system(size: SettingsScale.body))
                 .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 420, alignment: .leading)
                 .padding(14)
                 .background(Color(red: 0.055, green: 0.063, blue: 0.098))   // #0e1019, as the agent chips' list
-                .accessibilityIdentifier("settings.quickTasks.about.text")
+                .accessibilityIdentifier(id + ".text")
         }
     }
 }
+
+/// GIT's ⓘ: why an SSH account still wants a token for the Ticket view (walk, 2026-10-27).
+private let gitAbout = """
+**SSH pushes and pulls; it reads nothing from GitHub's API.** Pull requests, review threads and \
+checks in the Ticket view, and replying or resolving there, need API access. A Sign in or an access \
+token account has it already. An SSH GitHub account gets it from its **API access** row: Sign in, \
+or an access token beside the key. Git keeps using SSH.
+"""
 
 // MARK: - Databases and API entries, edited where they stand (2e-iii)
 

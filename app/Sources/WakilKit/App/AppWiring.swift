@@ -48,6 +48,9 @@ public struct WakilWiring: Sendable {
     /// Conversations 2 of 3. The window's live conversations, for `session_list`; pointed at
     /// the window by `useActiveContext(of:)` once there is one.
     public let liveLookup: LiveConversationLookup
+    /// Ticket noticing. The window's hand-off Start and Cancel, for `ticket_hand_off`; pointed at
+    /// the window by `useActiveContext(of:)` once there is one.
+    public let handOffLookup: TicketHandOffLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -73,6 +76,15 @@ public struct WakilWiring: Sendable {
     /// `wakil-files` (3b-i): the editor pane's reads and writes of project files, confined to the
     /// active project's roots. Eager and optional like the others; it joins the org switch.
     public let filesClient: MCPClient?
+    /// `wakil-ticket` (Ticket view): the branch's tickets, pull requests, review threads and record.
+    /// **Window-owned only** — never in `agentFacingServers`: the agent reaches it through the
+    /// registry's ticket and review actions, and its writes answer only under `WAKIL_IN_WINDOW`.
+    /// Eager and optional like the others; it joins the org switch.
+    public let ticketClient: MCPClient?
+    /// The window's ticket reads and review drafts over `ticketClient` (`EditorTicketStore`). One per
+    /// assembly: the actions are registered against it and the window reads it; an org switch
+    /// empties it (`WindowModel.invalidateForOrgChange`).
+    public let ticketStore: EditorTicketStore
     /// The window's one list per root over `filesClient` (3b-ii): ⌘P's files source, the editor
     /// actions and every editor pane's tree read it. Built whenever `filesClient` is; handed to the
     /// window by `WindowSession.start`, which also gives it to the palette.
@@ -134,7 +146,8 @@ public struct WakilWiring: Sendable {
          ("wakil-db", databaseClient),
          ("wakil-http", httpClient),
          ("wakil-git", gitClient),
-         ("wakil-files", filesClient)]
+         ("wakil-files", filesClient),
+         ("wakil-ticket", ticketClient)]
     }
     /// Where a mutation refused by the gate waits for a human. One per
     /// assembly, shared by the agent's path (`MCPServer`) and the window's
@@ -266,6 +279,14 @@ public struct WakilWiring: Sendable {
         liveLookup.use({ [weak model] place in
             await model?.liveConversationRows(in: place) ?? []
         }, organization: { [weak model] in await model?.organization })
+        // Ticket noticing: the operator's Start and Cancel reach the window's hand-off.
+        handOffLookup.use(start: { [weak model] r, reserved in
+            guard let model else { throw TicketHandOffError(description: "no window to start the hand-off in") }
+            return try await model.startHandOff(r, reserved: reserved)
+        }, cancel: { [weak model] conversation in
+            await model?.cancelHandOff(conversation)
+        })
+        handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -377,6 +398,8 @@ public struct WakilWiring: Sendable {
         let gitClient = await startClient("wakil-git")
         // 3b-i, eager for the git client's reason: an editor's first open must find it up.
         let filesClient = await startClient("wakil-files")
+        // Ticket view, eager for the git client's reason: an editor's first ticket read must find it up.
+        let ticketClient = await startClient("wakil-ticket")
 
         // Background agents, 2 of 4: an agent session's call goes to a client of its own,
         // started for its place on first use. Each is a fresh process under
@@ -422,6 +445,7 @@ public struct WakilWiring: Sendable {
         let conversationRequests = ConversationBroker()
         let agentLookup = ActiveAgentLookup()
         let liveLookup = LiveConversationLookup()
+        let handOffLookup = TicketHandOffLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
@@ -511,10 +535,12 @@ public struct WakilWiring: Sendable {
         let gitRoots = GitRootsSource(context: contextClient)
         let gitStatus = GitStatus(git: routed(.git, gitClient), roots: { await gitRoots.current() })
         let gitWrites = GitWriteFlights()
+        let ticketStore = EditorTicketStore(ticket: routed(.ticket, ticketClient))
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
-            gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites)
+            gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore,
+            organization: { await liveLookup.organization() }, handOff: handOffLookup)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         await registerBrowserPasswordActions(
@@ -578,11 +604,14 @@ public struct WakilWiring: Sendable {
             shellContext: shellContext,
             agentLookup: agentLookup,
             liveLookup: liveLookup,
+            handOffLookup: handOffLookup,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,
             gitClient: gitClient,
             filesClient: filesClient,
+            ticketClient: ticketClient,
+            ticketStore: ticketStore,
             fileLists: fileLists,
             rootWatcher: FSEventsRootWatcher(),
             gitStatus: gitStatus,
@@ -825,6 +854,11 @@ public struct WakilWiring: Sendable {
         if environment["WAKIL_GIT_ALLOW_FILE"] == "1" { childEnvironment["WAKIL_GIT_ALLOW_FILE"] = "1" }
         if let base = environment["WAKIL_ANTHROPIC_BASE_URL"], !base.isEmpty {
             childEnvironment["WAKIL_ANTHROPIC_BASE_URL"] = base
+        }
+        // The same for wakil-ticket's GitHub endpoint: only tests and e2e set it, to keep pull
+        // request reads and replies on a stub.
+        if let api = environment["WAKIL_GITHUB_API"], !api.isEmpty {
+            childEnvironment["WAKIL_GITHUB_API"] = api
         }
         return childEnvironment
     }

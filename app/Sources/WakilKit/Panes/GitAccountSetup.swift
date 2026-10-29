@@ -101,6 +101,14 @@ extension GitAccountMethod {
     }
 }
 
+/// The tip under an SSH account's setup: SSH reads nothing from the host's API, so the Ticket
+/// view's pull requests, threads and checks need a token beside the key (walk, 2026-10-27). Only
+/// GitHub's API is read today; other hosts get no tip.
+public func gitSSHAPIAccessTip(provider: GitProvider) -> String? {
+    guard provider == .github else { return nil }
+    return "Tip: SSH pushes and pulls but reads nothing from GitHub's API. For pull requests, review threads and checks in the Ticket view, also give this account an access token: its API access row, once it is added."
+}
+
 /// What an account's card in Settings shows.
 public struct GitAccountCard: Sendable, Equatable {
     public var title: String
@@ -123,6 +131,27 @@ public func gitAccountCard(_ a: SettingsGitAccount) -> GitAccountCard {
     return GitAccountCard(
         title: provider == .other ? a.host : provider.title, host: provider == .other ? "" : a.host,
         user: a.user.isEmpty ? "Not tested yet" : a.user, method: method)
+}
+
+/// An SSH GitHub account's API access row: git keeps pushing over SSH, and this is what Wakil
+/// reads pull requests with.
+public struct GitAPIAccessRow: Sendable, Equatable {
+    public var title: String
+    public var detail: String
+    /// Whether any access is set (Test and Remove apply).
+    public var isSet: Bool
+}
+
+/// The row under an account's card: only an SSH GitHub account has one.
+public func gitAPIAccessRow(_ a: SettingsGitAccount) -> GitAPIAccessRow? {
+    guard a.provider == "github", a.method == "ssh" else { return nil }
+    let detail: String
+    switch a.apiAccess {
+    case "signin": detail = "Signed in"
+    case "token": detail = "Access token"
+    default: detail = "Not set — pull requests are not read"
+    }
+    return GitAPIAccessRow(title: "API access", detail: detail, isSet: !a.apiAccess.isEmpty)
 }
 
 /// A failed Test, said plainly when it is the usual case — the key not added on the host yet —

@@ -288,9 +288,13 @@ public func registerEditorActions(
     fileLists: EditorFileLists?,
     gitStatus: GitStatus?,
     roots: @escaping @Sendable () async -> [String],
-    gitWrites: GitWriteFlights = GitWriteFlights()
+    gitWrites: GitWriteFlights = GitWriteFlights(),
+    ticket: EditorTicketStore? = nil,
+    organization: @escaping @Sendable () async -> String? = { nil },
+    handOff: TicketHandOffLookup? = nil
 ) async {
-    await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites)
+    await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites,
+                                      ticket: ticket)
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
         guard let files else { throw StandardActionError.missingClient(action: action, role: "files") }
         return files
@@ -567,16 +571,22 @@ public func registerEditorActions(
     /// preview slot, cancelling the fetch of what it held, and a pinned one is added. A row no longer
     /// in its group opens reading "No longer changed" (Rule 7), fetching nothing.
     /// A pinned read-only diff tab of a stash's or (3a-v-a) a commit's change to one file, focused when
-    /// already open — the same file from the same source is one tab.
-    @Sendable func openSourceDiff(_ pane: String, root: String, path: String, group: GitGroup, source: EditorDiffSource) async {
+    /// already open — the same file from the same source is one tab. `at` moves its cursor there (a
+    /// review thread's line); `focus` false leaves the front tab in front (an agent's open, Rule 6)
+    /// unless the pane has none.
+    @Sendable func openSourceDiff(_ pane: String, root: String, path: String, group: GitGroup, source: EditorDiffSource,
+                                  at: EditorPosition? = nil, focus: Bool = true) async {
         let subject = EditorTabSubject.diff(root: root, path: path, group: group, source: source)
         let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
             if let i = s.tabs.firstIndex(where: { $0.subject == subject }) {
-                s.active = i
+                if focus || s.active == nil { s.active = i }
+                if let at { s.tabs[i].cursor = at; s.tabs[i].selection = nil }
                 return nil
             }
-            s.tabs.append(EditorTab.diff(root: root, path: path, group: group, source: source))
-            s.active = s.tabs.count - 1
+            var tab = EditorTab.diff(root: root, path: path, group: group, source: source)
+            if let at { tab.cursor = at }
+            s.tabs.append(tab)
+            if focus || s.active == nil { s.active = s.tabs.count - 1 }
             return fetchDiff(pane, subject, status: nil)
         }
         await persist(pane)
@@ -1505,13 +1515,13 @@ public func registerEditorActions(
 
     await registry.register(Action(
         name: "editor_tree",
-        description: "Show or hide an editor pane's left column (shown), switch its view (files, search or changes — the project's git changes), "
+        description: "Show or hide an editor pane's left column (shown), switch its view (files, search, changes — the project's git changes — or ticket: the branch's ticket, pull requests and review threads), "
             + "or set its width (points; clamped by the view). With no pane, the focused or first editor pane, or "
             + "a new one. A pane that never set its column starts from the one last left in any editor pane. "
             + "Shown on files, it lists every root.",
         kind: .control, audience: .agentReachable,
         schema: schema(["shown": .object(["type": .string("boolean")]),
-                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search"), .string("changes")])]),
+                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search"), .string("changes"), .string("ticket")])]),
                         "width": .object(["type": .string("number")])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_tree")
@@ -2339,6 +2349,46 @@ public func registerEditorActions(
             return .object(o)
         },
         price: (production: .allow, otherwise: .allow)))
+
+    // The Ticket view (piece 2 of Ticket work): its actions borrow the editor's pane, reply, column
+    // and open, so a thread opens in the file with the column left where it was.
+    if let ticket {
+        await registerTicketActions(
+            into: registry, store: ticket, panes: panes, layout: layout,
+            editor: EditorTicketHooks(
+                pane: { params, action in try await editorPane(params, action: action) },
+                reply: { pane in await reply(pane) },
+                updateColumn: { pane, change in await updateColumn(pane, change) },
+                openFile: { pane, path, line in
+                    try await openFile(pane, path: path, at: EditorPosition(line: line, column: 1), selection: nil,
+                                       preview: false, action: "review_open")
+                },
+                openEditorPane: { focus in
+                    guard let layout else { throw StandardActionError.missingParam(action: "ticket_open", param: "pane") }
+                    return await layout.open(kind: "editor", title: Pane.defaultTitle(kind: "editor"), focus: focus).id
+                },
+                readHeads: { heads in
+                    guard let git = gitStatus?.git else { return }
+                    let gen = await panes.editorReviewHeadsGeneration()
+                    for h in heads {
+                        await panes.landEditorReviewHead(h, text: await editorReadReviewHead(git, h), generation: gen)
+                    }
+                },
+                openAtHead: { pane, t, line, focus in
+                    // Blame's commit tab, reused: the file at the PR's head on its modified side. Nothing
+                    // is fetched — a head not here says so in the tab, whole (Rule 8).
+                    let subject = editorReviewHeadSubject(t)
+                    guard case .diff(let root, let path, let group, let source?) = subject else { return }
+                    await openSourceDiff(pane, root: root, path: path, group: group, source: source,
+                                         at: EditorPosition(line: line, column: 1), focus: focus)
+                    await panes.updateEditor(paneId: pane) { s in
+                        guard let i = s.tabs.firstIndex(where: { $0.subject == subject }),
+                              let e = s.tabs[i].diffState?.error, !e.hasPrefix("The pull request's head commit") else { return }
+                        s.tabs[i].diffState?.error = reviewHeadMissing(sha: t.headSHA, line: line, git: e)
+                    }
+                }),
+            roots: roots, organization: organization, handOff: handOff)
+    }
 }
 
 /// One pane's column writes at a time (final review I2): each runs after the one before it for the

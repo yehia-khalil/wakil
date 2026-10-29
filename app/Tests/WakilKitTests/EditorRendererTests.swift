@@ -251,6 +251,84 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     }
     func captureKeys(_ keys: [String]) { calls.append("keys \(keys)") }
     func showPeek(key: String, _ peek: EditorPeekView?) { calls.append("peek \(key) \(peek?.title ?? "nil")") }
+    func setReviews(key: String, boxes: [ReviewBox]) { calls.append("reviews \(key) \(boxes.map(\.thread))") }
+}
+
+// Ticket view: the shown file tab's review boxes reach the renderer once each time they change;
+// a diff tab of the same file draws none.
+@MainActor @Test func rendererSendsSetReviewsForTheShownTab() {
+    let head = "a\nb\nc\n"
+    var reviews = EditorReviewsState.empty
+    reviews.reads.byRoot["/p"] = .init(viewer: "", threads: [
+        ReviewThreadState(id: "T1", path: "a.go", line: 2, comments: [ReviewCommentState(author: "lena", body: "Nit", createdAt: "")],
+                          number: 212, headSHA: "abc", repo: "github.com/initech/api", root: "/p")])
+    let key = EditorReviewHead(root: "/p", path: "a.go", sha: "abc")
+    reviews.heads[key] = head
+    reviews.fetched.insert(key)
+    let s = EditorSnapshot(tabs: [tab("/p/a.go", head), tab("/p/b.go", "x\n")], active: 0)
+    let r = RecordingRenderer()
+    var sent: [String: [ReviewBox]] = [:]
+    editorShowReviews(s, buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls == ["reviews file:/p/a.go [\"T1\"]"])
+    // Unchanged: nothing is sent again.
+    editorShowReviews(s, buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 1)
+    // A draft changes the box: sent again.
+    reviews.reads.drafts["T1"] = "Thanks"
+    editorShowReviews(s, buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 2)
+    // A file with no threads, and a diff tab of the reviewed file, are sent nothing.
+    editorShowReviews(EditorSnapshot(tabs: s.tabs, active: 1), buffer: "x\n", reviews: reviews, sent: &sent, to: r)
+    var d = EditorTab.diff(root: "/p", path: "a.go", group: .changed)
+    d.diffState = GitDiffState(original: head, modified: head, language: "go", binary: false, bytes: 1, lines: 3,
+                               truncated: false, error: nil, loading: false)
+    editorShowReviews(EditorSnapshot(tabs: [d], active: 0), buffer: nil, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 2)
+}
+
+// A picked ticket's thread in its PR-head tab (the commit tab): its boxes are sent for that tab, on
+// GitHub's own lines, and only its PR's head's threads are; the working tree's file draws none of them.
+@MainActor @Test func aHeadTabIsSentItsPickedThreadsBoxes() {
+    let head = "a\nb\nc\nd\n"
+    var reviews = EditorReviewsState.empty
+    func thread(_ id: String, _ line: Int, sha: String) -> ReviewThreadState {
+        ReviewThreadState(id: id, path: "a.go", line: line, comments: [ReviewCommentState(author: "lena", body: "Nit", createdAt: "")],
+                          number: 213, headSHA: sha, repo: "github.com/initech/api", root: "/p")
+    }
+    reviews.reads.shown["INI-140"] = .init(viewer: "me", threads: [thread("P1", 3, sha: "def"), thread("P9", 2, sha: "old")])
+    var d = EditorTab.diff(root: "/p", path: "a.go", group: .changed, source: .commit(GitCommitRef(id: "def", path: "a.go")))
+    d.diffState = GitDiffState(original: "", modified: head, language: "go", binary: false, bytes: 1, lines: 4,
+                               truncated: false, error: nil, loading: false)
+    let r = RecordingRenderer()
+    var sent: [String: [ReviewBox]] = [:]
+    editorShowReviews(EditorSnapshot(tabs: [d], active: 0), buffer: nil, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls == ["reviews \(editorTabKey(d)) [\"P1\"]"])
+    #expect(sent[editorTabKey(d)]?.first?.line == 3)
+    #expect(sent[editorTabKey(d)]?.first?.note == nil)
+    #expect(reviews.thread("P1")?.id == "P1")
+    #expect(!reviews.isCurrent("P1"))
+    #expect(reviews.subject(thread("P1", 3, sha: "def")) == d.subject)
+    // The working tree's file of the same path: a picked thread is never drawn there.
+    editorShowReviews(EditorSnapshot(tabs: [tab("/p/a.go", head)], active: 0), buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 1)
+    // Still loading, or its commit not here: nothing is sent.
+    d.diffState?.error = "fatal: bad object def"
+    #expect(editorReviewBoxes(d, reviews) == nil)
+}
+
+// A shown diff whose cursor the store moved (a thread opened at its line in a head tab) is revealed
+// there; the page's own selection is never touched.
+@Test func aShownDiffsCursorMoveIsRevealed() {
+    var s = EditorSnapshot(tabs: [diffTab(loaded("a\n", "b\nc\nd\n"))], active: 0)
+    let after = editorRenderedAfter(editorRenderSteps(rendered: [:], active: nil, snapshot: s), rendered: [:], snapshot: s)
+    s.tabs[0].cursor = EditorPosition(line: 3, column: 1)
+    let steps = editorRenderSteps(rendered: after, active: "diff:changed:/p/api/b.go", snapshot: s)
+    #expect(steps == [.reveal(key: "diff:changed:/p/api/b.go", cursor: EditorPosition(line: 3, column: 1), selection: nil)])
+    let again = editorRenderedAfter(steps, rendered: after, snapshot: s)
+    #expect(editorRenderSteps(rendered: again, active: "diff:changed:/p/api/b.go", snapshot: s).isEmpty)
+    s.tabs[0].cursor = EditorPosition(line: 2, column: 1)
+    s.tabs[0].selection = EditorRange(start: EditorPosition(line: 1, column: 1), end: EditorPosition(line: 2, column: 1))
+    #expect(editorRenderSteps(rendered: again, active: "diff:changed:/p/api/b.go", snapshot: s).isEmpty)
 }
 
 @MainActor @Test func aFindStepReachesTheRendererLast() {

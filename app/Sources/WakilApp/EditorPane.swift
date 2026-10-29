@@ -93,6 +93,18 @@ struct EditorPane: View {
     /// and `changesUnstageRanges`), with the lines of every selection the page held.
     let stageRanges: ([EditorLineSpan]) async -> Void
     let unstageRanges: ([EditorLineSpan]) async -> Void
+    /// Ticket view: what the review boxes draw from (`WindowModel.editorReviews`).
+    var reviews: EditorReviewsState = .empty
+    /// `dispatch`, answering the action's reply (nil when it did not run): `review_step` names the
+    /// thread it stepped to.
+    var dispatchReply: (String, [String: JSONValue]) async -> JSONValue? = { _, _ in nil }
+    /// Ticket view: what the column's Ticket view draws (`WindowModel.editorTicket`), and `dispatch`
+    /// answering its reply or throwing its refusal, for a link's answer and a write's refusal.
+    var ticket: EditorTicketViewState = .empty
+    /// What waits on the operator (`ticketNeedsCount`, `ticketNeedsLabel`): the Ticket label's count.
+    var ticketCount = 0
+    var ticketCountLabel: String?
+    var dispatchThrowingReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -119,6 +131,8 @@ struct EditorPane: View {
     @State private var treeBrowsed: String?
     /// The revealed file's row, until the column has drawn and selected it.
     @State private var pendingReveal: String?
+    /// The Hand to agent popover's field as typed, when it is anchored here.
+    @State private var handOffDraft = TicketHandOffDraft()
 
     private var activeTab: EditorTab? {
         snapshot.active.flatMap { $0 < snapshot.tabs.count ? snapshot.tabs[$0] : nil }
@@ -131,6 +145,12 @@ struct EditorPane: View {
                        loading: files.loading, dirErrors: files.dirErrors, showIgnored: showIgnored)
     }
 
+    /// The Hand to agent popover, when it opened in THIS pane (`TicketHandOffState.pane`).
+    private var handOff: TicketHandOffState? { ticket.handoff.flatMap { $0.pane == pane.id ? $0 : nil } }
+    /// From the header with the Ticket view showing: anchored to its **Hand to agent**; else to the
+    /// editor, under its top edge, where the box that opened it is.
+    private var handOffInColumn: Bool { handOff?.source == .header && column.shown && column.view == .ticket }
+
     /// Save-as starts in the selected row's folder, else the first root.
     private var saveAsBase: String {
         treeSelected.flatMap { id in treeRows.first { $0.id == id } }.map(editorFolder(of:)) ?? firstRoot
@@ -140,7 +160,7 @@ struct EditorPane: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 if column.shown {
-                    EditorColumn(column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
+                    EditorColumn(openLink: openLink, column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
                                  gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
                                  dispatchThrowing: dispatchThrowing,
@@ -149,7 +169,10 @@ struct EditorPane: View {
                                  selected: $treeSelected, selectedResult: $resultSelected,
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
                                  pendingReveal: $pendingReveal, browsed: $treeBrowsed,
-                                 changes: changes, timeline: timeline, timelineTab: activeTab)
+                                 changes: changes, timeline: timeline, timelineTab: activeTab,
+                                 ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply,
+                                 ticketCount: ticketCount, ticketCountLabel: ticketCountLabel,
+                                 handOffAnchored: handOffInColumn)
                 }
                 editorStack
             }
@@ -170,6 +193,10 @@ struct EditorPane: View {
         .onChange(of: gitRoots, initial: true) { _, roots in
             host.setConflictRoots(roots)
         }
+        // Ticket view: the shown file's review boxes follow the reads, drafts, sends and head texts.
+        .onChange(of: reviews, initial: true) { _, r in
+            host.setReviews(r)
+        }
         // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
         .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
             host.renderer?.captureKeys(keys)
@@ -186,6 +213,7 @@ struct EditorPane: View {
             }
             host.peekPressed = { op in peekOp(op) }
             host.conflictPressed = { block, op in conflictOp(block, op) }
+            host.reviewPressed = { thread, op, text, delta in reviewOp(thread, op, text, delta) }
             // A conflicted file opened at its top lands on its first block (spec): the page is moved at
             // once and held there (`conflictLanding`), and the store and the journal learn it as any
             // cursor move does.
@@ -235,9 +263,13 @@ struct EditorPane: View {
             // arrive: the keyboard stays where the operator was (Rule 6). `editorFrontTabArrived`.
             // A tree click on a file whose tab is already open and pinned brings that tab forward
             // too: browsing all the same, so the keyboard stays in the tree (`treeBrowsed`).
-            let front = now.active.flatMap { now.tabs.indices.contains($0) ? now.tabs[$0].path : nil }
+            // A head tab (a picked ticket's thread at its PR's head) is browsed by its key.
+            func browsable(_ s: EditorSnapshot) -> String? {
+                s.active.flatMap { s.tabs.indices.contains($0) ? (s.tabs[$0].path ?? editorReviewHeadKey(s.tabs[$0])) : nil }
+            }
+            let front = browsable(now)
             let browsing = front != nil && front == treeBrowsed
-            if front != old.active.flatMap({ old.tabs.indices.contains($0) ? old.tabs[$0].path : nil }) {
+            if front != browsable(old) {
                 treeBrowsed = nil
             }
             if !browsing, editorFrontTabArrived(old: old, now: now), isFocusedPane, !saveAsRequested,
@@ -311,6 +343,21 @@ struct EditorPane: View {
                                     identifier: comparing != nil ? "editor.compare.diff" : "editor.monaco")
                 }
                 if snapshot.tabs.isEmpty, comparing == nil { emptyState }
+                // Hand to agent from a review box (or the header, its Ticket view hidden).
+                Color.clear.frame(width: 1, height: 1)
+                    .popover(isPresented: Binding(get: { handOff != nil && !handOffInColumn }, set: { shown in
+                        if !shown, handOff?.starting == false {
+                            let p = handOffDraft.closeParams(handOff)
+                            Task { await dispatch("ticket_hand_off_close", p) }
+                        }
+                    }), arrowEdge: .bottom) {
+                        if let handOff {
+                            TicketHandOffPopover(state: handOff, dispatch: dispatch, dispatchReply: dispatchThrowingReply,
+                                                 draft: handOffDraft)
+                                // One field per subject and open: typed text never carries to another.
+                                .id(handOff.subject)
+                        }
+                    }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -599,6 +646,65 @@ struct EditorPane: View {
         }
     }
 
+    // MARK: - Review boxes
+
+    /// A review box's control, as the registry action every caller uses (Invariant 2): the draft
+    /// kept on blur and dropped by Discard (`review_reply_draft`), Restore yours
+    /// (`review_reply_draft_restore`), Send (`review_reply_send`, gated:
+    /// the plane shows the text and the thread's place), Hand to agent (`ticket_hand_off_open`, the
+    /// popover only), Agent on it (`session_switch` to the hand-off at work on it), Resolve and Unresolve (`review_resolve`), and
+    /// ⌥↓ / ⌥↑ from the box (`review_step` from that thread). A Send is drawn as sending from the press
+    /// until its dispatch — the plane included — is over, and is not pressed twice (Rule 5).
+    private func reviewOp(_ thread: String, _ op: String, _ text: String?, _ delta: Int?) {
+        Task {
+            let t = host.reviews.thread(thread)
+            switch op {
+            case "draft":
+                await dispatch("review_reply_draft", ["thread": .string(thread), "text": text.map { .string($0) } ?? .null])
+            case "discard":
+                await dispatch("review_reply_draft", ["thread": .string(thread), "text": .null])
+            case "restore":
+                // **Restore yours**: one click, no question (Rule 1) — the agent's draft it replaces was
+                // the later value, and the operator's own words come back as theirs.
+                await dispatch("review_reply_draft_restore", ["thread": .string(thread)])
+            case "send":
+                guard let t, let body = text, !body.isEmpty, host.beginReviewSend(thread) else { return }
+                // The text as sent is the draft until the post succeeds (a failed or refused Send keeps it).
+                // Unchanged text writes nothing (`EditorTicketStore.setDraft`): an agent's draft stays the
+                // agent's, and the operator's replaced one restorable, until the post lands.
+                await dispatch("review_reply_draft", ["thread": .string(thread), "text": .string(body)])
+                await dispatch("review_reply_send", [
+                    "root": .string(t.root), "repo": .string(t.repo), "pr": .integer(Int64(t.number)),
+                    "thread": .string(thread), "body": .string(body), "path": .string(t.path),
+                    "line": .integer(Int64(t.line))])
+                host.endReviewSend(thread)
+            case "handoff":
+                // Hand to agent: the popover opens prefilled from this thread (`ticket_hand_off_open`);
+                // only the operator's Start in it hands anything off.
+                await dispatch("ticket_hand_off_open", ["thread": .string(thread)])
+            case "agent":
+                // **Agent on it**: the hand-off at work on this thread — its conversation, as its chip opens it.
+                guard let conversation = host.reviews.handed[thread] else { return }
+                await dispatch("session_switch", ["conversation": .string(conversation)])
+            case "resolve", "unresolve":
+                guard let t else { return }
+                await dispatch("review_resolve", ["root": .string(t.root), "thread": .string(thread),
+                                                  "resolved": .bool(op == "resolve")])
+                host.resendReviews()
+            case "step":
+                // The keyboard goes to the box of the thread stepped to, by its id, whenever that box is
+                // drawn; a step that did not run gives it back (nil).
+                let reply = await dispatchReply("review_step", ["delta": .integer(Int64(delta ?? 1)), "from": .string(thread)])
+                var to: String?
+                if case .object(let o)? = reply, case .string(let t)? = o["thread"] { to = t }
+                // The tab it opened in: its file, or a picked ticket's at its PR's head.
+                let key = to.flatMap { host.reviews.thread($0) }.map { editorTabKey(host.reviews.subject($0)) }
+                host.renderer?.focusReview(thread: to, key: key)
+            default: break
+            }
+        }
+    }
+
     // MARK: - Compare
 
     private func openCompare(_ tab: EditorTab) {
@@ -882,6 +988,14 @@ final class EditorHost {
     @ObservationIgnored var conflictPressed: ((Int, String) -> Void)?
     @ObservationIgnored var conflictReveal: ((Int) -> Void)?
     @ObservationIgnored var accepting = false
+    /// Ticket view: what the review boxes draw from, the boxes last sent per key, the Sends this
+    /// pane has pressed and not seen end (drawn as sending, plane included), a box's control pressed
+    /// — (thread, op, text, delta) — and the re-placing after typing.
+    @ObservationIgnored private(set) var reviews: EditorReviewsState = .empty
+    @ObservationIgnored private var reviewsSent: [String: [ReviewBox]] = [:]
+    @ObservationIgnored private var reviewSending: Set<String> = []
+    @ObservationIgnored var reviewPressed: ((String, String, String?, Int?) -> Void)?
+    @ObservationIgnored private var reviewsTask: Task<Void, Never>?
     /// The window's git roots, which say whether a tab's file is conflicted (`editorConflicted`).
     @ObservationIgnored private var conflictRoots: [GitRootState] = []
     /// Per key: the text last parsed ("" while the file is not conflicted), the blocks last sent, and
@@ -935,6 +1049,7 @@ final class EditorHost {
             }
             self.rendered[key]?.text = text
             self.showConflicts()
+            self.scheduleReviews()
             self.typed[key, default: []].insert(text)
             self.typingInFlight += 1
             let send = self.bufferChanged
@@ -980,6 +1095,9 @@ final class EditorHost {
             guard let self, key == self.active else { return }
             self.conflictPressed?(block, op)
         }
+        // Addressed by thread, never by the shown key: a draft flushed as its file is left lands
+        // after the next tab is shown.
+        made.onReview = { [weak self] _, thread, op, text, delta in self?.reviewPressed?(thread, op, text, delta) }
         made.onMark = { [weak self] key, line in
             guard let self, let s = self.subjects[key] else { return }
             self.markClicked?(s, line)
@@ -1072,11 +1190,13 @@ final class EditorHost {
         for case .dispose(let k) in steps {
             marksSent[k] = nil; blames.forget(key: k); blameShown[k] = nil
             conflictsParsed[k] = nil; conflictsSent[k] = nil; conflictsRevealed.remove(k); conflictLanding[k] = nil
+            reviewsSent[k] = nil
         }
         // The page moves a renamed tab's blocks with its model; a rename is not a first show.
         for case .rekey(let from, let to) in steps {
             if conflictsRevealed.remove(from) != nil { conflictsRevealed.insert(to) }
             if let at = conflictLanding.removeValue(forKey: from) { conflictLanding[to] = at }
+            if let sent = reviewsSent.removeValue(forKey: from) { reviewsSent[to] = sent }
         }
         rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: shown)
         findShown = editorFindShownAfter(steps, findShown: found, snapshot: shown)
@@ -1090,6 +1210,54 @@ final class EditorHost {
         scheduleMarks(shown)
         scheduleBlame(shown)
         showConflicts()
+        showReviews()
+    }
+
+    /// Ticket view: the reads, drafts, sends or head texts moved.
+    func setReviews(_ r: EditorReviewsState) {
+        guard r != reviews else { return }
+        reviews = r
+        showReviews()
+    }
+
+    /// Claims `thread` for a Send pressed here; false while one is already on its way (Rule 5).
+    func beginReviewSend(_ thread: String) -> Bool {
+        guard reviewSending.insert(thread).inserted else { return false }
+        showReviews()
+        return true
+    }
+
+    func endReviewSend(_ thread: String) {
+        reviewSending.remove(thread)
+        resendReviews()
+    }
+
+    /// Sends the shown tab's boxes again even when unchanged: a control the page drew as pressed
+    /// (Resolve, Send) is drawn from the boxes again once its dispatch is over, whatever it did.
+    func resendReviews() {
+        if let key = active { reviewsSent[key] = nil }
+        showReviews()
+    }
+
+    /// The shown file tab's review boxes, placed against the text the page holds (`editorShowReviews`
+    /// decides; a diff or scratch tab gets none). Unchanged, nothing is sent.
+    private func showReviews() {
+        guard let renderer, !comparing, let key = active, let latest,
+              let i = latest.active, i < latest.tabs.count, editorTabKey(latest.tabs[i]) == key else { return }
+        var r = reviews
+        r.reads.sending.formUnion(reviewSending)
+        editorShowReviews(latest, buffer: rendered[key]?.text, reviews: r, sent: &reviewsSent, to: renderer)
+    }
+
+    /// After typing, the boxes are placed again once it pauses: Monaco carries each zone with its
+    /// line meanwhile.
+    private func scheduleReviews() {
+        reviewsTask?.cancel()
+        reviewsTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.showReviews()
+        }
     }
 
     /// 3a-v-b: the git roots moved; every tab's conflicted state is read again, the active one now.

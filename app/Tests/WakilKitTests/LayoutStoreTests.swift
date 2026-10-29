@@ -645,3 +645,43 @@ func adoptingMovesBothStores() async {
     #expect(back.panes.first { $0.id == a }?.editorColumn == col)
     #expect(back.editorColumnDefault?.width == 300)
 }
+
+/// Walk 2026-10-29: a done conversation's chip brought back a canvas whose maximized editor kept the
+/// void it was maximized into — another window size — so it no longer matched the canvas on screen.
+/// The window's size had not changed, so nothing refit it. A maximized pane fills the canvas it is
+/// shown on: a canvas coming on screen, or read off disk, takes the window's void.
+@Test func aMaximizedPaneFillsTheVoidOfTheCanvasItComesBackTo() async throws {
+    let store = LayoutStore()
+    let alpha = LayoutScope(organization: "acme", project: "alpha", environment: "dev")
+    let beta = LayoutScope(organization: "acme", project: "beta", environment: "dev")
+    await store.switchScope(to: alpha)
+    await store.setVoid(PaneFrame(x: 0, y: 0, width: 1468, height: 921))
+    let a = await store.open(kind: "editor", title: "A")
+    try await store.maximize(id: a.id)
+    await store.switchScope(to: beta)
+    let wider = PaneFrame(x: 0, y: 0, width: 1660, height: 887)
+    await store.setVoid(wider)
+    await store.switchScope(to: alpha)
+    #expect(await store.snapshot().panes.first { $0.id == a.id }?.frame == wider)
+}
+
+@Test func aMaximizedPaneReadOffDiskFillsTheWindowsVoid() async throws {
+    let store = LayoutStore()
+    let void = PaneFrame(x: 0, y: 0, width: 1660, height: 887)
+    await store.setVoid(void)
+    let stale = PaneFrame(x: 0, y: 0, width: 1468, height: 921)
+    let original = PaneFrame(x: 60, y: 60, width: 640, height: 420)
+    var saved = LayoutSnapshot()
+    saved.panes = [Pane(id: "editor-14", kind: "editor", title: "E", frame: stale),
+                   Pane(id: "browser-15", kind: "browser", title: "B", frame: PaneFrame(x: 88, y: 88, width: 640, height: 420))]
+    saved.preMaximizeFrames = ["editor-14": original]
+    saved.maximizedId = "editor-14"
+    let scope = LayoutScope(organization: "acme", project: "alpha", environment: "dev")
+    await store.load(saved, for: scope)
+    await store.switchScope(to: scope)
+    let snapshot = await store.snapshot()
+    #expect(snapshot.panes.first { $0.id == "editor-14" }?.frame == void)
+    // Only the maximized pane follows; its frame to restore to is kept.
+    #expect(snapshot.panes.first { $0.id == "browser-15" }?.frame == PaneFrame(x: 88, y: 88, width: 640, height: 420))
+    #expect(snapshot.preMaximizeFrames["editor-14"] == original)
+}

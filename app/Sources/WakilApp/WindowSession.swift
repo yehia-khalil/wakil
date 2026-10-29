@@ -109,20 +109,66 @@ final class WindowSession {
         // for `sun_path`, say) leaves that session running without Wakil's own tools, and its
         // status says why.
         let surface = wiring.mcpSurface
+        let confirmations = wiring.confirmations
+        let registry = wiring.registry
         // Filled once the model exists, below: `initialize` reports the place and conversation on
         // screen beside the socket's own (`initializeMeta`), which is how the e2e harness picks
         // its channel.
         let screen = ScreenPlace()
         let agentSocketFactory: AgentSocketFactory = { path, caller in
+            // The e2e harness's operator channel, only in the staged e2e fixture
+            // (`startHarnessSocket`; nil and nothing bound in any other build). Started BEFORE the
+            // agent socket, so a harness that sees the agent socket already finds this one beside it.
+            // One that would not start leaves the session as it is, and is said, never swallowed:
+            // the conversation's status says why (`startFailure`, as for the approval socket),
+            // and the agent socket's `initialize` carries it (`wakil/harnessFailure`), so the
+            // harness can tell a socket that failed from a build that opens none.
+            // The gate's input is read here, from the running bundle itself, and nowhere else
+            // (`TestTheWindowJudgesTheHarnessGateByItsOwnBundleIdentifier`).
+            let opened = await openHarnessSocket(
+                bundleIdentifier: Bundle.main.bundleIdentifier, agentSocket: path,
+                surface: surface, caller: caller, screen: { await screen.shown })
+            let harness = opened.server
             // The registry *and* the pane store the window itself draws
             // from, as one value: `read_pane` answers the agent from the
             // same `PaneStore` `WindowModel.refreshPanes` reads, so what the
             // agent is told is on screen is what is on screen (Invariant 3).
             // The gate judges the session's own place, whatever the screen shows.
             let server = MCPSocketServer(
-                surface: surface, socketPath: path, caller: caller, screen: { await screen.shown })
-            try await server.start()
-            return server
+                surface: surface, socketPath: path, caller: caller, screen: { await screen.shown },
+                harnessFailure: opened.failure)
+            do {
+                try await server.start()
+            } catch {
+                await harness?.stop()
+                throw error
+            }
+            // The conversation's approval socket, beside its agent socket and stopped with it
+            // (`approvalSocketPath`): `wakil-connect` asks it before a gated connection call, and
+            // its answer is the permission plane's (`ConnectionApprovalServer`). One that would
+            // not start refuses nothing here (Rule 7): the session keeps Wakil's own tools,
+            // `wakil-connect`, finding no socket, refuses every call that would have asked, and
+            // the conversation's status says why after each turn (`AgentSocket.startFailure`).
+            let pinned = await caller()
+            let conversation = pinned.conversation ?? ""
+            let approval = ConnectionApprovalServer(
+                socketPath: approvalSocketPath(forAgentSocket: path), place: pinned.place,
+                conversation: conversation, broker: confirmations,
+                spoken: { await screen.turnIsSpoken(conversation: conversation) },
+                journal: { request, outcome in
+                    try? await registry.journalConnectionCall(request, outcome: outcome, caller: pinned)
+                },
+                connectionExists: { AgentConnectionsBox.shared.stillHas(org: pinned.place.organization, name: $0) })
+            do {
+                try await approval.start()
+                return AgentSockets(mcp: server, approval: approval, harness: harness, startFailure: opened.failure)
+            } catch {
+                let failures = [approvalSocketFailure(path: approvalSocketPath(forAgentSocket: path), error: error),
+                                opened.failure].compactMap { $0 }
+                return AgentSockets(
+                    mcp: server, approval: nil, harness: harness,
+                    startFailure: failures.joined(separator: "; "))
+            }
         }
 
         let executableDirectory = WakilWiring.defaultExecutableDirectory()
@@ -177,6 +223,9 @@ final class WindowSession {
         // same `wakil` executable and the same per-org construction: the
         // mint writes the credential that lookup later reads.
         let mintFactory: (@Sendable (String) -> any ProviderMinting)?
+        var connectionsUnavailable: String?
+        // Settings → Connections checks each connection with the same binary (`--list`).
+        var connectURL: URL?
         do {
             guard let wakilExecutable = WakilWiring.binaryURL(
                 named: "wakil", executableDirectory: executableDirectory, environment: environment)
@@ -223,6 +272,16 @@ final class WindowSession {
                     notes.append("\(name): not found, so the agent has no \(name) tools this session")
                 }
             }
+            // Connections run through `wakil-connect`; without it they are dropped, for the
+            // session's config and its allow list alike. Said only when a launch drops some
+            // (`WindowModel.connectionsUnavailable`), not at window open.
+            if let url = WakilWiring.binaryURL(
+                named: wakilConnectBinaryName, executableDirectory: executableDirectory, environment: environment) {
+                mutableBinaries[wakilConnectBinaryName] = url
+                connectURL = url
+            } else {
+                connectionsUnavailable = "\(wakilConnectBinaryName): not found, so the agent has no connections this session"
+            }
             // Reassigned to an immutable `let` before the `@Sendable`
             // closure below captures it: a captured `var` is a compile
             // error under strict concurrency, and this dictionary is
@@ -232,8 +291,10 @@ final class WindowSession {
             // list written down here: the session's `--allowedTools` is what
             // keeps the CLI's permission layer from auto-denying the very
             // tools this config publishes (probe §6), so the two have to
-            // describe the same surface. See `agentAllowedTools`.
-            let allowedTools = agentAllowedTools(actions: await wiring.registry.all())
+            // describe the same surface. See `agentAllowedTools`. The registry's actions are fixed
+            // for the window; the connections are not (they differ by organisation), so the list is
+            // finished per launch below.
+            let actions = await wiring.registry.all()
             harnessFactory = { place, selection, socketPath in
                 // Rebuilt per call, never captured: this JSON carries
                 // WAKIL_PROVIDER and the session's whole place — WAKIL_ORG,
@@ -241,18 +302,23 @@ final class WindowSession {
                 // reusing JSON captured at window open would run the new
                 // account's session — or a post-switch session's servers —
                 // with the old provider id or the old place.
+                // The organisation's connections, read at each launch; none without `wakil-connect`.
+                let connections = binaries[wakilConnectBinaryName] == nil
+                    ? [] : AgentConnectionsBox.shared.connections(org: place.organization)
                 let configJSON = agentMCPConfigJSON(
                     shimExecutable: executableURL,
                     socketPath: socketPath,
                     binaries: binaries,
                     place: place,
-                    provider: selection.id)
+                    provider: selection.id,
+                    connections: connections,
+                    approvalSocket: approvalSocketPath(forAgentSocket: socketPath))
                 return ClaudeCodeCLIHarness(
                     claudePath: selection.credentials.claudePath,
                     configDir: selection.credentials.configDir,
                     oauthToken: selection.credentials.oauthToken,
                     mcpConfigJSON: configJSON,
-                    allowedTools: allowedTools,
+                    allowedTools: agentAllowedTools(actions: actions, connections: connections),
                     // 3a-iii-b: the operator's instructions for this place, read at each launch.
                     appendedInstructions: { AgentInstructionsBox.shared.text(org: place.organization, project: place.project) })
             }
@@ -434,6 +500,8 @@ final class WindowSession {
             fileLists: wiring.fileLists,
             // 3b-iii. The status the actions read; no default, for `rootWatcher`'s reason.
             gitStatus: wiring.gitStatus,
+            // Ticket view: the store the ticket actions were registered with.
+            ticket: wiring.ticketStore,
             // The palette reads tables, API entries and changed files straight from these
             // clients, drawing no pane. No default, for `rootWatcher`'s reason. ⌘P's files come
             // from the same list as the trees, so the two never disagree.
@@ -453,6 +521,13 @@ final class WindowSession {
         // exported at all (final review, Critical 3). Asked on every
         // open, never captured: see `ActiveShellContext`.
         wiring.useActiveContext(of: model)
+        model.connectionsUnavailable = connectionsUnavailable
+        if let connectURL {
+            let lister = WakilConnectLister(executable: connectURL)
+            model.connectionLister = { org, name in await lister.list(org: org, name: name) }
+        }
+        // A connection's browser sign-in opens its page in the default browser.
+        model.openURL = { NSWorkspace.shared.open($0) }
         // 3a-ii-b. `editor_changes_draft_message` reaches this window's ✨ through the sink.
         await wiring.commitDrafts.bind { [weak model] root in
             guard let model else { throw CancellationError() }
@@ -520,6 +595,26 @@ private final class ScreenPlace {
     weak var model: WindowModel?
     var shown: ScreenShown? {
         model.map { ScreenShown(place: $0.place, conversation: $0.screenConversation) }
+    }
+    /// Whether `conversation`'s turn is spoken (`WindowModel.turnIsSpoken`); with the window gone,
+    /// spoken — the operator is asked, and with no plane left the call is refused.
+    func turnIsSpoken(conversation: String) -> Bool {
+        model?.turnIsSpoken(conversation: conversation) ?? true
+    }
+}
+
+/// One conversation's sockets: its agent socket and, when it started, its approval socket, and
+/// in the e2e fixture only, the harness's operator channel. Stopped together — the approval
+/// socket first, so a call still asking is told its conversation ended.
+private struct AgentSockets: AgentSocket {
+    let mcp: MCPSocketServer
+    let approval: ConnectionApprovalServer?
+    let harness: MCPSocketServer?
+    let startFailure: String?
+    func stop() async {
+        await approval?.stop()
+        await harness?.stop()
+        await mcp.stop()
     }
 }
 

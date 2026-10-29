@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-agent-line.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "d06ca508458736c6c13fa43fac357d4897dc5be8"
+}

@@ -1,0 +1,52 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"printf '%s\\n' '#!/usr/bin/python3' 'import sys,json' 'T=[[\"wiki_read\",{\"readOnlyHint\":True}],[\"wiki_write\",{\"readOnlyHint\":False,\"destructiveHint\":False}],[\"wiki_drop\",{\"readOnlyHint\":False,\"destructiveHint\":True}]]' 'for l in sys.stdin:' ' m=json.loads(l)' ' if \"id\" not in m: continue' ' p=m.get(\"params\") or {}' ' k=m.get(\"method\")' ' r={\"protocolVersion\":p.get(\"protocolVersion\",\"2025-06-18\"),\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"e2e-wiki\",\"version\":\"1\"}} if k==\"initialize\" else {\"tools\":[{\"name\":n,\"inputSchema\":{\"type\":\"object\"},\"annotations\":a} for n,a in T]} if k==\"tools/list\" else {}' ' print(json.dumps({\"jsonrpc\":\"2.0\",\"id\":m[\"id\"],\"result\":r}),flush=True)' > \"$HOME/../bin/e2e-mcp\" && chmod +x \"$HOME/../bin/e2e-mcp\" && echo made"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"made"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.org.connections.add"}}
+{"do":{"click":"settings.org.connections.catalog.custom"}}
+{"expect":{"frame":"settings.org.connections.custom","minWidth":1}}
+{"expect":{"frame":"settings.org.connections.custom.visible","minWidth":1}}
+{"expect":{"tree":"contains","text":"The command and its arguments can be seen by the agent."}}
+{"do":{"click":"settings.org.connections.custom.http"}}
+{"expect":{"tree":"contains","text":"The address can be seen by the agent."}}
+{"do":{"type":{"into":"settings.org.connections.custom.url","text":"https://mcp.initech.test/mcp"}}}
+{"expect":{"tree":"contains","text":"https://mcp.initech.test/mcp"}}
+{"do":{"click":"settings.org.connections.custom.stdio"}}
+{"expect":{"tree":"contains","text":"The command and its arguments can be seen by the agent."}}
+{"do":{"type":{"into":"settings.org.connections.custom.name","text":"Bad Name"}}}
+{"do":{"type":{"into":"settings.org.connections.custom.command","text":"e2e-mcp"}}}
+{"do":{"type":{"into":"settings.org.connections.custom.args","text":"e2e-arg"}}}
+{"do":{"click":"settings.org.connections.custom.entry.add"}}
+{"expect":{"tree":"contains","text":"API_TOKEN"}}
+{"do":{"click":"settings.org.connections.custom.entry.kind"}}
+{"expect":{"tree":"contains","text":"X-Api-Key"}}
+{"do":{"click":"settings.org.connections.custom.entry.kind"}}
+{"expect":{"tree":"contains","text":"API_TOKEN"}}
+{"do":{"type":{"into":"settings.org.connections.custom.entry.name","text":"E2E_WIKI_TOKEN"}}}
+{"do":{"type":{"into":"settings.org.connections.custom.entry.value","text":"e2e-fake-value"}}}
+{"do":{"click":"settings.org.connections.custom.save"}}
+{"expect":{"frame":"settings.org.connections.custom.error","minWidth":1}}
+{"expect":{"tree":"contains","text":"lowercase letters, digits and hyphens"}}
+{"expect":{"tree":"contains","text":"E2E_WIKI_TOKEN"}}
+{"expect":{"tree":"contains","text":"e2e-arg"}}
+{"do":{"focus":"settings.org.connections.custom.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"wiki"}}
+{"expect":{"tree":"absent","text":"Bad Name"}}
+{"do":{"click":"settings.org.connections.custom.save"}}
+{"expect":{"tree":"contains","text":"Environment variable E2E_WIKI_TOKEN"}}
+{"expect":{"tree":"contains","text":"Connected · 3 tools"}}
+{"expect":{"tree":"contains","text":"Allow agent"}}
+{"expect":{"tree":"contains","text":"wiki_read"}}
+{"expect":{"tree":"contains","text":"read-only"}}
+{"expect":{"tree":"contains","text":"writes"}}
+{"expect":{"tree":"contains","text":"(locked)"}}
+{"do":{"click":"settings.org.connections.wiki.tool.wiki_write"}}
+{"expect":{"journal":{"contains":"\"action\":\"ctx_connection_allow_set\""}}}
+{"expect":{"journal":{"contains":"wiki_write"}}}
+{"do":{"resize":{"width":1000,"height":900}}}
+{"expect":{"frame":"settings.org.connections.wiki.allowReadOnly","maxHeight":40,"clear":"settings.org.connections.wiki.remove"}}
+{"expect":{"frame":"settings.org.connections.wiki.tool.wiki_drop","clear":"settings.org.connections.wiki.tool.wiki_write"}}

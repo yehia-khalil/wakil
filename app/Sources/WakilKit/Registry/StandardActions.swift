@@ -623,6 +623,33 @@ public func registerStandardActions(
         }
     ))
 
+    // The same tree for a NAMED organisation, for the app's own launch read (a session launching
+    // in an organisation other than the window's active one learns that organisation's
+    // connections). **Operator-only**, because it is the one read that crosses the organisation
+    // boundary (Invariant 4): the agent reads the active organisation's tree through
+    // `ctx_config_tree` and nothing else's.
+    await registry.register(Action(
+        name: "ctx_config_tree_for",
+        description: "Read one named organisation's whole configuration, as ctx_config_tree reads "
+            + "the active one's. Operator-only.",
+        kind: .read,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object(["id": .object(["type": .string("string")])]),
+            "required": .array([.string("id")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_config_tree_for", role: "context")
+            }
+            guard case .object(let o) = params, case .string(let id)? = o["id"], !id.isEmpty else {
+                throw StandardActionError.missingParam(action: "ctx_config_tree_for", param: "id")
+            }
+            return try await readConfigTree(context, organisation: id)
+        }
+    ))
+
     // 2e (#200). The settings pane's account table: every account on
     // this machine, each row carrying its credential's PRESENCE and its
     // sign-in's LIVENESS.
@@ -1098,7 +1125,10 @@ public func registerStandardActions(
         ("ctx_git_key_passphrase_set", "git_key_passphrase_set", ["id", "host", "passphrase"], ["id", "host", "passphrase"], ["passphrase"]),
         ("ctx_git_account_test", "git_account_test", ["id", "host"], ["id", "host"], []),
         ("ctx_git_device_start", "git_device_start", ["id", "provider"], ["id", "provider"], []),
-        ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode"], ["id", "provider", "host", "deviceCode"], []),
+        ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode", "apiAccess"], ["id", "provider", "host", "deviceCode"], []),
+        ("ctx_git_api_access_token_set", "git_api_access_token_set", ["id", "host", "token"], ["id", "host", "token"], ["token"]),
+        ("ctx_git_api_access_remove", "git_api_access_remove", ["id", "host"], ["id", "host"], []),
+        ("ctx_git_api_access_test", "git_api_access_test", ["id", "host"], ["id", "host"], []),
         ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
         ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
         ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
@@ -1117,6 +1147,9 @@ public func registerStandardActions(
                 "ctx_git_account_test": "Ask a host who an organisation's account there is. Operator-only.",
                 "ctx_git_device_start": "Begin Sign in with a provider (device flow). Operator-only.",
                 "ctx_git_device_poll": "Ask once whether a Sign in was approved. Operator-only.",
+                "ctx_git_api_access_token_set": "Give an SSH GitHub account API access with an access token, kept in the Keychain. Operator-only.",
+                "ctx_git_api_access_remove": "Drop an SSH GitHub account's API access; the account stays. Operator-only.",
+                "ctx_git_api_access_test": "Ask GitHub who an SSH account's API access belongs to. Operator-only.",
                 "ctx_git_gh_logins": "The GitHub CLI's logins. Operator-only.",
                 "ctx_git_gh_import": "Use one of the GitHub CLI's logins as the organisation's account. Operator-only.",
                 "ctx_set_project_agent_instructions": "Change one project's agent instructions. Operator-only.",
@@ -1126,7 +1159,10 @@ public func registerStandardActions(
             audience: .operatorOnly,
             schema: .object([
                 "type": .string("object"),
-                "properties": .object(Dictionary(uniqueKeysWithValues: keys.map { ($0, JSONValue.object(["type": .string("string")])) })),
+                // `apiAccess` (device poll) is the one switch among the strings.
+                "properties": .object(Dictionary(uniqueKeysWithValues: keys.map {
+                    ($0, JSONValue.object(["type": .string($0 == "apiAccess" ? "boolean" : "string")]))
+                })),
                 "required": .array(required.map { .string($0) }),
             ]),
             handler: { params in
@@ -1135,10 +1171,78 @@ public func registerStandardActions(
                 for key in required { arguments[key] = .string(try requireStringParam(params, key, action: name)) }
                 for key in keys where arguments[key] == nil {
                     if case .object(let o) = params, case .string(let v)? = o[key] { arguments[key] = .string(v) }
+                    if key == "apiAccess", case .object(let o) = params, case .bool(let b)? = o[key] { arguments[key] = .bool(b) }
                 }
                 return try await callChecked(
                     context, tool: tool, arguments: .object(arguments), action: name,
                     timeout: MCPClient.readReplyTimeout)
+            },
+            secretParams: Set(secrets)))
+    }
+
+    // Connections: an organisation's own MCP servers, their sign-ins and their Allow agent
+    // switches. Operator-only like the git accounts above (Decision 30, Invariant 4): they choose
+    // which account an organisation's agents reach a service as, and which of its tools run
+    // unasked. The secrets travel in `ctx_connection_secrets_set`'s `values` and
+    // `ctx_jira_token_set`'s `token`, marked so the journal redacts them. Params are forwarded as
+    // given (some are objects, lists or a switch), each required one checked present.
+    let str: JSONValue = .object(["type": .string("string")])
+    let strings: JSONValue = .object(["type": .string("array"), "items": str])
+    let stringMap: JSONValue = .object(["type": .string("object"), "additionalProperties": str])
+    let flag: JSONValue = .object(["type": .string("boolean")])
+    let named: [String: JSONValue] = ["id": str, "name": str]
+    for (name, tool, description, properties, required, secrets) in [
+        ("ctx_connection_catalog", "connection_catalog",
+         "The ready-made connections an organisation can add. Operator-only.", [String: JSONValue](), [String](), [String]()),
+        ("ctx_connection_add", "connection_add",
+         "Add one of an organisation's own MCP servers behind Wakil's gate. Operator-only.",
+         ["id": str, "kind": str, "name": str, "transport": str, "url": str, "command": str, "args": strings,
+          "signIn": str, "values": stringMap], ["id", "kind"], []),
+        ("ctx_connection_update", "connection_update",
+         "Change a connection's name, address, command, arguments, non-secret values or recorded tool hints. Operator-only.",
+         ["id": str, "name": str, "newName": str, "url": str, "command": str, "args": strings,
+          "values": stringMap, "hints": stringMap], ["id", "name"], []),
+        ("ctx_connection_remove", "connection_remove",
+         "Forget an organisation's connection, with its Keychain item. Operator-only.", named, ["id", "name"], []),
+        ("ctx_connection_secrets_set", "connection_secrets_set",
+         "Keep a connection's secret values in the Keychain. Operator-only.",
+         ["id": str, "name": str, "values": stringMap], ["id", "name", "values"], ["values"]),
+        ("ctx_connection_allow_set", "connection_allow_set",
+         "Switch one of a connection's tools on or off at the gate. Operator-only.",
+         ["id": str, "name": str, "tool": str, "allow": flag], ["id", "name", "tool", "allow"], []),
+        ("ctx_connection_signin_start", "connection_signin_start",
+         "Begin a connection's browser sign-in; answers the page to open. Operator-only.", named, ["id", "name"], []),
+        ("ctx_connection_signin_wait", "connection_signin_wait",
+         "Wait for a connection's browser sign-in to finish; cancelling ends it. Operator-only.", named, ["id", "name"], []),
+        ("ctx_connection_signout", "connection_signout",
+         "Forget a connection's browser sign-in tokens. Operator-only.", named, ["id", "name"], []),
+        ("ctx_jira_token_set", "jira_token_set",
+         "Keep an organisation's Jira email and API token in the Keychain. Operator-only.",
+         ["id": str, "email": str, "token": str], ["id", "email", "token"], ["token"]),
+    ] {
+        await registry.register(Action(
+            name: name,
+            description: description,
+            kind: name == "ctx_connection_catalog" ? .read : .control,
+            audience: .operatorOnly,
+            schema: .object([
+                "type": .string("object"),
+                "properties": .object(properties),
+                "required": .array(required.map { .string($0) }),
+            ]),
+            handler: { params in
+                guard let context else { throw StandardActionError.missingClient(action: name, role: "context") }
+                var given: [String: JSONValue] = [:]
+                if case .object(let o) = params { given = o }
+                for key in required where given[key] == nil || given[key] == .null {
+                    throw StandardActionError.missingParam(action: name, param: key)
+                }
+                let arguments = given.filter { properties[$0.key] != nil }
+                // A browser sign-in waits for the operator in the browser; Go ends it after ten
+                // minutes, and a Cancel ends it sooner (the call's cancellation).
+                let timeout = name == "ctx_connection_signin_wait" ? 11 * 60 : MCPClient.readReplyTimeout
+                return try await callChecked(
+                    context, tool: tool, arguments: .object(arguments), action: name, timeout: timeout)
             },
             secretParams: Set(secrets)))
     }
@@ -3415,12 +3519,13 @@ private func annotatedWithPaneOutcome(
 /// sites assembling the same read separately is the two-code-paths-to-one-
 /// state shape Invariant 2 forbids for mutations, and is no better for a
 /// read the screen and the agent must agree about.
-func readConfigTree(_ context: (any ToolCaller)?) async throws -> JSONValue {
+func readConfigTree(_ context: (any ToolCaller)?, organisation: String? = nil) async throws -> JSONValue {
     guard let context else {
         throw StandardActionError.missingClient(action: "ctx_config_tree", role: "context")
     }
     return try await callChecked(
-        context, tool: "config_tree", arguments: .object([:]),
+        context, tool: "config_tree",
+        arguments: .object(organisation.map { ["id": .string($0)] } ?? [:]),
         action: "ctx_config_tree", timeout: MCPClient.readReplyTimeout)
 }
 

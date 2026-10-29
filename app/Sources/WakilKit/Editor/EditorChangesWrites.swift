@@ -29,7 +29,7 @@ let gitRemoteReplyTimeout: TimeInterval = 600
 
 func registerEditorChangesWrites(
     into registry: ActionRegistry, gitStatus: GitStatus?, panes: PaneStore, layout: LayoutStore?,
-    writes: GitWriteFlights
+    writes: GitWriteFlights, ticket: EditorTicketStore? = nil
 ) async {
     @Sendable func strings(_ params: JSONValue, _ key: String) -> [String]? {
         guard case .object(let o) = params, case .array(let a)? = o[key] else { return nil }
@@ -357,9 +357,15 @@ func registerEditorChangesWrites(
             schema: rootSchema(),
             handler: { params in
                 let root = try requireString(params, "root", action: name)
-                return try await write(root, action: name) { git in
+                let out = try await write(root, action: name) { git in
                     try await call(git, tool, ["root": .string(root)], action: name, timeout: gitRemoteReplyTimeout)
                 }
+                // A push starts CI and can open or move a PR: the Ticket view reads the root again,
+                // then In flight.
+                if ["editor_changes_push", "editor_changes_sync", "editor_changes_publish"].contains(name) {
+                    await ticket?.wrote(root: root)
+                }
+                return out
             },
             price: price))
     }

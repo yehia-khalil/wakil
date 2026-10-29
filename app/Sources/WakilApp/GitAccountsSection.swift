@@ -14,7 +14,10 @@ struct GitAccountActions {
     var setPassphrase: (String, String) async -> String? = { _, _ in nil }
     var test: (String) async -> (user: String?, error: String?) = { _ in (nil, nil) }
     var deviceStart: (GitProvider) async -> (userCode: String?, page: String?, deviceCode: String?, interval: Int, error: String?) = { _ in (nil, nil, nil, 5, nil) }
-    var devicePoll: (GitProvider, String, String) async -> (pending: Bool, error: String?) = { _, _, _ in (false, nil) }
+    var devicePoll: (GitProvider, String, String, Bool) async -> (pending: Bool, error: String?) = { _, _, _, _ in (false, nil) }
+    var setAPIToken: (String, String) async -> String? = { _, _ in nil }
+    var removeAPIAccess: (String) async -> String? = { _ in nil }
+    var testAPIAccess: (String) async -> (user: String?, error: String?) = { _ in (nil, nil) }
     var ghLogins: () async -> [(host: String, user: String)] = { [] }
     var ghImport: (String, String) async -> String? = { _, _ in nil }
 }
@@ -93,6 +96,9 @@ struct GitAccountsBlock: View {
                 .fixedSize()
                 .accessibilityLabel("More")
                 .accessibilityIdentifier("settings.org.git.account.\(account.host).more")
+            }
+            if let row = gitAPIAccessRow(account) {
+                GitAPIAccessRowView(account: account, row: row, git: git, signInAvailable: org.gitSignIn.contains("github"))
             }
             if confirmingRemove == account.host {
                 HStack(spacing: 8) {
@@ -379,7 +385,7 @@ struct GitAccountSheet: View {
                 }
                 numbered(2, "Add it on \(providerName)") {
                     if let page = provider?.sshKeyPage {
-                        FormButton(title: "Open \(providerName)'s SSH keys page", tone: SettingsPalette.coolWhite,
+                        FormButton(title: WebLink.label("Open \(providerName)'s SSH keys page"), tone: WebLink.colour,
                                    identifier: "settings.org.git.account.add.openKeys") { NSWorkspace.shared.open(page) }
                     } else {
                         Text("In \(host)'s settings, under SSH keys.")
@@ -420,6 +426,13 @@ struct GitAccountSheet: View {
                     }
                 }
             }
+            if let p = provider, let tip = gitSSHAPIAccessTip(provider: p) {
+                Text(tip)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.git.account.add.apiTip")
+            }
         }
     }
 
@@ -451,7 +464,7 @@ struct GitAccountSheet: View {
     private var tokenStep: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let page = provider?.tokenPage {
-                FormButton(title: "Create a token on \(providerName) (\(provider?.tokenScopes ?? ""))", tone: SettingsPalette.coolWhite,
+                FormButton(title: WebLink.label("Create a token on \(providerName) (\(provider?.tokenScopes ?? ""))"), tone: WebLink.colour,
                            identifier: "settings.org.git.account.add.openTokens") { NSWorkspace.shared.open(page) }
             }
             if provider == .bitbucket {
@@ -481,7 +494,7 @@ struct GitAccountSheet: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("settings.org.git.account.add.deviceCode")
                     if let page = devicePage, let url = URL(string: page) {
-                        FormButton(title: "Open \(url.host ?? page)", tone: SettingsPalette.coolWhite,
+                        FormButton(title: WebLink.label("Open \(url.host ?? page)"), tone: WebLink.colour,
                                    identifier: "settings.org.git.account.add.openDevice") { NSWorkspace.shared.open(url) }
                     }
                 }
@@ -646,7 +659,7 @@ struct GitAccountSheet: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(start.interval))
             if Task.isCancelled { break }
-            let r = await git.devicePoll(provider, host, deviceCode)
+            let r = await git.devicePoll(provider, host, deviceCode, false)
             if let e = r.error {
                 message = e
                 deviceUserCode = nil
@@ -659,5 +672,180 @@ struct GitAccountSheet: View {
             }
         }
         deviceUserCode = nil
+    }
+}
+
+/// An SSH GitHub account's **API access**: what Wakil reads pull requests with while git keeps
+/// pushing over SSH. Sign in (a code to approve; Cancel ends the wait, Rule 4) or an access token
+/// (a secure field, focused when it opens, kept when focus leaves, Rules 2 and 3); once set, Test and
+/// Remove. One action runs at a time per row, its buttons off until its call returns (Rule 5): Store,
+/// Test and Remove offer no Cancel, since one would only stop watching a call already sent.
+struct GitAPIAccessRowView: View {
+    let account: SettingsGitAccount
+    let row: GitAPIAccessRow
+    let git: GitAccountActions
+    let signInAvailable: Bool
+
+    @State private var enteringToken = false
+    @State private var token = ""
+    @State private var userCode: String?
+    @State private var page: String?
+    @State private var work: Task<Void, Never>?
+    /// The running work is Sign in's: the only one Cancel is offered for.
+    @State private var signingIn = false
+    @State private var confirmingRemove = false
+    @State private var note: String?
+    @FocusState private var tokenFocused: Bool
+
+    private var id: String { "settings.org.git.account.\(account.host).api" }
+    private var host: String { account.host }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(row.title)
+                    .font(.system(size: SettingsScale.body, weight: .semibold))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.85))
+                Text(row.detail)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.6))
+                    .accessibilityIdentifier("\(id).detail")
+                Spacer(minLength: 0)
+                if work != nil {
+                    ProgressView().controlSize(.small)
+                    if signingIn {
+                        // Ends the wait; the row stays busy until the sign-in's call returns.
+                        FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: "\(id).cancel") {
+                            work?.cancel()
+                            userCode = nil
+                        }
+                    }
+                } else {
+                    if signInAvailable {
+                        FormButton(title: "Sign in", tone: SettingsPalette.accent, identifier: "\(id).signin") { signIn() }
+                    }
+                    FormButton(title: "Use a token", tone: SettingsPalette.coolWhite, identifier: "\(id).token") {
+                        enteringToken = true
+                    }
+                    if row.isSet {
+                        FormButton(title: "Test", tone: SettingsPalette.coolWhite, identifier: "\(id).test") { test() }
+                        FormButton(title: "Remove", tone: SettingsPalette.caution, identifier: "\(id).remove") {
+                            confirmingRemove = true
+                        }
+                    }
+                }
+            }
+            if let code = userCode {
+                HStack(spacing: 8) {
+                    Text("Enter this code on \(host)")
+                        .font(.system(size: SettingsScale.body))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.6))
+                    Text(code)
+                        .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("\(id).deviceCode")
+                    if let page, let url = URL(string: page) {
+                        FormButton(title: WebLink.label("Open \(url.host ?? page)"), tone: WebLink.colour, identifier: "\(id).openDevice") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+            if enteringToken && work == nil {
+                HStack(spacing: 8) {
+                    SecureField("Paste an access token that can \(GitProvider.github.tokenScopes)", text: $token)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($tokenFocused)
+                        .accessibilityIdentifier("\(id).token.field")
+                        .onSubmit { storeToken() }
+                        // Rule 3. A beat after appearing, as the sheet's fields do.
+                        .task {
+                            try? await Task.sleep(for: .milliseconds(150))
+                            tokenFocused = true
+                        }
+                    FormButton(title: "Store", tone: SettingsPalette.accent, filled: true, identifier: "\(id).token.store") { storeToken() }
+                        .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
+                    FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: "\(id).token.cancel") {
+                        token = ""
+                        enteringToken = false
+                    }
+                }
+            }
+            if confirmingRemove {
+                HStack(spacing: 8) {
+                    Text("Remove API access? Pull requests are not read until you add it again. Pushes stay on SSH.")
+                        .font(.system(size: SettingsScale.body))
+                        .foregroundStyle(SettingsPalette.caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "\(id).remove.keep") { confirmingRemove = false }
+                    FormButton(title: "Remove", tone: SettingsPalette.caution, filled: true, identifier: "\(id).remove.confirm") {
+                        confirmingRemove = false
+                        run { note = await git.removeAPIAccess(host) }
+                    }
+                }
+            }
+            if let note { SheetMessage(text: note, identifier: "\(id).note") }
+        }
+    }
+
+    /// Starts one piece of work and clears the row's busy state when it ends, cancelled or not.
+    private func run(_ body: @escaping () async -> Void) {
+        guard work == nil else { return }
+        note = nil
+        work = Task {
+            await body()
+            work = nil
+        }
+    }
+
+    private func storeToken() {
+        let value = token.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return }
+        run {
+            let refusal = await git.setAPIToken(host, value)
+            note = refusal
+            // The typed token stays when it was refused (Rule 2); a stored one is not kept in the view.
+            if refusal == nil {
+                token = ""
+                enteringToken = false
+            }
+        }
+    }
+
+    private func test() {
+        run {
+            let r = await git.testAPIAccess(host)
+            guard !Task.isCancelled else { return }
+            note = r.error ?? "✓ GitHub knows this access\(r.user.map { $0.isEmpty ? "" : " as \($0)" } ?? "")"
+        }
+    }
+
+    private func signIn() {
+        run {
+            signingIn = true
+            defer { signingIn = false }
+            let start = await git.deviceStart(.github)
+            guard !Task.isCancelled else { return }
+            guard let deviceCode = start.deviceCode, start.error == nil else {
+                note = start.error
+                return
+            }
+            userCode = start.userCode
+            page = start.page
+            if let p = start.page, let url = URL(string: p) { NSWorkspace.shared.open(url) }
+            defer { userCode = nil }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(start.interval))
+                if Task.isCancelled { break }
+                let r = await git.devicePoll(.github, host, deviceCode, true)
+                // A wait cancelled meanwhile shows no late note (Rule 5).
+                if let e = r.error, !Task.isCancelled {
+                    note = e
+                    return
+                }
+                if !r.pending { return }
+            }
+        }
     }
 }

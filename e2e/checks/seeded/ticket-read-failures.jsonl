@@ -1,0 +1,38 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api checkout -q main && git -C ../e2e-portal checkout -q -b ini-180-portal && git -C ../e2e-api branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"main"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"pane":"editor-2","field":"ticket.branch","equals":"main"}}
+{"expect":{"frame":"editor.ticket.inflight:INI-180","inside":"editor.ticket"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"mv ../e2e-portal/.git ../e2e-portal/.git-away && echo moved"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"moved"}}
+{"do":{"click":"editor.ticket.inflight:INI-180"}}
+{"expect":{"pane":"editor-2","field":"column.ticket_shown","equals":"INI-180"}}
+{"expect":{"tree":"contains","text":"not a git repository"}}
+{"do":{"click":"editor.ticket.back"}}
+{"expect":{"pane":"editor-2","field":"column.ticket_shown","equals":"null"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"mv ../e2e-api/.git ../e2e-api/.git-away && echo gone"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"gone"}}
+{"do":{"click":"editor.ticket.refresh"}}
+{"expect":{"pane":"editor-2","field":"ticket.error","equals":"not a git repository"}}
+{"expect":{"tree":"contains","text":"not a git repository"}}
+{"expect":{"tree":"contains","text":"IN FLIGHT"}}

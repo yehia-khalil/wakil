@@ -46,7 +46,7 @@ With none of them, `WakilApplication.main()` opens the window.
 | `db` | `DBPane` (`DBPane.swift`, with `DataSurface.swift` and `QueryLineEditor.swift`) | `table(_:)`, `editable(paneId:)`, query-line state |
 | `terminal` | `TerminalPane` (`TerminalPane.swift`; its header row is `PaneStripRow`) | `terminal(_:)` |
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
-| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
+| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `EditorTicketView.swift` (the column's Ticket view), `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorReviews` (the review boxes in the file), `editorTicket` (the Ticket view), `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
 | `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row, which also draws the site tag chip, the tab dots and the *agent allowed* mark — `BrowserGroupViews.swift` (3d-i: the group chips, the rename field, the tab and group menus and the error rows under the strip), `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache`, `browserCloseArm`, `browserHeaderFocus`, `browserPullRequestsOnScreen` |
 | anything else | a "no view for a … pane" line | — |
@@ -134,14 +134,15 @@ import from the Passwords app's CSV).
 
 | View | File | What it is |
 |---|---|---|
-| `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover |
+| `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover. Waiting on you: the amber tick and ` · N` on an editor row, or a `Tickets · N` row when no editor is open |
 | `RailPeek` | `RailPeek.swift` | The collapsed rail (⌃⌘R, `rail_set`): the spine of marks, the 6 pt edge zone and the rail sliding out over the canvas on a 150 ms rest |
 | `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line |
 | `ComposerBar` | `ComposerBar.swift` | The bar typed and spoken text land in; Return sends |
 | `ThoughtThread` | `ThoughtThread.swift` | The agent's progress, rising from the bottom edge |
 | `ConfirmationPlane` | `ConfirmationPlane.swift` | The typed confirmation for a gated mutation; the site question (3c-ii): **Don't Allow** / **Allow for this conversation**, a click for a typed request and the typed word for a spoken one |
 | `OrgPlane` | `OrgPlane.swift` | ⌘⇧O: every organisation on the machine; create, adopt, switch |
-| `Landing` | `Landing.swift` | What the window draws before the session has done anything |
+| `Landing` | `Landing.swift` | What the window draws before the session has done anything; *Tickets in flight* above *Continue*, at most five rows |
+| `TicketHandOffPopover` | `TicketHandOffPopover.swift` | Hand to agent: brief, harness, provider, May push, Start and Cancel; anchored on the Ticket header, a thread's box or ⌘P |
 | `PalettePlane`, `PaletteController` | `Palettes.swift` | ⌘K and ⌘P, driving `PaletteModel` |
 | `VoidView` | `VoidView.swift` | The Metal void behind everything (shader `app/Shaders/Void.metal`) |
 | `DataSurface` | `DataSurface.swift` | The db pane's grid: its keys (⌘C, Space, ↑↓, Esc), right-click menu and footer Cancel |

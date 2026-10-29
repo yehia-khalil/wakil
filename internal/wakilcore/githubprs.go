@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// PullRequest is one open pull request the operator wrote or was asked to review. Reason is
+// MyPullRequest is one open pull request the operator wrote or was asked to review. Reason is
 // "author" or "review-requested"; a pull request that is both reads "author".
-type PullRequest struct {
+type MyPullRequest struct {
 	Number     int    `json:"number"`
 	Title      string `json:"title"`
 	URL        string `json:"url"`
@@ -26,7 +26,7 @@ type PullRequest struct {
 // PullRequestsResult is the read's answer. Absent is why there is no list (no GitHub account, an
 // SSH one, no token): a state, not a failure. Host is the account that was asked.
 type PullRequestsResult struct {
-	PullRequests []PullRequest `json:"pullRequests"`
+	PullRequests []MyPullRequest `json:"pullRequests"`
 	Absent       string        `json:"absent,omitempty"`
 	Host         string        `json:"host,omitempty"`
 }
@@ -47,7 +47,7 @@ var githubAPIBase = func(host string) string {
 // GitHubPullRequests reads org's open pull requests (authored by the token's owner, and awaiting
 // their review) from the organisation's GitHub account. It never returns the token.
 func GitHubPullRequests(ctx context.Context, org string) (PullRequestsResult, error) {
-	none := PullRequestsResult{PullRequests: []PullRequest{}}
+	none := PullRequestsResult{PullRequests: []MyPullRequest{}}
 	o, err := LoadOrgFor(org)
 	if err != nil {
 		return none, err
@@ -89,7 +89,7 @@ func GitHubPullRequests(ctx context.Context, org string) (PullRequestsResult, er
 	defer cancel()
 	base := githubAPIBase(a.Host)
 	type found struct {
-		PullRequest
+		MyPullRequest
 		updated string
 	}
 	byURL := map[string]*found{}
@@ -113,7 +113,7 @@ func GitHubPullRequests(ctx context.Context, org string) (PullRequestsResult, er
 				repo = parts[len(parts)-2] + "/" + parts[len(parts)-1]
 			}
 			byURL[it.HTMLURL] = &found{
-				PullRequest: PullRequest{Number: it.Number, Title: it.Title, URL: it.HTMLURL, Repository: repo, Reason: search.reason},
+				MyPullRequest: MyPullRequest{Number: it.Number, Title: it.Title, URL: it.HTMLURL, Repository: repo, Reason: search.reason},
 				updated:     it.UpdatedAt,
 			}
 		}
@@ -128,9 +128,9 @@ func GitHubPullRequests(ctx context.Context, org string) (PullRequestsResult, er
 		}
 		return all[i].URL < all[j].URL
 	})
-	out := PullRequestsResult{PullRequests: []PullRequest{}, Host: a.Host}
+	out := PullRequestsResult{PullRequests: []MyPullRequest{}, Host: a.Host}
 	for _, f := range all {
-		out.PullRequests = append(out.PullRequests, f.PullRequest)
+		out.PullRequests = append(out.PullRequests, f.MyPullRequest)
 	}
 	return out, nil
 }

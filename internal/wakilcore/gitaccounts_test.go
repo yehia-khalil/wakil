@@ -1,6 +1,7 @@
 package wakilcore
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,5 +126,178 @@ func TestConfigTreeListsAccountsWithoutSecrets(t *testing.T) {
 	}
 	if len(tree.Org.GitAccounts) != 1 || tree.Org.GitAccounts[0].User != "dev-initech" {
 		t.Fatalf("accounts = %+v", tree.Org.GitAccounts)
+	}
+}
+
+func sshKeyAccount(t *testing.T) {
+	t.Helper()
+	AddGitAccount("initech", GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k/id", User: "dev-initech"})
+}
+
+func TestAPIAccessTokenKeepsSSHMethod(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	sshKeyAccount(t)
+	before, _, _, err := credentials("initech", "git@github.com:initech/api.git", GitRemoteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetGitAPIAccessToken("initech", "github.com", " tok-1 "); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := GitAccountFor("initech", "github.com")
+	if a.Method != "ssh" || a.APIAccess != "token" || a.KeyPath != "/k/id" {
+		t.Fatalf("account = %+v", a)
+	}
+	if v, _ := SecretGetFor("initech", "git-github.com-token"); v != "tok-1" {
+		t.Fatalf("token = %q", v)
+	}
+	after, _, _, err := credentials("initech", "git@github.com:initech/api.git", GitRemoteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(before.Env, "\n") != strings.Join(after.Env, "\n") || strings.Join(before.Args, "\n") != strings.Join(after.Args, "\n") {
+		t.Fatalf("the ssh invocation changed:\n%+v\n%+v", before, after)
+	}
+	if err := FinishAPIAccessSignIn("initech", "github.com", "tok-2"); err != nil {
+		t.Fatal(err)
+	}
+	a, _ = GitAccountFor("initech", "github.com")
+	if a.Method != "ssh" || a.APIAccess != "signin" {
+		t.Fatalf("account = %+v", a)
+	}
+}
+
+func TestAPIAccessRefusedOnNonSSHOrNonGitHub(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	for name, a := range map[string]GitAccount{
+		"token account": {Host: "github.com", Provider: "github", Method: "token"},
+		"gitlab ssh":    {Host: "gitlab.com", Provider: "gitlab", Method: "ssh", KeyPath: "/k/id"},
+	} {
+		AddGitAccount("initech", a)
+		for _, err := range []error{
+			SetGitAPIAccessToken("initech", a.Host, "t"),
+			FinishAPIAccessSignIn("initech", a.Host, "t"),
+		} {
+			if _, ok := IsUserError(err); !ok {
+				t.Errorf("%s: err = %v, want a UserError", name, err)
+			}
+		}
+		if v, _ := SecretGetFor("initech", gitTokenRef(a.Host)); v != "" {
+			t.Errorf("%s: a token was kept", name)
+		}
+	}
+	if err := SetGitAPIAccessToken("initech", "nowhere.test", "t"); err == nil {
+		t.Error("no account: want an error")
+	}
+}
+
+func TestGitHubTokenForEachMethod(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	sshCopy := "Pull requests not read: this organization's github.com account signs in with SSH, which reads no pull requests. Add API access to the GitHub account in Settings → Organisation → Git."
+
+	if _, err := GitHubTokenFor("initech", "github.com"); err == nil || err.Error() != "Pull requests not read: this organization has no git account for github.com. Add one in Settings → Organisation → Git." {
+		t.Fatalf("no account: %v", err)
+	}
+	for _, method := range []string{"signin", "token"} {
+		AddGitAccount("initech", GitAccount{Host: "github.com", Provider: "github", Method: method})
+		SetGitToken("initech", "github.com", "tok-"+method)
+		if got, err := GitHubTokenFor("initech", "github.com"); err != nil || got != "tok-"+method {
+			t.Errorf("%s: %q %v", method, got, err)
+		}
+	}
+	SecretDelete("initech", "git-github.com-token")
+	if _, err := GitHubTokenFor("initech", "github.com"); err == nil || err.Error() != "no token kept for github.com" {
+		t.Errorf("missing token: %v", err)
+	}
+
+	sshKeyAccount(t)
+	if _, err := GitHubTokenFor("initech", "github.com"); err == nil || err.Error() != sshCopy {
+		t.Errorf("ssh without API access: %v", err)
+	}
+	if err := SetGitAPIAccessToken("initech", "github.com", "tok-ssh"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := GitHubTokenFor("initech", "github.com"); err != nil || got != "tok-ssh" {
+		t.Errorf("ssh with API access: %q %v", got, err)
+	}
+
+	AddGitAccount("initech", GitAccount{Host: "gitlab.com", Provider: "gitlab", Method: "token"})
+	if _, err := GitHubTokenFor("initech", "gitlab.com"); err == nil || err.Error() != "Pull requests are read from GitHub only." {
+		t.Errorf("gitlab: %v", err)
+	}
+}
+
+func TestRemoveGitAPIAccessKeepsTheAccount(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	sshKeyAccount(t)
+	SetGitAPIAccessToken("initech", "github.com", "tok-1")
+	if err := RemoveGitAPIAccess("initech", "github.com"); err != nil {
+		t.Fatal(err)
+	}
+	a, ok := GitAccountFor("initech", "github.com")
+	if !ok || a.Method != "ssh" || a.APIAccess != "" || a.KeyPath != "/k/id" {
+		t.Fatalf("account = %+v %v", a, ok)
+	}
+	if v, _ := SecretGetFor("initech", "git-github.com-token"); v != "" {
+		t.Fatal("the token is still in the Keychain")
+	}
+	if err := RemoveGitAPIAccess("initech", "nowhere.test"); err == nil {
+		t.Fatal("no account: want an error")
+	}
+}
+
+func TestRemoveGitAccountAlsoDropsAPIAccessToken(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	fakeTrash(t)
+	sshKeyAccount(t)
+	SetGitAPIAccessToken("initech", "github.com", "tok-1")
+	if err := RemoveGitAccount("initech", "github.com"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := SecretGetFor("initech", "git-github.com-token"); v != "" {
+		t.Fatal("the API access token outlived its account")
+	}
+}
+
+func TestConfigTreeCarriesAPIAccessNotToken(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	sshKeyAccount(t)
+	SetGitAPIAccessToken("initech", "github.com", "ghp-s3cret")
+	tree, err := LoadConfigTreeFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Org.GitAccounts) != 1 || tree.Org.GitAccounts[0].APIAccess != "token" {
+		t.Fatalf("accounts = %+v", tree.Org.GitAccounts)
+	}
+	raw, _ := json.Marshal(tree)
+	if !strings.Contains(string(raw), `"apiAccess":"token"`) || strings.Contains(string(raw), "ghp-s3cret") {
+		t.Fatalf("tree = %s", raw)
+	}
+}
+
+func TestRemoveGitAPIAccessRefusesAccountsThatAreNotSSHGitHub(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	for _, a := range []GitAccount{
+		{Host: "github.com", Provider: "github", Method: "token"},
+		{Host: "github.com", Provider: "github", Method: "signin"},
+		{Host: "gitlab.com", Provider: "gitlab", Method: "ssh", KeyPath: "/k/id"},
+	} {
+		AddGitAccount("initech", a)
+		SetGitToken("initech", a.Host, "tok-keep")
+		err := RemoveGitAPIAccess("initech", a.Host)
+		if _, ok := IsUserError(err); !ok {
+			t.Errorf("%s/%s: err = %v, want a UserError", a.Provider, a.Method, err)
+		}
+		if v, _ := SecretGetFor("initech", gitTokenRef(a.Host)); v != "tok-keep" {
+			t.Errorf("%s/%s: the account's credential was deleted", a.Provider, a.Method)
+		}
 	}
 }

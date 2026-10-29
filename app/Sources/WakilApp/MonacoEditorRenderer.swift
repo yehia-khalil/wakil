@@ -47,6 +47,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     /// 3a-ii-b: Stage ("stage") or Unstage ("unstage") Selected Ranges from the diff's right-click
     /// menu in `key`, with every selection the page held.
     var onRanges: ((String, String, [EditorRange]) -> Void)?
+    /// Ticket view: a review box's control in `key` — (key, thread, op, text, delta): `reply`,
+    /// `discard`, `draft` (+text, on blur), `send` (+text), `resolve`, `unresolve`, `step` (+delta).
+    var onReview: ((String, String, String, String?, Int?) -> Void)?
     private var capturing: [String] = []
 
     /// Held so `tearDown` can reach it from `deinit`, which is not main-actor isolated.
@@ -183,6 +186,22 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilSetConflicts(\(Self.jsString(key)),[\(list.joined(separator: ","))])")
     }
 
+    /// Ticket view: `key`'s review boxes, as JSON the page parses — every text in them is data, set
+    /// with `textContent` there.
+    func setReviews(key: String, boxes: [ReviewBox]) {
+        let json = (try? JSONEncoder().encode(boxes)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        run("wakilSetReviews(\(Self.jsString(key)),JSON.parse(\(Self.jsString(json))))")
+    }
+
+    /// Ticket view: after ⌥↓ from a box, the box of `thread` takes the keyboard when it is drawn
+    /// (now, or once its file's boxes arrive); nil ends the wait and gives the text the keyboard.
+    /// Meanwhile the text is not focused, so a second ⌥↓ is never Monaco's Move Line Down.
+    /// `key` is the file tab the thread opened in: drawn without its box, the wait ends soon and the
+    /// text has the keyboard back, as it does at once for nil.
+    func focusReview(thread: String?, key: String?) {
+        run("wakilFocusReview(\(thread.map(Self.jsString) ?? "null"),\(key.map(Self.jsString) ?? "null"))")
+    }
+
     /// The settings' options (3b-v). Queued until the page is ready, like every other call.
     func setOptions(_ o: EditorViewOptions) {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
@@ -281,6 +300,10 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             guard let key = body["key"] as? String, let block = Self.int(body["block"]),
                   let op = body["op"] as? String else { return }
             onConflict?(key, block, op)
+        case "review":
+            guard let key = body["key"] as? String, let thread = body["thread"] as? String,
+                  let op = body["op"] as? String else { return }
+            onReview?(key, thread, op, body["text"] as? String, Self.int(body["delta"]))
         case "ghost":
             guard let key = body["key"] as? String, let id = Self.int(body["id"]),
                   let text = body["text"] as? String, let offset = Self.int(body["offset"]) else { return }

@@ -1,0 +1,7 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.org.connections.jira"}}
+{"expect":{"tree":"absent","text":"stored in Keychain"}}
+{"dispatch":{"action":"ctx_jira_token_set","params":{"id":"e2e-fixture","email":"e2e@initech.test","token":"e2e-fake-token"}}}
+{"expect":{"tree":"contains","text":"•••••••• stored in Keychain"}}
+{"expect":{"journal":{"contains":"\"action\":\"ctx_jira_token_set\""}}}

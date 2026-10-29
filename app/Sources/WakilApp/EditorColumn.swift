@@ -2,11 +2,13 @@ import AppKit
 import WakilKit
 import SwiftUI
 
-/// The editor's left column (3b-ii): Files, Search or Changes (3b-iii). It decides nothing — rows, steps, selection and
+/// The editor's left column (3b-ii): Files, Search, Changes (3b-iii) or Ticket (`EditorTicketView`). It decides nothing — rows, steps, selection and
 /// width come from WakilKit's tested functions; every change is an `editor_*` action through `dispatch`.
 /// Its own state is the query being typed, the type-ahead prefix and the live drag width. The selected
 /// row and result are the pane's (`EditorPane`), so they outlive the column being hidden (Rule 6).
 struct EditorColumn: View {
+    /// Where a link in the Ticket view opens (`WakilLinks.open`).
+    var openLink: (String, Bool) -> Void = { _, _ in }
     let column: EditorColumnState
     /// The tree's rows, built once by `EditorPane` (`treeRows`), which also reads them for save-as.
     let rows: [EditorTreeRow]
@@ -42,6 +44,18 @@ struct EditorColumn: View {
     /// 3a-v-a: the Timeline's reads and opens, and the tab it follows (the pane's active one, R2).
     var timeline = EditorTimelineControls()
     var timelineTab: EditorTab?
+    /// Ticket view: what it draws (`WindowModel.editorTicket`), the review boxes as placed (⌥↓ steps
+    /// from the one on the cursor), and `dispatch` answering its reply or throwing its refusal.
+    var ticket: EditorTicketViewState = .empty
+    var reviews: EditorReviewsState = .empty
+    var dispatchReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
+    /// What waits on the operator in the organisation (`ticketNeedsCount`) and what it is made of
+    /// (`ticketNeedsLabel`): the Ticket label reads `Ticket · 4`, the rail's number, whichever branch
+    /// the view follows.
+    var ticketCount = 0
+    var ticketCountLabel: String?
+    /// The Hand to agent popover is this pane's and from the header: the Ticket view's button anchors it.
+    var handOffAnchored = false
 
     @State private var dragWidth: Double?
     /// 3a-iv: the root whose branch picker is open from its header.
@@ -62,6 +76,9 @@ struct EditorColumn: View {
     @FocusState private var treeFocused: Bool
     @FocusState private var resultsFocused: Bool
     @FocusState private var changesFocused: Bool
+    @FocusState private var ticketFocused: Bool
+    /// A field of the Ticket view (Next, a record line, Link a ticket) holds the keyboard.
+    @State private var ticketFieldHasKeyboard = false
     @State private var replaceText = ""
     @State private var replaceDebounce = EditorDebounce(delay: .milliseconds(250))
     /// The field's text this column last sent (or took from the store), as `sent` is for the query.
@@ -121,6 +138,9 @@ struct EditorColumn: View {
             controls: timeline, dispatch: dispatch)
     }
 
+    /// The first root row: the Files view's header line, where the reveal button sits.
+    private var firstRootID: String? { rows.first { $0.kind == .root }?.id }
+
     private func rowPath(_ row: EditorTreeRow) -> String {
         "\(rootName(row))\(row.relative.isEmpty ? "" : "/" + row.relative)"
     }
@@ -138,6 +158,11 @@ struct EditorColumn: View {
                     }
                 case .search: searchView
                 case .changes: changesView
+                case .ticket:
+                    EditorTicketView(openLink: openLink, state: ticket, column: column, tab: timelineTab, reviews: reviews,
+                                     dispatch: dispatch, dispatchReply: dispatchReply, focused: $ticketFocused,
+                                     fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed,
+                                     handOffAnchored: handOffAnchored)
                 }
             }
             .frame(width: dragWidth ?? editorColumnWidth(column.width, paneWidth: paneWidth))
@@ -151,7 +176,8 @@ struct EditorColumn: View {
         .onAppear { takeWantedKeyboard(dropOther: true); takeReveal(rows) }
         .onChange(of: column.view) { _, _ in takeWantedKeyboard(dropOther: true) }
         .onChange(of: focusWanted) { _, _ in takeWantedKeyboard(dropOther: false) }
-        .onChange(of: queryFocused || treeFocused || resultsFocused || changesFocused || messageFocused != nil) { _, now in
+        .onChange(of: queryFocused || treeFocused || resultsFocused || changesFocused || messageFocused != nil
+                  || ticketFocused || ticketFieldHasKeyboard) { _, now in
             hasKeyboard = now
         }
         .onChange(of: messageFocused) { _, root in watchMessageKeys(root) }
@@ -185,53 +211,75 @@ struct EditorColumn: View {
             case .search: queryFocused = true
             case .changes: changesFocused = true
             case .files: treeFocused = true
+            case .ticket: ticketFocused = true
             }
         }
     }
 
+    /// The four view names, always as words (the calmer column, 2026-10-28): at a narrower width the
+    /// same names step down to a tighter face and spacing, never to icons and never wrapping (a walk
+    /// found them wrapping letter by letter at the column's minimum width). The reveal button lives
+    /// on the Files view's own root row, so the names have the whole row.
     private var header: some View {
-        HStack(spacing: 12) {
-            Button("Files") {
-                focusWanted = .files
-                Task { await dispatch("editor_tree", ["view": .string("files"), "shown": .bool(true)]) }
-            }
-                .buttonStyle(.plain).opacity(column.view == .files ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.files")
-            Button("Search") {
-                focusWanted = .search
-                Task { await dispatch("editor_tree", ["view": .string("search"), "shown": .bool(true)]) }
-            }
-                .buttonStyle(.plain).opacity(column.view == .search ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.search")
-            Button("Changes") {
-                focusWanted = .changes
-                Task { await dispatch("editor_tree", ["view": .string("changes"), "shown": .bool(true)]) }
-            }
-                .buttonStyle(.plain).opacity(column.view == .changes ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.changes")
-            Spacer()
-            if column.view == .files {
-                Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }
-                    .buttonStyle(.plain)
-                    .disabled(!canReveal)
-                    .opacity(canReveal ? 0.9 : 0.35)
-                    .help(canReveal ? "Reveal Active File in Tree" : "No file tab in front: nothing to reveal")
-                    .accessibilityIdentifier("editor.tree.reveal")
-            }
+        ViewThatFits(in: .horizontal) {
+            viewTabs(.system(size: 11, weight: .medium, design: .monospaced), spacing: 12)
+            viewTabs(.system(size: 11, weight: .medium), spacing: 9)
+            viewTabs(.system(size: 10, weight: .medium).width(.condensed), spacing: 5)
         }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
         .foregroundStyle(EditorPaneStyle.text)
+        .frame(maxWidth: .infinity, alignment: .leading)
         // The compact chrome (2026-10-26): the strip's 32 pt beside it, so the two rows and their
         // hairlines meet in one line across the pane.
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .frame(height: PaneStripStyle.rowHeight)
+    }
+
+    private func viewTabs(_ font: Font, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            viewTab(.files, "Files", "files")
+            viewTab(.search, "Search", "search")
+            viewTab(.changes, "Changes", "changes")
+            viewTab(.ticket, "Ticket", "ticket")
+        }
+        .font(font)
+        .fixedSize()
+    }
+
+    /// The Ticket label carries the count as a word suffix (`Ticket · 4`); the tooltip and the
+    /// spoken label say what it is made of.
+    private func viewTab(_ view: EditorColumnView, _ name: String, _ id: String) -> some View {
+        let count = view == .ticket ? RailTreatment.countSuffix(ticketCount) : nil
+        let said = count.flatMap { _ in ticketCountLabel.map { "\(name), \($0)" } } ?? name
+        return Button {
+            focusWanted = view
+            Task { await dispatch("editor_tree", ["view": .string(id), "shown": .bool(true)]) }
+        } label: {
+            Text(name + (count ?? "")).lineLimit(1).fixedSize()
+        }
+            .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
+            .help(said)
+            .accessibilityLabel(said)
+            .accessibilityIdentifier("editor.column.\(id)")
+    }
+
+    /// Reveal Active File in Tree (3b-ii-b), on the Files view's first root row beside its **+**:
+    /// the view's own header line, so the tab row keeps the four names.
+    private var revealButton: some View {
+        Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }
+            .buttonStyle(.plain)
+            .disabled(!canReveal)
+            .opacity(canReveal ? 0.9 : 0.35)
+            .help(canReveal ? "Reveal Active File in Tree" : "No file tab in front: nothing to reveal")
+            .accessibilityIdentifier("editor.tree.reveal")
     }
 
     private var edge: some View {
         Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1)
             .padding(.horizontal, 2).contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
-            .gesture(DragGesture(minimumDistance: 1)
+            // Measured in the window's space, not the edge's own: the edge moves with the width it sets,
+            // so a local translation fed back into itself and the drag twitched (walk 2026-10-29).
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { g in dragWidth = editorColumnWidth(column.width + g.translation.width, paneWidth: paneWidth) }
                 .onEnded { _ in
                     guard let w = dragWidth else { return }
@@ -403,6 +451,10 @@ struct EditorColumn: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help("New File or Folder")
                     .accessibilityIdentifier("editor.tree.add:\(root)")
+            }
+            if row.kind == .root, row.id == firstRootID {
+                if !(hovered == row.id || selected == row.id) { Spacer(minLength: 6) }
+                revealButton
             }
         }
         .foregroundStyle(EditorPaneStyle.text.opacity(row.kind == .root ? 0.62 : 0.86))

@@ -1,0 +1,32 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api checkout -q ini-160-stall && git -C ../e2e-api branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"ini-160-stall"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"pane":"editor-2","field":"ticket.reading","equals":"true"}}
+{"expect":{"tree":"contains","text":"Reading the ticket…"}}
+{"expect":{"frame":"editor.ticket.reading","inside":"editor.ticket"}}
+{"parity":{"action":"ticket_refresh","params":{"pane":"editor-2","cancel":true},"click":"editor.ticket.cancel","assert":"read_pane"}}
+{"expect":{"pane":"editor-2","field":"ticket.reading","equals":"false"}}
+{"expect":{"pane":"editor-2","field":"ticket.error","equals":"null"}}
+{"expect":{"frame":"editor.ticket.refresh","inside":"editor.ticket"}}
+{"do":{"click":"editor.ticket.refresh"}}
+{"expect":{"pane":"editor-2","field":"ticket.reading","equals":"true"}}
+{"dispatch":{"action":"ticket_refresh","params":{"pane":"editor-2","cancel":true}}}
+{"expect":{"pane":"editor-2","field":"ticket.reading","equals":"false"}}
+{"expect":{"pane":"editor-2","field":"ticket.error","equals":"null"}}
+{"expect":{"frame":"editor.ticket.refresh","inside":"editor.ticket"}}

@@ -1,0 +1,51 @@
+{"dispatch":{"action":"ctx_git_key_generate","params":{"id":"e2e-fixture","host":"github.com","comment":"e2e github key"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"ssh","keyPath":"{fixtureRoot}/home/.wakil/orgs/e2e-fixture/git/ssh/github.com_ed25519"}}}
+{"dispatch":{"action":"ctx_git_api_access_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_git_api_access_remove","params":{"id":"e2e-fixture","host":"github.com"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_git_api_access_test","params":{"id":"e2e-fixture","host":"github.com"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_git_api_access_test","params":{"id":"e2e-fixture","host":"github.com"},"refuses":"Pull requests not read: this organization's github.com account signs in with SSH, which reads no pull requests. Add API access to the GitHub account in Settings → Organisation → Git."}}
+{"dispatch":{"action":"ctx_git_api_access_test","params":{"id":"e2e-fixture","host":"gitlab.com"},"refuses":"Pull requests not read: this organization has no git account for gitlab.com. Add one in Settings → Organisation → Git."}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"tree":"contains","text":"Pull requests not read: this organization's github.com account signs in with SSH, which reads no pull requests. Add API access to the GitHub account in Settings → Organisation → Git."}}
+{"expect":{"tree":"contains","text":"Log in with a token"}}
+{"expect":{"pane":"editor-1","field":"ticket.prs[0]","present":false}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"API access"}}
+{"expect":{"tree":"contains","text":"Not set — pull requests are not read"}}
+{"do":{"click":"settings.org.git.account.github.com.api.token"}}
+{"expect":{"focus":"settings.org.git.account.github.com.api.token.field"}}
+{"do":{"type":{"into":"settings.org.git.account.github.com.api.token.field","text":"e2e-github-token"}}}
+{"parity":{"action":"ctx_git_api_access_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"},"click":"settings.org.git.account.github.com.api.token.store","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Access token"}}
+{"expect":{"tree":"absent","text":"Not set — pull requests are not read"}}
+{"expect":{"tree":"absent","text":"e2e-github-token"}}
+{"expect":{"frame":"settings.org.git.account.github.com.api.test","inside":"settings.pane"}}
+{"do":{"click":"settings.org.git.account.github.com.api.remove"}}
+{"expect":{"tree":"contains","text":"Remove API access? Pull requests are not read until you add it again. Pushes stay on SSH."}}
+{"do":{"click":"settings.org.git.account.github.com.api.remove.keep"}}
+{"expect":{"tree":"absent","text":"Remove API access? Pull requests are not read until you add it again. Pushes stay on SSH."}}
+{"expect":{"tree":"contains","text":"Access token"}}
+{"dispatch":{"action":"ticket_refresh","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"ticket.prs[0].number","equals":"212"}}
+{"do":{"click":"settings.org.git.account.github.com.api.remove"}}
+{"expect":{"tree":"contains","text":"Remove API access? Pull requests are not read until you add it again. Pushes stay on SSH."}}
+{"parity":{"action":"ctx_git_api_access_remove","params":{"id":"e2e-fixture","host":"github.com"},"click":"settings.org.git.account.github.com.api.remove.confirm","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Not set — pull requests are not read"}}
+{"dispatch":{"action":"ticket_refresh","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"ticket.prs[0]","present":false}}
+{"dispatch":{"action":"ctx_git_api_access_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"expect":{"tree":"contains","text":"Access token"}}
+{"dispatch":{"action":"ctx_git_api_access_remove","params":{"id":"e2e-fixture","host":"github.com"}}}
+{"expect":{"tree":"contains","text":"Not set — pull requests are not read"}}

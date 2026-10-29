@@ -91,6 +91,10 @@ public let permissionPromptToolName = "approve_tool_use"
 public let operatorOnlyActions: Set<String> = [
     // provider capacity: the agent may not forge a reading the operator chooses accounts by.
     "capacity_record",
+    // Ticket noticing: Hand to agent's Start, and its Cancel, are the operator's — an agent does not
+    // start conversations (conversations: "no agent tool to start or switch conversations"), and a
+    // spoken turn may open the popover but never press Start (Invariant 7).
+    "ticket_hand_off", "ticket_hand_off_cancel",
     "session_set_provider", "ctx_set_provider",
     // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
     // push aside the operator's conversation.
@@ -100,6 +104,8 @@ public let operatorOnlyActions: Set<String> = [
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
     "ctx_set_project", "ctx_set_environment",
     "ctx_list_orgs", "ctx_create_org",
+    // Another organisation's whole configuration: the app's launch read, never the agent's.
+    "ctx_config_tree_for",
     "ctx_list_machine_providers", "ctx_adopt_provider",
     // 2e (#200). `ctx_list_accounts` is the settings pane's account
     // table, and it joins the weaker case above rather than a new one: it
@@ -145,8 +151,14 @@ public let operatorOnlyActions: Set<String> = [
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
     "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
     "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+    "ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test",
     // 3a-iii-b (Decision 45): what the agent is told is the operator's to write.
     "ctx_set_project_agent_instructions",
+    // Connections: which account an organisation's agents reach a service as, its secrets, and
+    // which of its tools run unasked are the operator's (Invariant 4; Invariant 6's earning).
+    "ctx_connection_catalog", "ctx_connection_add", "ctx_connection_update", "ctx_connection_remove",
+    "ctx_connection_secrets_set", "ctx_connection_allow_set", "ctx_connection_signin_start",
+    "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_jira_token_set",
     // 2c-iii. The seventh member, and the one whose reason is NOT that the
     // agent could move a boundary by calling it — it is that the shell in
     // a terminal pane carries the active organisation, project and
@@ -259,6 +271,8 @@ public let operatorOnlyActions: Set<String> = [
 ///   screen is the operator's; each names the gesture that does it (⌘N, ⌘P).
 /// - `session_close` (conversations 3 of 3): ending a conversation is the operator's; the
 ///   sentence names ⌘⇧W.
+/// - `ticket_hand_off` and `ticket_hand_off_cancel` (ticket noticing): Hand to agent's Start and
+///   Cancel; the spec's own sentence, whole.
 private func operatorOnlyDenialMessage(toolName: String, action: String) -> String {
     switch action {
     case "session_set_provider", "ctx_set_provider":
@@ -286,11 +300,20 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "do it in the settings pane (\u{2318},)."
     case "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
          "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
-         "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import":
+         "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+         "ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test":
         return "\(toolName): only the operator adds and removes an organisation's git accounts: "
             + "they decide which account pushes and hold its secrets. Ask the operator "
             + "to do it in Settings → Organisation → Git (\u{2318},)."
-    case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts":
+    case "ctx_connection_catalog", "ctx_connection_add", "ctx_connection_update", "ctx_connection_remove",
+         "ctx_connection_secrets_set", "ctx_connection_allow_set", "ctx_connection_signin_start",
+         "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_jira_token_set":
+        return "\(toolName): only the operator adds, signs in and switches an organisation's "
+            + "connections: they decide which account a service is reached as, hold its secrets, and "
+            + "choose which of its tools run without asking. You may READ them: ctx_config_tree "
+            + "answers each connection and its switches, never a secret. Ask the operator to do it "
+            + "in Settings → Organisation → Connections (\u{2318},)."
+    case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts", "ctx_config_tree_for":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
             + "organisation and config dir on this machine is not something a session scoped "
             + "to one org has any business doing. Ask the operator to do it in the Wakil "
@@ -377,6 +400,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "which is the credential boundary an organisation is. You may READ "
             + "these values — ctx_config_tree answers all three. Ask the operator to change "
             + "them in the settings pane (\u{2318},)."
+    case "ticket_hand_off":
+        return "ticket_hand_off is the operator's: an agent does not start conversations."
+    case "ticket_hand_off_cancel":
+        return "ticket_hand_off_cancel is the operator's: an agent does not start or stop conversations."
     case "capacity_record":
         return "\(toolName): readings are recorded from the agent's own stream, not supplied by the "
             + "agent. Read them with ctx_capacity."

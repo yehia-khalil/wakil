@@ -135,13 +135,19 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "browser_revoke_site",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
-            "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",
+            "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree_for",
+            // Connections: which account a service is reached as, its secrets and its switches.
+            "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",
+            "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait",
+            "ctx_connection_signout", "ctx_connection_update",
+            "ctx_create_environment", "ctx_create_org",
             "ctx_create_project",
             // 3a-iii-a (Decision 44): an organisation's git accounts and their secrets are the operator's.
-            "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
+            "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_api_access_remove",
+            "ctx_git_api_access_test", "ctx_git_api_access_token_set", "ctx_git_device_poll",
             "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set",
-            "ctx_list_accounts",
+            "ctx_jira_token_set", "ctx_list_accounts",
             "ctx_list_machine_providers", "ctx_list_orgs",
             // 2e (#199). `defaultProvider` names which account this
             // organisation's projects fall back to, so setting it chooses
@@ -177,6 +183,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // does hold, and an agent able to open a surface it may drive
             // no part of holds a handle to nothing.
             "settings_open", "term_run",
+            // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
+            "ticket_hand_off", "ticket_hand_off_cancel",
         ])
 
     let reachable = await wiring.registry.all()
@@ -202,4 +210,16 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
     await registry.register(action)
     let descriptor = await registry.all().first { $0.name == "test.unclassified" }
     #expect(descriptor?.audience == nil)
+}
+
+/// Ticket noticing, Task 4: **Restore yours** is a control the agent may reach, as the draft it
+/// undoes is — it writes only the operator's own words back, by "operator".
+@Test func reviewReplyDraftRestoreIsAgentReachable() async throws {
+    let wiring = try await wiringWithNoBinaries()
+    await wiring.shutdown()
+
+    let restore = try #require(await wiring.registry.all().first { $0.name == "review_reply_draft_restore" })
+    #expect(restore.audience == .agentReachable)
+    #expect(restore.kind == .control)
+    #expect(!operatorOnlyActions.contains("review_reply_draft_restore"))
 }

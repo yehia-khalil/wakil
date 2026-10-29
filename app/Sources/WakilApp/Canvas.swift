@@ -583,7 +583,29 @@ extension WakilWindow {
                             undoApply: { await model.changesStashUndoApply(root: $0) })),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
-                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
+                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) },
+                    // Ticket view: the review boxes in the file.
+                    // …and the threads a live hand-off is at work on: their boxes say Agent on it.
+                    reviews: { var r = model.editorReviews; r.handed = ticketHandedThreads(model.ticketLiveHandOffs); return r }(),
+                    dispatchReply: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        return await model.dispatchFromSurfaceReply(name, .object(withPane))
+                    },
+                    // Ticket view: the column's Ticket view.
+                    ticket: {
+                        var t = model.editorTicket
+                        t.handOffLive = model.ticketHandOffLive
+                        t.liveHandOffs = model.ticketLiveHandOffs
+                        return t
+                    }(),
+                    ticketCount: ticketNeedsCount(model.ticketNeeds),
+                    ticketCountLabel: ticketNeedsLabel(model.ticketNeeds),
+                    dispatchThrowingReply: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        return try await model.dispatchFromSurfaceThrowing(name, .object(withPane))
+                    })
             case "browser":
                 // 3c-i. Every control is a `browser_*` action with this pane folded in; the web views
                 // are the window's (`BrowserTabHost`), so a rebuild here never reloads a page.
@@ -699,9 +721,34 @@ extension WakilWindow {
                         setPassphrase: { host, pass in await model.setGitKeyPassphrase(host: host, passphrase: pass) },
                         test: { host in await model.testGitAccount(host: host) },
                         deviceStart: { provider in await model.gitDeviceStart(provider: provider) },
-                        devicePoll: { provider, host, code in await model.gitDevicePoll(provider: provider, host: host, deviceCode: code) },
+                        devicePoll: { provider, host, code, apiAccess in
+                            await model.gitDevicePoll(provider: provider, host: host, deviceCode: code, apiAccess: apiAccess) },
+                        setAPIToken: { host, token in await model.setGitAPIAccessToken(host: host, token: token) },
+                        removeAPIAccess: { host in await model.removeGitAPIAccess(host: host) },
+                        testAPIAccess: { host in await model.testGitAPIAccess(host: host) },
                         ghLogins: { await model.gitGhLogins() },
                         ghImport: { host, user in await model.gitGhImport(host: host, user: user) }),
+                    connections: ConnectionActions(
+                        catalog: { await model.connectionCatalog() },
+                        add: { org, kind, name, transport, url, command, args in
+                            await model.addConnection(org: org, kind: kind, name: name, transport: transport,
+                                                      url: url, command: command, args: args)
+                        },
+                        update: { org, name, newName, url, command, args, values in
+                            await model.updateConnection(org: org, name: name, newName: newName, url: url,
+                                                         command: command, args: args, values: values)
+                        },
+                        remove: { org, name in await model.removeConnection(org: org, name: name) },
+                        setSecrets: { org, name, values in await model.setConnectionSecrets(org: org, name: name, values: values) },
+                        setAllow: { org, name, tool, allow in
+                            await model.setConnectionAllow(org: org, name: name, tool: tool, allow: allow)
+                        },
+                        allowReadOnly: { org, name in await model.allowReadOnlyTools(org: org, name: name) },
+                        check: { org, name in await model.checkConnection(org: org, name: name) },
+                        signIn: { org, name in await model.signIn(org: org, name: name) },
+                        signOut: { org, name in await model.signOut(org: org, name: name) },
+                        account: { org, name in model.connectionAccounts["\(org)/\(name)"] },
+                        setJiraToken: { org, email, token in await model.setJiraToken(org: org, email: email, token: token) }),
                     quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,

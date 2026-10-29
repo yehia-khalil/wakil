@@ -115,6 +115,11 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   `ClaudeCodeProviderLogin.swift`, `ClaudeExecutable.swift`, `ClaudeLocator.swift`,
   `PseudoTerminal.swift` — accounts: reading and minting credentials through the `wakil` CLI, and the
   sign-in flow.
+- `WindowModel+TicketNoticing.swift` — the 2-minute read while Wakil is active and the screen unlocked
+  (`ticketPollTask`), `ticketNeedsRead` (joined to a read in flight, stale over 60 s), `ticketNeedsRows`,
+  `paletteTicketSource`. `WindowModel+HandOff.swift` — `startHandOff` (an off-screen conversation through
+  `send`), `handedPricing` (May push from the stored hand-off, fail-closed, off while a spoken message is
+  unanswered), `carryHandOff` on resume and fork, `endStaleHandOffs`.
 - `OrgListings.swift`, `PaletteItems.swift`, `SurfaceChain.swift`, `ThoughtRow.swift`,
   `ThreadDisclosure.swift` — smaller pieces the model uses.
 
@@ -277,7 +282,8 @@ The palettes' state machine and their lists, pure so the window only feeds keys 
 - `PaletteSources.swift` — `PaletteSource` and its sources (`OpenPanesSource`, `NewPaneSource`,
   `TablesSource`, `ApiEntriesSource`, `BrowserTabsSource` and `BookmarksSource` (open tabs and bookmarks, fed plain
   `PaletteBrowserTab` / `PaletteBookmark` rows by `WindowModel` so Command stays clear of Browser),
-  `ChangedFilesSource`), `PaletteClients`. `FilesSource` does the same
+  `ChangedFilesSource`, `TicketSource`: tickets and their PRs, a key first, words below files, a leading `#`
+  alone, ⌘↩ to hand to an agent), `PaletteClients`. `FilesSource` does the same
   as the tree when `showIgnored` is false.
 - `PaletteEntry.swift`, `PaletteItem.swift` (`fuzzyScore`), `PaletteSearch.swift`,
   `PaletteFocusReturn.swift`.
@@ -314,6 +320,8 @@ alone.
   into, read by `LayoutStore` and `PaneStore` in place of the on-screen one), `PaneContents.swift` (`PaneCell`,
   `PaneColumn`, `PaneSort`, `sortedRows`, `PaneSelection`), `WakilShimServerName.swift`
   (`wakilShimServerName = "wakil"`).
+- `UnixSocket.swift` — `MCPTransportError`, `makeUnixSocketAddress`, `ignoreSIGPIPEProcessWide`,
+  `disableSIGPIPE`: the socket plumbing `MCP/` and `Gate/`'s approval socket share.
 
 Uses: nothing.
 Tests: `JSONValueIntegerTests`, `IntegerPassthroughTests`, `ToolCallerTests`, `PaneContentsTests`,
@@ -390,6 +398,34 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
 - `EditorSettings.swift` — `EditorViewOptions` (what Monaco is told: font size, word wrap, tab size, insert
   spaces), `EditorSettings` (the app-wide and project tiers as `ctx_editor_settings` answers them, `appError`
   included), and `decodeEditorSettings`.
+- `EditorTicket.swift` (Ticket view) — the Swift mirrors of `wakil-ticket`'s output (`TicketBranchState`,
+  `TicketRefState`, `PullRequestState`, `ReviewThreadState` stamped with its PR's number, head commit,
+  repo and root, `ReviewCommentState`, `TicketRecordState`, `TicketLineState`, `InFlightState`,
+  `SourceNoteState`) and the view's pure decisions: `ticketBy` (who wrote a record line, from the
+  dispatch's origin), `ticketFollowedRoot`, `ticketStale` (60 s), `ticketWaitingOn`, `ticketNext`,
+  `ticketRecordGroups`, `ticketLineWho`, `reviewOpenThreads`, `reviewStep`, `reviewPosition` and the reply's plane statement.
+- `EditorTicketStore.swift` — `EditorTicketStore`, the window's ticket reads per (root, branch): one in
+  flight per pair, cancelled past 20 s, dropped by generation after an org switch (`reset`), with the
+  review drafts and the sends in flight beside them.
+- `EditorTicketActions.swift` — `registerTicketActions`, called from `registerEditorActions`:
+  `ticket_read`, `ticket_refresh`, `ticket_show`, `ticket_in_flight`, `ticket_link`, `ticket_record_update`,
+  `review_open`, `review_step`, `review_reply_draft`, `review_reply_send` (*gate* for every channel) and
+  `review_resolve` (*gate* for the agent); and `EditorTicketMirror`, the `ticket` key of the editor's
+  `read_pane` (draft text never in it).
+- `EditorTicketNeeds.swift` — what needs the operator, pure: `ticketNeedsRows` over the last In flight read,
+  the live handed conversations (`TicketHandOffLive`) and the drafts, each row's most urgent state in
+  words by tier (`TicketUrgent`), the count and its wording (`4 waiting on you: …`).
+- `EditorTicketHandOff.swift` — Hand to agent, pure: `TicketHandOffState` (the popover), the prefilled briefs
+  (`handOffThreadBrief`, `handOffHeaderBrief`, reviewer text quoted `> ` line by line), the place and the
+  defaults, `TicketHandOffEntryState` (a record's hand-off line) and `TicketHandOffRequest`. Its actions
+  (`ticket_hand_off_open`, `_brief`, `_close`, and the operator-only `ticket_hand_off` and
+  `ticket_hand_off_cancel`) and `ticket_open` are in `EditorTicketActions.swift`.
+- `EditorReviewPlacement.swift` — review threads drawn in the file: `reviewPlacement` (GitHub's line
+  mapped through `editorHunks` from the PR's head commit's text to the buffer; "line changed since",
+  "line may differ"), `ReviewBox` and `reviewBoxes`, `EditorReviewsState` (what the panes draw from:
+  the reads, drafts, sends and head texts, store-wide in `EditorShared`), `editorCursorThread`
+  (`read_pane`'s `cursorThread`, where `review_step` steps from) and `editorShowReviews`, which decides
+  what reaches `EditorRenderer.setReviews` for the shown file tab.
 - `EditorAutosave.swift` — `editorAutosaveEligible` (a file, dirty, in sync with disk, writable, not saving),
   `EditorAutosaveStep`, and `EditorAutosave`, the per-pane memory that says which tabs to arm or save; the
   window keeps the timers.
@@ -400,7 +436,10 @@ Uses `Panes/`, `Layout/`, `Core/`, `Registry/`, `MCP/`, `Context/` and `Git/` (`
 Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadPaneTests`,
 `EditorRefreshTests`, `EditorRendererTests`, `WindowModelEditorTests`, `EditorTreeTests`,
 `EditorTreeActionsTests`, `EditorSearchTests`, `EditorSearchActionsTests`, `EditorChangesTests`,
-`EditorChangesActionsTests`, `EditorDiffTabsTests`, `EditorDiffBannerTests`.
+`EditorChangesActionsTests`, `EditorDiffTabsTests`, `EditorDiffBannerTests`, `EditorTicketTests`,
+`EditorTicketActionsTests`, `EditorReviewPlacementTests`. The window's own ticket reads (a root's
+branch changing, Wakil coming back after 60 s) and the review boxes' head texts (`git_show` rev
+`commit:<sha>`, once each) are `App/WindowModel+Ticket.swift`.
 
 ### Gate/ — the write gate and confirmations
 
@@ -411,9 +450,13 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
 - `ConfirmationBroker.swift` — `ConfirmationBroker` (actor): holds at most one refused mutation while
   a human decides. One per assembly, shared by the agent's path and the window's.
 - `PendingMutation.swift` — `PendingMutation` (with its `ask`, 3c-ii), `ConfirmationDecision`, `mutationAffectsEveryRow`.
+- `ConnectionApproval.swift` — `ConnectionApprovalServer` (actor): one conversation's approval
+  socket (`approvalSocketPath(forAgentSocket:)`), which `wakil-connect` asks before a gated
+  connection call; `connectionCallDecision` allows or asks, and an ask parks a `connection_call`
+  on the broker. `ConnectionCallRequest`, `ConnectionCallDecision`.
 
 Uses: nothing but `Core`.
-Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`.
+Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`, `ConnectionApprovalTests`.
 
 ### Git/ — the window's git status
 
@@ -544,10 +587,12 @@ Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `Rail
 - `Shim.swift` — `runShim`: copies bytes between stdio and the socket; parses nothing.
 - `PermissionPrompt.swift` — `approve_tool_use` (`permissionPromptToolName`), `permissionDecision`,
   `operatorOnlyActions`.
+- `HarnessChannel.swift` — `MCPChannel` (`agent`, `harness`), `startHarnessSocket`: the e2e
+  fixture's operator channel, opened only under `dev.wakil.e2e`; operator-only actions, origin `.debug`.
 - `JSONRPC.swift`, `ConfirmationDescription.swift`.
 
 Uses: `Gate`, `Layout`, `Panes`, `Registry`.
-Tests: `MCPClientTests`, `MCPServerTests`, `JSONRPCTests`, `PermissionPromptTests`, `ShimTests`.
+Tests: `MCPClientTests`, `MCPServerTests`, `HarnessChannelTests`, `JSONRPCTests`, `PermissionPromptTests`, `ShimTests`.
 
 ### Panes/ — what each pane shows
 
@@ -612,7 +657,7 @@ Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTes
 
 - `ActionRegistry.swift` — `ActionRegistry` (actor): `register`, `all()`, and `dispatch(name:params:
   origin:environment:confirmation:)`, which asks `writeGate`, runs the handler and journals every
-  outcome; `setProductionLookup` and `setScopeLookup` (an agent caller's own flags and scope;
+  outcome; `setProductionLookup`, `setHandedLookup` (a handed caller's hand-off, read before the gate so `handedAgentPrice` replaces the agent's price) and `setScopeLookup` (an agent caller's own flags and scope;
   the scope is bound around the handler as `ScopeRouting.home`); **the price per call** (3c-ii): for a
   `.mutate` with a `callPrice` the registry works out the caller's home first and asks `callPrice`
   under the handler's own task-locals, so a background agent is priced against its own pane and site;
@@ -678,7 +723,7 @@ Pure numbers and colours the views and the Metal shader read.
 
 - `Plane.swift` (`Plane`), `CoreState.swift` (`CoreState`), `CoreMotion.swift`, `BreathClock.swift`,
   `VoidPalette.swift`, `VoidUniforms.swift`, `EnvironmentBadge.swift`, `RailTreatment.swift`,
-  `Contrast.swift`.
+  `Contrast.swift`. `RailTreatment` also holds the needs-you mark (amber tick, ` · N`) and its precedence: working, then needs you, then active.
 
 Uses: `Terminal`.
 Tests: `PlaneTests`, `CoreStateTests`, `CoreMotionTests`, `BreathClockTests`, `VoidPaletteTests`,

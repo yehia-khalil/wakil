@@ -524,7 +524,7 @@ public struct BrowserGroup: Codable, Sendable, Equatable {
 }
 
 public enum EditorColumnView: String, Sendable, Equatable, Codable {
-    case files, search, changes
+    case files, search, changes, ticket
 
     /// **An unknown view decodes as `.files`** (3b-iii, R1): a layout written by a later build keeps
     /// its column, and `LayoutSnapshot.editorColumnDefault` — decoded with `try` — does not take the
@@ -571,6 +571,15 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
     /// Groups collapsed in the Changes view (3a-ii): the window's life, changed only by
     /// `editor_changes_group_collapse` / `_expand`, and never saved — not in `CodingKeys`.
     public var changesClosedGroups: Set<EditorChangesGroup> = []
+    /// The Ticket view's ticket picked from In flight (`ticket_show`), nil for the branch's own: the
+    /// window's life, never saved — not in `CodingKeys`.
+    public var ticketShown: String?
+    /// The In flight or Waiting on you row `ticketShown` was picked from — its root and branch, since
+    /// two rows can carry one key — nil for a key picked alone. Never saved, as `ticketShown`.
+    public var ticketShownAt: TicketShownAt?
+    /// The pull request `ticket_open` named, whose section the Ticket view scrolls into view; nil
+    /// for none. Never saved, as `ticketShown`.
+    public var ticketScrollPR: Int?
     public static let initial = EditorColumnState(shown: false, view: .files, width: 240, open: [])
     public init(shown: Bool, view: EditorColumnView, width: Double, open: [String],
                 changesClosed: Set<String> = [], changesHighlight: EditorChangesRow? = nil) {
@@ -594,6 +603,21 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
         changesClosed = (try? c.decodeIfPresent(Set<String>.self, forKey: .changesClosed)) ?? []
         changesHighlight = (try? c.decodeIfPresent(EditorChangesRow.self, forKey: .changesHighlight)) ?? nil
     }
+}
+
+/// Where a ticket shown from In flight is read: its row's root and branch. A row no project holds
+/// has neither: it is named by its PR's repository and number instead, and nothing is read for it.
+public struct TicketShownAt: Sendable, Equatable, Hashable {
+    public let root: String
+    public let branch: String
+    public let repo: String
+    public let pr: Int
+    public init(root: String, branch: String, repo: String = "", pr: Int = 0) {
+        self.root = root; self.branch = branch; self.repo = repo; self.pr = pr
+    }
+    /// What a keyless row's branch read is kept by in the store: `<root>:<branch>` (git names no
+    /// branch with a colon), else `<repo>#<pr>` for a row no project holds — never a ticket key.
+    public var id: String { root.isEmpty ? "\(repo)#\(pr)" : "\(root):\(branch)" }
 }
 
 /// Where the canvas draws a pane: its frame, moved by a live drag only while

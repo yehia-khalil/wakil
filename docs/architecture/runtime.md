@@ -11,8 +11,8 @@ action that works in a debug script works in the window.
 executable's directory and an environment, and returns a `WakilWiring`. In order, it:
 
 1. Builds the child environment (`childProcessEnvironment`; see below).
-2. Starts four `MCPClient`s, each eagerly: `contextClient` (`wakil-ctx`), `databaseClient`
-   (`wakil-db`), `httpClient` (`wakil-http`), `gitClient` (`wakil-git`). A binary that is not found
+2. Starts five `MCPClient`s, each eagerly: `contextClient` (`wakil-ctx`), `databaseClient`
+   (`wakil-db`), `httpClient` (`wakil-http`), `gitClient` (`wakil-git`), `ticketClient` (`wakil-ticket`). A binary that is not found
    or fails its handshake leaves that client `nil` and adds a line to `diagnostics`. That is not
    fatal: the actions stay registered and fail per call, naming the missing client.
 3. Creates the stores and brokers: `PaneStore(kinds: PaneKinds.standard)` (`App/PaneKinds.swift`), `LayoutStore`, `ActionRegistry` (with the journal
@@ -26,7 +26,7 @@ executable's directory and an environment, and returns a `WakilWiring`. In order
    - `GitStatus` (`Git/GitStatus.swift`), built over the git client and `GitRootsSource`, handed to
      the editor actions, `GitSource` and the window (3b-iii: the Git pane's actions are gone)
    - `registerEditorActions` (`Editor/EditorActions.swift`), given the files client, the window's
-     file lists, the `GitStatus` and `GitRootsSource`
+     file lists, the `GitStatus` and `GitRootsSource`; it also registers the ticket and review actions over `ticketClient` and the `EditorTicketStore`
 5. Tells the registry the active project's production flags (`setEnvironmentProduction`), read
    through `ContextStore`, so `--dispatch` prices environments correctly with no window.
 6. Builds the `VocabularyStore`: live sources `WakilSource`, `PaneSource`, `GitSource` (which reads
@@ -38,7 +38,7 @@ executable's directory and an environment, and returns a `WakilWiring`. In order
 
 What the wiring offers:
 
-- **`wakilOwnedClients`** — the four clients as one list. `switchOrg` and `shutdown` iterate it, and
+- **`wakilOwnedClients`** — the five clients as one list. `switchOrg` and `shutdown` iterate it, and
   `everyWakilOwnedClientJoinsTheOrgSwitch` (`AppWiringTests`) fails if a client property is left out.
 - **`mcpSurface`** — the registry, pane store, layout store, confirmations and a settings reader as
   one `MCPSurface`. It is the only public way to get one, so the socket server cannot be given one
@@ -207,7 +207,7 @@ from `agentMCPConfigJSON`. The `claude` process itself gets `CLAUDE_CONFIG_DIR`,
 
 | Thing | Born | Dies |
 |---|---|---|
-| The four Wakil-owned `MCPClient`s | `WakilWiring.build` | `WakilWiring.shutdown`; restarted in place by `switchOrg` |
+| The five Wakil-owned `MCPClient`s | `WakilWiring.build` | `WakilWiring.shutdown`; restarted in place by `switchOrg` |
 | Pool clients (`PlaceClients`) | an agent's first call for its place | `retain` when no session holds the place; `WakilWiring.shutdown` |
 | `PlaceAgent`, one per live conversation | the conversation's first turn, pane or resume | `WindowModel.shutdown` (a switch never drops it) |
 | `MCPSocketServer`, one per agent session | `WindowModel`, when its place is first shown (a resume's or provider switch's: before its harness) | after that harness stops: next harness, `WindowModel.shutdown` for every place's agent and every shown place's socket |

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1496,5 +1498,332 @@ func TestSetDatabaseConnectionToolRefusalReachesTheWire(t *testing.T) {
 	}})
 	if err != nil || !res.IsError {
 		t.Fatalf("a connection with no host must be refused: %v %v", err, res)
+	}
+}
+
+// memorySecurity points the Keychain tool at a script that keeps each item in a file, so a
+// test can write a secret and see the tree report it present, without the login keychain.
+func memorySecurity(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	body := `#!/bin/sh
+d="` + dir + `"
+cmd=$1; shift
+svc=""; val=""; mode=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -s) svc=$2; shift;;
+    -w) if [ "$cmd" = add-generic-password ]; then val=$2; shift; else mode=w; fi;;
+  esac
+  shift
+done
+f="$d/$(printf '%s' "$svc" | tr '/:' '__')"
+case $cmd in
+  add-generic-password) printf '%s' "$val" > "$f"; exit 0;;
+  delete-generic-password) rm -f "$f"; exit 0;;
+  find-generic-password) [ -f "$f" ] || exit 44; if [ "$mode" = w ]; then cat "$f"; echo; fi; exit 0;;
+esac
+exit 1
+`
+	script := filepath.Join(t.TempDir(), "security")
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_SECURITY_BINARY", script)
+}
+
+func treeOf(t *testing.T, ctx context.Context, cs *mcp.ClientSession) (wakilcore.ConfigTree, string) {
+	t.Helper()
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "config_tree", Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		t.Fatalf("config_tree: %v %v", err, res)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	var tree wakilcore.ConfigTree
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatal(err)
+	}
+	return tree, string(raw)
+}
+
+func TestConnectionToolsRoundTrip(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+
+	out := callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "datadog", "values": map[string]any{"site": "datadoghq.eu"}})
+	if out["name"] != "datadog" {
+		t.Fatalf("add answered %v", out)
+	}
+	tree, _ := treeOf(t, ctx, cs)
+	conns := tree.Org.Connections
+	if len(conns) != 1 || conns[0].Transport != "http" || conns[0].SignIn != "fields" ||
+		conns[0].Title != "Datadog" || conns[0].Values["site"] != "datadoghq.eu" || conns[0].SignedIn {
+		t.Fatalf("tree connections %+v", conns)
+	}
+	secretFields := 0
+	for _, f := range conns[0].Fields {
+		if f.Secret {
+			secretFields++
+		}
+	}
+	if len(conns[0].Fields) != 3 || secretFields != 2 {
+		t.Fatalf("fields %+v", conns[0].Fields)
+	}
+
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "datadog", "values": map[string]any{"apiKey": "k-1"}})
+	callOK(t, ctx, cs, "connection_update", map[string]any{"id": "initech", "name": "datadog", "newName": "dd", "values": map[string]any{"site": "datadoghq.com"}})
+	if got, err := wakilcore.ConnectionSecrets("initech", "dd"); err != nil || got["apiKey"] != "k-1" {
+		t.Fatalf("the secret did not move to conn:dd: %v %v", got, err)
+	}
+	if got, err := wakilcore.ConnectionSecrets("initech", "datadog"); err != nil || len(got) != 0 {
+		t.Fatalf("conn:datadog is still there: %v %v", got, err)
+	}
+	callOK(t, ctx, cs, "connection_allow_set", map[string]any{"id": "initech", "name": "dd", "tool": "search_logs", "allow": true})
+	tree, _ = treeOf(t, ctx, cs)
+	conns = tree.Org.Connections
+	if len(conns) != 1 || conns[0].Name != "dd" || conns[0].Values["site"] != "datadoghq.com" || !conns[0].Allow["search_logs"] {
+		t.Fatalf("after edit %+v", conns)
+	}
+
+	callOK(t, ctx, cs, "connection_remove", map[string]any{"id": "initech", "name": "dd"})
+	tree, _ = treeOf(t, ctx, cs)
+	if len(tree.Org.Connections) != 0 {
+		t.Fatalf("after remove %+v", tree.Org.Connections)
+	}
+}
+
+func TestConnectionAddCustomNeedsATransportAndAnAddress(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	for _, args := range []map[string]any{
+		{"id": "initech", "kind": "custom", "url": "https://x.test/mcp"},
+		{"id": "initech", "kind": "custom", "transport": "http"},
+	} {
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "connection_add", Arguments: args})
+		if err != nil || !res.IsError {
+			t.Fatalf("%v accepted: %v %v", args, err, res)
+		}
+	}
+	out := callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "custom", "name": "wiki", "transport": "stdio", "command": "wiki-mcp", "args": []string{"--serve"}})
+	if out["name"] != "wiki" {
+		t.Fatalf("add answered %v", out)
+	}
+	c, _ := wakilcore.ConnectionFor("initech", "wiki")
+	if c.SignIn != "none" || c.Command != "wiki-mcp" || len(c.Args) != 1 {
+		t.Fatalf("stored %+v", c)
+	}
+}
+
+func TestConnectionRecordRefusesASecretValue(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "connection_add", Arguments: map[string]any{
+		"id": "initech", "kind": "datadog", "values": map[string]any{"apiKey": "k-9f8e7d"},
+	}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a secret value was accepted into the record: %v %v", err, res)
+	}
+	raw, _ := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".wakil", "orgs", "initech", "org.json"))
+	if strings.Contains(string(raw), "k-9f8e7d") {
+		t.Fatalf("org.json carries the secret: %s", raw)
+	}
+}
+
+func TestConfigTreeNeverCarriesSecrets(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "github"})
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "github", "values": map[string]any{"token": "ghp-s3cret-token"}})
+	callOK(t, ctx, cs, "jira_token_set", map[string]any{"id": "initech", "email": "ann@initech.test", "token": "jira-s3cret-token"})
+
+	tree, raw := treeOf(t, ctx, cs)
+	for _, secret := range []string{"ghp-s3cret-token", "jira-s3cret-token"} {
+		if strings.Contains(raw, secret) {
+			t.Fatalf("the tree carries %s: %s", secret, raw)
+		}
+	}
+	if len(tree.Org.Connections) != 1 || !tree.Org.Connections[0].SignedIn || !tree.Org.JiraTokenStored {
+		t.Fatalf("presence not reported: %+v stored=%v", tree.Org.Connections, tree.Org.JiraTokenStored)
+	}
+}
+
+func TestBrowserConnectionIsSignedInOnlyWithAnAccessToken(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "slack"})
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "slack", "values": map[string]any{"clientSecret": "cs-1"}})
+	if tree, _ := treeOf(t, ctx, cs); tree.Org.Connections[0].SignedIn {
+		t.Fatal("a client secret alone is not a sign-in")
+	}
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "slack", "values": map[string]any{"access": "at-1"}})
+	if tree, _ := treeOf(t, ctx, cs); !tree.Org.Connections[0].SignedIn {
+		t.Fatal("an access token is a sign-in")
+	}
+}
+
+func TestConnectionSignInToolsNeedAFlowAndSignOutKeepsTheApp(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "slack"})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "connection_signin_wait", Arguments: map[string]any{"id": "initech", "name": "slack"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a wait with no sign-in started: %v %v", err, res)
+	}
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "connection_signin_start", Arguments: map[string]any{"id": "initech", "name": "slack"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("slack started without its app's client id and secret: %v %v", err, res)
+	}
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "slack", "values": map[string]any{
+		"clientId": "app-1", "clientSecret": "cs-1", "access": "at-1", "refresh": "rt-1", "client": "{}"}})
+	callOK(t, ctx, cs, "connection_signout", map[string]any{"id": "initech", "name": "slack"})
+	got, err := wakilcore.ConnectionSecrets("initech", "slack")
+	if err != nil || len(got) != 2 || got["clientId"] != "app-1" || got["clientSecret"] != "cs-1" {
+		t.Fatalf("after sign-out %v %v", got, err)
+	}
+}
+
+func TestJiraTokenSetStoresOneLine(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "jira_token_set", map[string]any{"id": "initech", "email": "ann@initech.test", "token": "tok-1"})
+	got, err := wakilcore.SecretGetFor("initech", "jira:initech")
+	if err != nil || got != "ann@initech.test:tok-1" {
+		t.Fatalf("stored %q %v", got, err)
+	}
+	for _, args := range []map[string]any{
+		{"id": "initech", "email": "a:b@initech.test", "token": "t"},
+		{"id": "initech", "email": "", "token": "t"},
+		{"id": "initech", "email": "a@initech.test", "token": ""},
+	} {
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "jira_token_set", Arguments: args})
+		if err != nil || !res.IsError {
+			t.Fatalf("%v accepted", args)
+		}
+	}
+}
+
+// config_tree with an id reads that organisation, not the active one: a session launching in
+// another organisation than the window's reads its own connections.
+func TestConfigTreeReadsTheNamedOrganisation(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	if err := wakilcore.CreateOrg("umbrella", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "umbrella", "kind": "datadog", "values": map[string]any{"site": "datadoghq.eu"}})
+
+	active, _ := treeOf(t, ctx, cs)
+	if active.Org.ID != "initech" || len(active.Org.Connections) != 0 {
+		t.Fatalf("no id should read the active org, got %q with %d connections", active.Org.ID, len(active.Org.Connections))
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "config_tree", Arguments: map[string]any{"id": "umbrella"}})
+	if err != nil || res.IsError {
+		t.Fatalf("config_tree: %v %v", err, res)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	var tree wakilcore.ConfigTree
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatal(err)
+	}
+	if tree.Org.ID != "umbrella" || len(tree.Org.Connections) != 1 {
+		t.Fatalf("id=umbrella read %q with %d connections", tree.Org.ID, len(tree.Org.Connections))
+	}
+}
+
+// TestConnectionUpdateRecordsHints: Settings records what wakil-connect --list read, the whole
+// map, so a tool the server dropped goes; the tree then names the stored secret keys (never their
+// values) and a custom server's arguments.
+func TestConnectionUpdateRecordsHints(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "custom", "name": "wiki", "transport": "stdio", "command": "wiki-mcp", "args": []string{"--serve"}})
+	callOK(t, ctx, cs, "connection_update", map[string]any{"id": "initech", "name": "wiki", "hints": map[string]any{"old_tool": "readOnly"}})
+	callOK(t, ctx, cs, "connection_update", map[string]any{"id": "initech", "name": "wiki", "hints": map[string]any{"read_page": "readOnly", "drop_page": "destructive", "plain": ""}})
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "wiki", "values": map[string]any{"env:WIKI_TOKEN": "w-1"}})
+	tree, raw := treeOf(t, ctx, cs)
+	c := tree.Org.Connections[0]
+	if len(c.Hints) != 3 || c.Hints["read_page"] != "readOnly" || c.Hints["drop_page"] != "destructive" || c.Hints["old_tool"] != "" {
+		t.Fatalf("hints %v", c.Hints)
+	}
+	if len(c.Args) != 1 || c.Args[0] != "--serve" || len(c.SecretKeys) != 1 || c.SecretKeys[0] != "env:WIKI_TOKEN" {
+		t.Fatalf("args %v keys %v", c.Args, c.SecretKeys)
+	}
+	if strings.Contains(raw, "w-1") {
+		t.Fatalf("a secret value reached the tree: %s", raw)
+	}
+}
+
+// stubGitHubDevice answers GitHub's device token endpoint with an approval, so no test reaches the
+// network.
+type stubGitHubDevice struct{}
+
+func (stubGitHubDevice) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Request: r,
+		Body: io.NopCloser(strings.NewReader(`{"access_token":"tok-device"}`)),
+	}, nil
+}
+
+func TestDevicePollAPIAccessDoesNotRewriteMethod(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("WAKIL_ORG", "")
+	memorySecurity(t)
+	if err := wakilcore.CreateOrg("initech", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+	wakilcore.AddGitAccount("initech", wakilcore.GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k/id", User: "dev-initech"})
+	old := http.DefaultTransport
+	http.DefaultTransport = stubGitHubDevice{}
+	t.Cleanup(func() { http.DefaultTransport = old })
+	ctx, cs := lifecycleClient(t)
+
+	out := callOK(t, ctx, cs, "git_device_poll", map[string]any{
+		"id": "initech", "provider": "github", "host": "github.com", "deviceCode": "dc", "apiAccess": true})
+	if out["done"] != true {
+		t.Fatalf("poll = %v", out)
+	}
+	a, _ := wakilcore.GitAccountFor("initech", "github.com")
+	if a.Method != "ssh" || a.APIAccess != "signin" || a.KeyPath != "/k/id" || a.User != "dev-initech" {
+		t.Fatalf("account = %+v", a)
+	}
+	if tok, err := wakilcore.GitHubTokenFor("initech", "github.com"); err != nil || tok != "tok-device" {
+		t.Fatalf("token %q %v", tok, err)
+	}
+
+	// Without apiAccess a Sign in still replaces the account, as before.
+	callOK(t, ctx, cs, "git_device_poll", map[string]any{"id": "initech", "provider": "github", "host": "github.com", "deviceCode": "dc"})
+	if a, _ := wakilcore.GitAccountFor("initech", "github.com"); a.Method != "signin" || a.APIAccess != "" {
+		t.Fatalf("account = %+v", a)
+	}
+}
+
+func TestGitAPIAccessToolsRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "")
+	memorySecurity(t)
+	if err := wakilcore.CreateOrg("initech", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+	wakilcore.AddGitAccount("initech", wakilcore.GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k/id"})
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "git_api_access_token_set", map[string]any{"id": "initech", "host": "github.com", "token": "ghp-x"})
+	if a, _ := wakilcore.GitAccountFor("initech", "github.com"); a.Method != "ssh" || a.APIAccess != "token" {
+		t.Fatalf("account = %+v", a)
+	}
+	callOK(t, ctx, cs, "git_api_access_remove", map[string]any{"id": "initech", "host": "github.com"})
+	if a, _ := wakilcore.GitAccountFor("initech", "github.com"); a.Method != "ssh" || a.APIAccess != "" {
+		t.Fatalf("account = %+v", a)
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "git_api_access_test", Arguments: map[string]any{"id": "initech", "host": "github.com"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a test with no API access must be refused: %v %v", err, res)
 	}
 }

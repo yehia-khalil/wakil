@@ -30,7 +30,7 @@ flowchart LR
     Reg --> Client["MCPClient (one per binary)"]
     Sock["MCPSocketServer"] --> Reg
   end
-  Client -->|"MCP over stdio"| Bins["wakil-ctx, wakil-db, wakil-http, wakil-git"]
+  Client -->|"MCP over stdio"| Bins["wakil-ctx, wakil-db, wakil-http, wakil-git, wakil-ticket"]
   WM --> Harness["ClaudeCodeCLIHarness"]
   Harness -->|"spawns"| Claude["claude CLI"]
   Claude -->|"stdio"| Shim["Wakil --mcp-shim"]
@@ -46,8 +46,12 @@ flowchart LR
 - **`ActionRegistry.dispatch`** is the single path for every state change, whether a control, the
   agent, or a `--dispatch` script asked. It asks `writeGate` first and journals every outcome.
 - **The Go binaries** (`cmd/`, `internal/`) are headless capabilities behind MCP. The window starts
-  four of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
-  (`agentFacingServers`). `wakil-git` is started by both.
+  five of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
+  (`agentFacingServers`). `wakil-git` is started by both. `wakil-ticket` is window-owned only: not in `agentFacingServers`, so the agent reaches it through registry actions.
+- **What needs the operator** is counted from the last `ticket_in_flight` read (`ticketNeeds`), never stored; the rail, the Ticket label, the Landing and ⌘P read it. A **handed** conversation (Hand to agent, Decision 51) is an ordinary one started off screen; the registry asks a `handedLookup` beside the production lookup, and `handedAgentPrice` raises its push, sync, publish, merge and rebase.
+- **`wakil-connect`** is one process per connection of the launching place's organization, started by the agent's
+  `claude` process (`AgentConnectionsBox` builds its config). It fronts the organization's own MCP
+  server, injects the credentials, and gates every call. See `go.md`.
 - **The agent** is the `claude` CLI, driven by `ClaudeCodeCLIHarness` (`Harness/`). It reaches
   Wakil's own actions only through the shim.
 - **Quick tasks** (one-shot model calls, ghost-text first) go through `QuickTasks` (`App/QuickTasks.swift`),
@@ -68,6 +72,34 @@ flowchart LR
   action set, plus three hand-written tools answered in the window: `read_pane` (what a pane shows,
   from `PaneStore`), `read_layout` (what is on screen, from `LayoutStore`), and `approve_tool_use`
   (the CLI's permission prompt, answered by `permissionDecision`).
+- **The approval socket.** Each conversation has a second unix socket beside its agent socket,
+  `<dir>/<session id>-approval.sock` (`ConnectionApprovalServer`, `Gate/ConnectionApproval.swift`).
+  `wakil-connect` asks it before a gated call. It can only ask: a call it cannot allow outright
+  parks on the confirmation broker for the operator, and it never approves by itself.
+  `wakil-connect` reads the connection's record from `org.json` at every call. When the connection
+  is gone, it tells the socket (`"removed": true`) and refuses the call. The app refuses too when
+  its own list (`AgentConnectionsBox.stillHas`) no longer has the connection, and journals the
+  refusal `connection-removed`.
+- **A connection change restarts the open conversations.** `AgentConnectionsBox` keeps a revision
+  per organization. It moves when a connection is added, removed or renamed, when a server field
+  changes, or when a sign-in changes. It does not move for an Allow agent tick. Each session
+  records the revision it launched at. At a conversation's next message, if the agent is between
+  turns (`WindowModel.connectionsRestartDue`), `send` fork-resumes it through `resume`, so the new
+  launch's config has the current connections. Then the message goes to the new agent. A
+  conversation mid-turn, or with a call on the plane, restarts at the first message after that.
+- **The e2e harness socket.** Only the staged e2e fixture (bundle id `dev.wakil.e2e`) opens a
+  third socket beside each agent socket, `<dir>/<session id>-e2e.sock`, mode 0600
+  (`startHarnessSocket`, `MCP/HarnessChannel.swift`). It serves only the operator-only actions,
+  dispatched with origin `.debug`, so the harness can drive them; the agent socket keeps refusing
+  them. Its path is derived from the agent socket's, so it is not secret, and no agent's
+  `--mcp-config` or environment lists it. What protects it is the bundle-id gate and mode 0600.
+  A shipped Wakil (`dev.wakil.app`) never opens it, unless its `Info.plist` is edited. The threat
+  model is in `docs/wakil/decisions.md`, "a connection's tool, allowed by the operator". If the socket
+  fails to start, the status says so, and the agent socket's `initialize` carries the reason
+  (`wakil/harnessFailure`).
+- **`ctx_config_tree_for`** (`StandardActions.swift`) reads a named organization's config tree for a
+  launch's connections. It is operator-only, never the agent's; `ctx_config_tree` stays the active
+  organization's.
 - **The `wakil` CLI** is run as a plain subprocess by the window to read and mint account
   credentials (`WakilCLICredentialsLookup`, `WakilCLIProviderMint`).
 

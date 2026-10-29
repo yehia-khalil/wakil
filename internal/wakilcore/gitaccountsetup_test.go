@@ -141,3 +141,32 @@ func TestGenerateGitKeyReplacesAnUnusedKey(t *testing.T) {
 		t.Fatalf("a key in use was replaced: %v", err)
 	}
 }
+
+func TestGitAPIAccessTestAsksGitHubWithTheToken(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer tok-9" {
+			w.WriteHeader(401)
+			return
+		}
+		w.Write([]byte(`{"login":"dev-initech"}`))
+	}))
+	defer srv.Close()
+	old := gitUserAPI["github"]
+	gitUserAPI["github"] = srv.URL
+	defer func() { gitUserAPI["github"] = old }()
+	AddGitAccount("initech", GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k/id"})
+	if _, err := TestGitAPIAccess(context.Background(), "initech", "github.com"); err == nil {
+		t.Fatal("no API access yet: want an error")
+	}
+	SetGitAPIAccessToken("initech", "github.com", "tok-9")
+	user, err := TestGitAPIAccess(context.Background(), "initech", "github.com")
+	if err != nil || user != "dev-initech" {
+		t.Fatalf("user %q err %v", user, err)
+	}
+	SetGitAPIAccessToken("initech", "github.com", "wrong")
+	if _, err := TestGitAPIAccess(context.Background(), "initech", "github.com"); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("err = %v", err)
+	}
+}

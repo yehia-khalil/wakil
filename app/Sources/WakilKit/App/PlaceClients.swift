@@ -1,9 +1,9 @@
 import Foundation
 
-/// The five Wakil-owned Go clients a handler can be routed through, named by binary.
+/// The six Wakil-owned Go clients a handler can be routed through, named by binary.
 public enum ClientRole: String, Sendable, CaseIterable {
     case context = "wakil-ctx", database = "wakil-db", http = "wakil-http", git = "wakil-git",
-         files = "wakil-files"
+         files = "wakil-files", ticket = "wakil-ticket"
 }
 
 /// Clients pinned to an agent session's own place, used for its calls wherever the screen is.
