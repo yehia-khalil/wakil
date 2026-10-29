@@ -12,6 +12,8 @@ let resumedInstructionsUnknown = "\u{0}resumed"
 /// composed text per project to `AgentInstructionsBox`, which an agent's launch reads.
 extension WindowModel {
     func publishAgentInstructions(_ tree: SettingsTree) {
+        // Workspaces piece 4: Agents woken by messages is read from the same tree.
+        messageState.trees[tree.org.id] = tree
         let org = tree.org
         let orgTexts = AgentTexts(general: org.agentGeneral, commits: org.gitCommitInstructions, pullRequests: org.gitPRInstructions,
                                   branches: org.gitBranchInstructions)

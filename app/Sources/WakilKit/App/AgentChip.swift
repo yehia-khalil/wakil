@@ -61,6 +61,13 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
     /// Why a handed conversation's hand-off could not be recorded or carried, whole (Rule 8):
     /// in the chip's tooltip and its accessibility hint. Nil for any other.
     public let handoffNote: String?
+    /// Workspaces piece 4: messages it holds that the wake budget did not let wake it; 0 for none.
+    public let messagesWaiting: Int
+    /// What the chip's text ends with: the state's suffix, or " — waiting for you · N messages"
+    /// while it holds messages for the operator.
+    public var stateText: String {
+        messagesWaiting > 0 && state == .waiting ? " — " + messagesWaitingLabel(messagesWaiting) : state.suffix
+    }
     /// The conversation: several chips can stand for one place.
     public var id: String { conversation }
 
@@ -74,9 +81,11 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
 
     init(
         place: Place, state: State, productionEnvironment: Bool, conversation: String,
-        title: String = newConversationTitle, ordinal: Int = 1, handoffNote: String? = nil, workspace: String? = nil
+        title: String = newConversationTitle, ordinal: Int = 1, handoffNote: String? = nil, workspace: String? = nil,
+        messagesWaiting: Int = 0
     ) {
         self.workspace = workspace
+        self.messagesWaiting = messagesWaiting
         self.place = place
         self.conversation = conversation
         self.handoffNote = handoffNote

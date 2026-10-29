@@ -14,12 +14,18 @@ public struct ThoughtRow: Identifiable, Sendable, Equatable {
     /// refused or that errored, or a turn that ended in error. Nothing here
     /// colours it; the view draws the word, per Task 11's "no colours".
     public let isError: Bool
+    /// Workspaces piece 4: a message between conversations — sent from this thread (`.to`) or
+    /// received in it (`.from`) — drawn whole, as its own kind of row. Nil for every other row.
+    public let message: MessageDirection?
 
-    public init(id: Int, label: String, detail: String, isError: Bool) {
+    public enum MessageDirection: String, Sendable, Equatable { case to, from }
+
+    public init(id: Int, label: String, detail: String, isError: Bool, message: MessageDirection? = nil) {
         self.id = id
         self.label = label
         self.detail = detail
         self.isError = isError
+        self.message = message
     }
 
     /// The agent's note that a page's text came from the site. The thread draws

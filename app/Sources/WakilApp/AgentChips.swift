@@ -210,20 +210,21 @@ private struct AgentChipView: View {
                 Text(environmentSegment).fixedSize()
                 Text(" — ").foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
                 Text(chip.subject).foregroundStyle(coolWhite.opacity(0.82)).truncationMode(.tail)
-                if !chip.state.suffix.isEmpty {
-                    Text(chip.state.suffix).foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
+                if !chip.stateText.isEmpty {
+                    Text(chip.stateText).foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
                 }
             }
         }
             // The place is the label and the state its value, which VoiceOver reads after it — and
             // which is what changes while the chip stays put.
             .accessibilityLabel(chip.label)
-            .accessibilityValue(chip.state.word)
+            // Workspaces piece 4: a chip holding messages says how many wait for the operator.
+            .accessibilityValue(chip.messagesWaiting > 0 ? messagesWaitingLabel(chip.messagesWaiting) : chip.state.word)
             // One per conversation, by its place and ordinal (ruling 2), so a check can press the
             // chip it means — and a place's three parts, joined by `/`, can never spell `more`.
             .accessibilityIdentifier(chip.identifier)
             .accessibilityHint(chip.handoffNote ?? "")
-            .help("Switch to \(chip.label)\(chip.state.suffix)" + (chip.handoffNote.map { "\n" + $0 } ?? ""))
+            .help("Switch to \(chip.label)\(chip.stateText)" + (chip.handoffNote.map { "\n" + $0 } ?? ""))
             .contextMenu {
                 Button("Rename…", action: rename)
             }
@@ -247,7 +248,7 @@ private struct MoreChip: View {
         .accessibilityLabel("\(tray.hidden.count) more conversations")
         .accessibilityValue(state.word)
         .accessibilityIdentifier("window.agentChip.more")
-        .help(tray.hidden.map { $0.label + $0.state.suffix }.joined(separator: "\n"))
+        .help(tray.hidden.map { $0.label + $0.stateText }.joined(separator: "\n"))
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(alignment: .trailing, spacing: 6) {
                 ForEach(tray.hidden) { chip in

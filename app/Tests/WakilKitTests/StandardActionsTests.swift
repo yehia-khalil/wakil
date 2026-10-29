@@ -2402,7 +2402,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
             ["api_remove_entry", "api_set_entry", "api_update_entry",
-             "conversation_rename",
+             "conversation_message", "conversation_rename",
              "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_config_tree", "ctx_config_tree_for",
              "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove", "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_connection_update",
              "ctx_create_environment",
@@ -2817,6 +2817,9 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         "session_close", "session_new", "session_switch",
         // Names: `conversation_rename` parks there too, and checks no client.
         "conversation_rename",
+        // Workspaces piece 4: `conversation_message` refuses with no window (nothing live), and
+        // checks no client.
+        "conversation_message",
         // Checks no client before touching `panes`/`layout`. With no
         // `layout` wired (this test's `registerStandardActions` call
         // passes none, so it defaults to `nil`), `requireOpenPane`

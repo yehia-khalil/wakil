@@ -730,6 +730,9 @@ extension WakilWindow {
                     saveProjectBranchInstructions: { path, branches in
                         await model.saveProjectAgentInstructions(projectPath: path, branches: branches)
                     },
+                    saveMessageWakes: { value, organisation, path in
+                        await model.saveMessageWakes(value, organisation: organisation, projectPath: path)
+                    },
                     saveLocalProvider: { id, label, url in
                         await model.setLocalProvider(id: id, label: label, baseURL: url)
                     },

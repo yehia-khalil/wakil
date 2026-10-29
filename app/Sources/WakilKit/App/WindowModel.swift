@@ -1572,6 +1572,8 @@ public final class WindowModel {
                     await self.openWorkspaceView(workspace, in: place)
                 case .newHere(let workspace):
                     await self.newConversationHere(workspace)
+                case .message(let from, let to, let text):
+                    await self.deliverMessage(from: from, to: to, text: text)
                 }
             }
         }
@@ -9039,7 +9041,12 @@ public final class WindowModel {
             // workspaces — on its first turn and whenever it changed. After the words, as the
             // identifier note is: the operator's words stay what a session is listed by.
             if let map = await workspaceMapUpdate(for: agent) { outgoing += "\n\n" + map }
+            // Workspaces piece 4: the operator's message resets its workspace's wake budget and
+            // carries the conversation's queued messages at the head of its input.
+            let riding = messagesRidingWithOperatorTurn(to: agent)
+            if !riding.block.isEmpty { outgoing = riding.block + "\n\n" + outgoing }
             try await harness.send(outgoing)
+            messagesDelivered(riding.count, withOperatorTurnTo: agent)
             // After the send succeeded: a turn that never went leaves no
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
@@ -9894,7 +9901,8 @@ public final class WindowModel {
         return liveConversations()
             .compactMap { agent -> AgentChip? in
                 ordinals[agent.place, default: 0] += 1
-                let waits = waiting.contains(agent.id)
+                // Workspaces piece 4: messages the budget did not let wake it wait for the operator.
+                let waits = waiting.contains(agent.id) || agent.messagesWaitingForYou > 0
                 guard agent !== shown, let state = AgentChip.state(
                     waiting: waits, failed: agent.unseenFailure,
                     working: agent.turnInFlight, done: agent.unseenResult)
@@ -9903,7 +9911,8 @@ public final class WindowModel {
                     place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
                     conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1],
                     handoffNote: agent.handoffFailure,
-                    workspace: agent.workspace.map { $0.tickets.first ?? $0.name })
+                    workspace: agent.workspace.map { $0.tickets.first ?? $0.name },
+                    messagesWaiting: agent.messagesWaitingForYou)
             }
             .sorted {
                 ($0.place.organization, $0.place.project, $0.place.environment, $0.ordinal)
@@ -9914,7 +9923,7 @@ public final class WindowModel {
     /// The conversations an agent's own proposal waits on. A conversation waits only on its own
     /// proposal; the operator's, parked in the same place, is not the agent asking for anything
     /// (final review, minor 1), nor is another conversation's.
-    private var waitingConversations: Set<String> {
+    var waitingConversations: Set<String> {
         Set(parkedSlots.filter { $0.value.origin == .agent }.keys.compactMap(\.conversation))
     }
 
@@ -9930,10 +9939,11 @@ public final class WindowModel {
                 LiveConversation(
                     id: agent.id, session: agent.sessionId, place: agent.place, title: agent.title,
                     titleSource: agent.titleSource, fallbackTitle: agent.fallbackTitle, state: .of(
-                        waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
-                        working: agent.turnInFlight, done: agent.unseenResult),
+                        waiting: waiting.contains(agent.id) || agent.messagesWaitingForYou > 0,
+                        failed: agent.unseenFailure, working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
-                    isProduction: agent.productionEnvironment, handoff: agent.handoff)
+                    isProduction: agent.productionEnvironment, handoff: agent.handoff,
+                    messagesWaiting: agent.messagesWaitingForYou)
             }
             .map { row in
                 var row = row
@@ -10203,7 +10213,10 @@ public final class WindowModel {
     public private(set) var closeQuestion: CloseConversationQuestion?
     /// The conversations `endConversation` is ending now: a second close of one is ignored
     /// (Rule 5), as is a second close while one is asked about.
-    @ObservationIgnored private var closing: Set<String> = []
+    @ObservationIgnored var closing: Set<String> = []
+    /// Workspaces piece 4: the wake budgets and each organisation's Agents woken by messages
+    /// (`WindowModel+Messages.swift`).
+    @ObservationIgnored let messageState = ConversationMessageState()
 
     /// Ends `conversation` — nil, the one on screen — as Close Conversation does: its agent stops,
     /// its panes close as on quit, and it moves to Continue; its place then shows its next live
@@ -11385,6 +11398,8 @@ public final class WindowModel {
             if agent.handoff != nil { Task { [weak self] in await self?.handOffTurnEnded(agent) } }
             // Workspaces, piece 2: a drafting conversation that answered without a proposal says so.
             recipeDraftBook.turnEnded(conversation: agent.id)
+            // Workspaces piece 4: messages that came while it worked wake it now, within the budget.
+            if !agent.pendingMessages.isEmpty { Task { [weak self] in await self?.wakeForMessages(agent) } }
         }
         // Names: the first clean exchange — its reply's start, then the one ask.
         switch event {

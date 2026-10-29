@@ -249,6 +249,22 @@ public final class PlaceAgent {
         for waiter in waiters { waiter.resume() }
     }
 
+    /// Workspaces piece 4: messages from other conversations not yet in its agent's input, oldest
+    /// first. Delivered together at its next input: an operator message, or a message-woken turn.
+    public internal(set) var pendingMessages: [ConversationMessage] = []
+    /// The messages it holds for the operator: those queued while it is not working — the wake
+    /// budget is spent, or its session cannot take a turn now. 0 while it works (they ride its next
+    /// input) or holds none.
+    public var messagesWaitingForYou: Int { turnInFlight ? 0 : pendingMessages.count }
+
+    /// A message row (workspaces piece 4): `header` ("To ‘…’" / "From ‘…’ · …") over the text.
+    func appendMessageRow(_ direction: ThoughtRow.MessageDirection, header: String, text: String) {
+        thoughts.append(ThoughtRow(
+            id: nextThoughtId, label: "message", detail: header + "\n" + text, isError: false, message: direction))
+        nextThoughtId += 1
+        lastActivity = Date()
+    }
+
     /// Appends one row under the next id.
     func appendRow(label: String, detail: String, isError: Bool = false) {
         thoughts.append(ThoughtRow(id: nextThoughtId, label: label, detail: detail, isError: isError))

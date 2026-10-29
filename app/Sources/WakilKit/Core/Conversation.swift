@@ -122,19 +122,29 @@ public struct LiveConversation: Sendable, Equatable {
     /// The workspace it is in (workspaces, piece 1): its id and name; nil for Main. Filled by the
     /// window's listing (`WorkspaceRouter.annotate`), so `session_list` names it.
     public var workspace: (id: String, name: String)?
+    /// Workspaces piece 4: the messages it holds for the operator — the budget did not wake it.
+    public let messagesWaiting: Int
+
+    /// Its state in words: "waiting for you · N messages" while it holds messages, else the state.
+    public var stateWords: String {
+        messagesWaiting > 0 ? messagesWaitingLabel(messagesWaiting) : state.rawValue
+    }
 
     public static func == (a: LiveConversation, b: LiveConversation) -> Bool {
         a.id == b.id && a.session == b.session && a.place == b.place && a.title == b.title
             && a.titleSource == b.titleSource && a.fallbackTitle == b.fallbackTitle && a.state == b.state
             && a.onScreen == b.onScreen && a.lastActivity == b.lastActivity && a.isProduction == b.isProduction
             && a.handoff == b.handoff && a.workspace?.id == b.workspace?.id && a.workspace?.name == b.workspace?.name
+            && a.messagesWaiting == b.messagesWaiting
     }
 
     public init(
         id: String, session: String?, place: Place, title: String,
         titleSource: ConversationTitleSource = .message, fallbackTitle: String? = nil, state: ConversationState,
-        onScreen: Bool, lastActivity: Date, isProduction: Bool = false, handoff: PlaceAgentHandoff? = nil
+        onScreen: Bool, lastActivity: Date, isProduction: Bool = false, handoff: PlaceAgentHandoff? = nil,
+        messagesWaiting: Int = 0
     ) {
+        self.messagesWaiting = messagesWaiting
         self.id = id
         self.session = session
         self.place = place
@@ -165,6 +175,7 @@ public struct LiveConversation: Sendable, Equatable {
             "state": .string(state.rawValue),
             "onScreen": .bool(onScreen),
             "handed": .bool(handoff != nil),
+            "messagesWaiting": .integer(Int64(messagesWaiting)),
         ]
         o["workspace"] = workspace.map { .object(["id": .string($0.id), "name": .string($0.name)]) } ?? .string("main")
         if let handoff {
@@ -173,4 +184,27 @@ public struct LiveConversation: Sendable, Equatable {
         }
         return .object(o)
     }
+}
+
+/// Which workspace a conversation is in, for messages (workspaces piece 4): `key` keys the wake
+/// budget and `name` is what a message's header names. Made by `WindowModel.messageWorkspace(of:)`
+/// from piece 1's record: a workspace's id and name (a child workspace its own key, call 15), or
+/// Main's, keyed by the place.
+public struct MessageWorkspace: Sendable, Equatable {
+    public let key: String
+    public let name: String
+
+    public init(key: String, name: String) {
+        self.key = key
+        self.name = name
+    }
+}
+
+/// The longest message between conversations, in characters (workspaces piece 4).
+public let conversationMessageLimit = 4_000
+
+/// "waiting for you · N messages" (workspaces piece 4): the state of a conversation holding
+/// messages the wake budget did not let wake it.
+public func messagesWaitingLabel(_ count: Int) -> String {
+    "waiting for you · \(count) \(count == 1 ? "message" : "messages")"
 }

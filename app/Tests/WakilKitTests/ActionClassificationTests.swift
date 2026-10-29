@@ -232,3 +232,14 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
     #expect(restore.kind == .control)
     #expect(!operatorOnlyActions.contains("review_reply_draft_restore"))
 }
+
+/// Workspaces piece 4: `conversation_message` is a `.control` the agent reaches — it is how one
+/// conversation tells another something — and never a write the gate prices.
+@Test func conversationMessageIsAnAgentReachableControl() async throws {
+    let wiring = try await wiringWithNoBinaries()
+    await wiring.shutdown()
+    let action = try #require(await wiring.registry.all().first { $0.name == "conversation_message" })
+    #expect(action.kind == .control)
+    #expect(action.audience == .agentReachable)
+    #expect(!operatorOnlyActions.contains("conversation_message"))
+}

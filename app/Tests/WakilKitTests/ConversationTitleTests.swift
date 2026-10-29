@@ -36,6 +36,7 @@ func theTitleIsTheFirstMessageCutTo48(_ message: String, _ title: String) {
         "project": .string("p"), "environment": .string("e"), "title": .string("t"),
         "state": .string("working"), "onScreen": .bool(true), "handed": .bool(false), "titleSource": .string("message"),
         "workspace": .string("main"),
+        "messagesWaiting": .integer(0),
     ]))
 }
 

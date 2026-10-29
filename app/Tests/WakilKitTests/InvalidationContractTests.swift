@@ -182,6 +182,9 @@ private let keptPerPlace: Set<String> = [
     // Conversations 3 of 3: the Close question names a conversation by its id, and the ones
     // being closed — both survive an org switch, as the conversations they name do.
     "closeQuestion", "closing",
+    // Workspaces piece 4: each workspace's wake budget and each organisation's Agents woken by
+    // messages, kept per organisation: the conversations they serve survive the switch.
+    "messageState",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",

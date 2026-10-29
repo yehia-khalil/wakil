@@ -122,10 +122,11 @@ struct ThoughtThread: View {
                     Text(row.detail)
                         .font(.system(size: 10.5))
                         .italic(row.label == "resumed")
-                        // Errors are shown whole (interaction rule 8).
-                        .lineLimit(row.isError ? nil : 1)
+                        // Errors are shown whole (interaction rule 8), and so is a message between
+                        // conversations (workspaces piece 4): its header and its text, never cut.
+                        .lineLimit(row.isError || row.message != nil ? nil : 1)
                         .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: row.isError)
+                        .fixedSize(horizontal: false, vertical: row.isError || row.message != nil)
                         .foregroundStyle(colour(for: row))
                 }
             }
@@ -172,7 +173,7 @@ struct ThoughtThread: View {
         if row.isError { return Color(red: 0.910, green: 0.361, blue: 0.361) }   // #e85c5c
         if row.isUntrustedNotice { return Color(red: 0.910, green: 0.706, blue: 0.353) }   // amber #e8b45a (design language §5): untrusted site text
         if row.id == rows.last?.id { return Color(red: 0.910, green: 0.925, blue: 0.965) }
-        if row.label == "you" { return Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.70) }
+        if row.label == "you" || row.message != nil { return Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.70) }
         return Color(red: 0.545, green: 0.878, blue: 0.784).opacity(0.45)        // #8be0c8
     }
 }

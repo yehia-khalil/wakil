@@ -1132,7 +1132,7 @@ public func registerStandardActions(
         ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
         ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
         ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
-         ["projectPath", "general", "commits", "pullRequests", "branches"], ["projectPath"], []),
+         ["projectPath", "general", "commits", "pullRequests", "branches", "messageWakes"], ["projectPath"], []),
     ] {
         await registry.register(Action(
             name: name,
@@ -1161,7 +1161,9 @@ public func registerStandardActions(
                 "type": .string("object"),
                 // `apiAccess` (device poll) is the one switch among the strings.
                 "properties": .object(Dictionary(uniqueKeysWithValues: keys.map {
-                    ($0, JSONValue.object(["type": .string($0 == "apiAccess" ? "boolean" : "string")]))
+                    // Workspaces piece 4: `messageWakes` is the one number (-1 clears the override).
+                    ($0, JSONValue.object(["type": .string(
+                        $0 == "apiAccess" ? "boolean" : $0 == "messageWakes" ? "integer" : "string")]))
                 })),
                 "required": .array(required.map { .string($0) }),
             ]),
@@ -1172,6 +1174,9 @@ public func registerStandardActions(
                 for key in keys where arguments[key] == nil {
                     if case .object(let o) = params, case .string(let v)? = o[key] { arguments[key] = .string(v) }
                     if key == "apiAccess", case .object(let o) = params, case .bool(let b)? = o[key] { arguments[key] = .bool(b) }
+                    if key == "messageWakes", case .object(let o) = params, case .integer(let n)? = o[key] {
+                        arguments[key] = .integer(n)
+                    }
                 }
                 return try await callChecked(
                     context, tool: tool, arguments: .object(arguments), action: name,
@@ -1499,6 +1504,8 @@ public func registerStandardActions(
                 "gitCommitInstructions": .object(["type": .string("string")]),
                 "gitPRInstructions": .object(["type": .string("string")]),
                 "gitBranchInstructions": .object(["type": .string("string")]),
+                // Workspaces piece 4: Agents woken by messages, 0–99; -1 clears it back to 8.
+                "messageWakes": .object(["type": .string("integer")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1523,6 +1530,7 @@ public func registerStandardActions(
             for key in ["ghostText", "fastPath", "commitDrafts", "conversationNames"] {
                 if let value = fields[key], case .bool = value { arguments[key] = value }
             }
+            if let value = fields["messageWakes"], case .integer = value { arguments["messageWakes"] = value }
             return try await callChecked(
                 context, tool: "update_org", arguments: .object(arguments),
                 action: "ctx_update_org", timeout: MCPClient.readReplyTimeout)
@@ -2723,6 +2731,9 @@ public func registerStandardActions(
     // Names, call 3: beside the `session_*` actions, parked on the same broker for the same reason.
     await registry.register(conversationRenameAction(
         conversationRequests: conversationRequests, liveConversations: liveConversations))
+    // Workspaces piece 4: parked on the same broker; the window delivers it.
+    await registry.register(conversationMessageAction(
+        conversationRequests: conversationRequests, liveConversations: liveConversations))
 
     // **`.control`, for the identical reason `session_resume` above is:**
     // this changes which account Wakil's own session runs under and
@@ -2826,7 +2837,10 @@ public func registerStandardActions(
             + "\"none exist\". `live` lists the conversations running in this window now in this "
             + "organization — every project's, or, given `project` and/or `environment`, those "
             + "places' — newest activity first, each with its title and state (working, waiting, done, "
-            + "failed, idle). Only the operator brings one on screen, with ⌘P.",
+            + "failed, idle), its workspace, and the messages it holds for the operator. Called by an "
+            + "agent, `self` marks its own row and `sameWorkspace` the conversations working beside it: "
+            + "conversation_message reaches any of them by `conversation` id. Only the operator brings "
+            + "one on screen, with ⌘P.",
         kind: .read,
         audience: .agentReachable,
         schema: .object([
@@ -2861,7 +2875,16 @@ public func registerStandardActions(
                     && (project == nil || row.place.project == project)
                     && (environment == nil || row.place.environment == environment)
             }
-            return withStructured(past, "live", .array(live.map(\.json)))
+            // Workspaces piece 4: an agent's own row, and which rows share its workspace, so a
+            // message (`conversation_message`) has an address.
+            let own = ActionRegistry.dispatchCaller?.conversation
+            let ownWorkspace = live.first { $0.id == own }?.workspace
+            return withStructured(past, "live", .array(live.map { row in
+                guard case .object(var o) = row.json, let own else { return row.json }
+                o["self"] = .bool(row.id == own)
+                o["sameWorkspace"] = .bool(ownWorkspace != nil && row.workspace == ownWorkspace)
+                return .object(o)
+            }))
         }
     ))
 

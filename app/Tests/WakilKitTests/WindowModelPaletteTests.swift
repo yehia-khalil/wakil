@@ -1090,6 +1090,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "running_draft_propose",
     // Workspaces, piece 3: the home screen's view doors.
     "workspace_open", "workspace_new_conversation",
+    // Workspaces piece 4.
+    "conversation_message",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",
@@ -1145,6 +1147,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ctx_keyboard",
     // Names: `.control` and agent-reachable, for the agent's own conversation.
     "mcp__wakil__conversation_rename",
+    "mcp__wakil__conversation_message",
     // Names: `.control` and agent-reachable, a browser tab's name.
     "mcp__wakil__browser_rename_tab",
     "mcp__wakil__ctx_github_pull_requests",

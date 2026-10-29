@@ -23,6 +23,10 @@ public enum ConversationRequest: Sendable, Equatable {
     case openView(workspace: String?, place: Place?)
     /// New conversation here: a fresh conversation in that workspace's view, nothing sent yet.
     case newHere(workspace: String)
+    /// Workspaces piece 4: `conversation_message` — `text` from the live conversation `from` to the
+    /// live conversation `to` (both ids, checked by the handler). The window shows it in both
+    /// threads and delivers or queues it (`WindowModel.deliverMessage`); it never moves the screen.
+    case message(from: String, to: String, text: String)
 }
 
 /// Where a `session_new`, `session_switch` or `session_close` request waits for the window to act on it — the

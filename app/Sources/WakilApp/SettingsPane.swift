@@ -103,6 +103,9 @@ struct SettingsPane: View {
     var runningDrafting: (SettingsProject) -> RunningDrafting = { _ in .none }
     /// Workspaces (decision 10): a project's Branches text.
     var saveProjectBranchInstructions: (String, String) async -> String? = { _, _ in nil }
+    /// Workspaces piece 4: Agents woken by messages — the value, the organisation, and the project's
+    /// path for its override (nil for the organisation's; -1 clears the override).
+    var saveMessageWakes: (Int, String, String?) async -> String? = { _, _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String) async -> String? = { _, _, _ in nil }
     /// Saves the org's ghost-text or fast-path switch (3b-ix). Answers the refusal or nil.
@@ -1046,6 +1049,13 @@ struct SettingsPane: View {
                 // Workspaces (decision 10): how a workspace's branch is named.
                 organisationBox(.gitBranchInstructions, placeholder: Self.branchesPlaceholder,
                                 identifier: "settings.org.git.branches", in: tree)
+                // Workspaces piece 4 (decision 16): how many turns messages may wake per operator message.
+                NumberSettingRow(
+                    label: "Agents woken by messages", value: tree.org.messageWakes, range: 0...99,
+                    identifier: "settings.org.agent.messageWakes",
+                    save: { n in await saveMessageWakes(n, tree.org.id, nil) })
+                    .id("settings.org.agent.messageWakes.\(tree.org.id)")
+                FormHint(Self.messageWakesHint).underRowValue().padding(.vertical, 6)
             }
 
         case .providers:
@@ -1157,6 +1167,29 @@ struct SettingsPane: View {
                                identifier: "settings.project.agent.branches", project: project) { path, text in
                         await saveProjectBranchInstructions(path, text)
                     }
+                    // Workspaces piece 4: the project's own count, or the organisation's.
+                    NumberSettingRow(
+                        label: "Agents woken by messages",
+                        value: project.agent.messageWakes ?? tree.org.messageWakes, range: 0...99,
+                        identifier: "settings.project.agent.messageWakes",
+                        save: { n in await saveMessageWakes(n, tree.org.id, project.path) })
+                        .id("settings.project.agent.messageWakes.\(project.path)")
+                    HStack(spacing: 8) {
+                        FormHint(project.agent.messageWakes == nil
+                            ? "The organisation's, \(tree.org.messageWakes). A number here is this project's own."
+                            : "This project's own; the organisation's is \(tree.org.messageWakes).")
+                        if project.agent.messageWakes != nil {
+                            Button("Use the organisation's") {
+                                Task { _ = await saveMessageWakes(-1, tree.org.id, project.path) }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(coolWhite.opacity(0.70))
+                            .accessibilityIdentifier("settings.project.agent.messageWakes.inherit")
+                        }
+                    }
+                    .underRowValue()
+                    .padding(.vertical, 6)
                 }
                 if !project.roots.isEmpty {
                     SettingsSection("Roots") {
@@ -1378,6 +1411,11 @@ struct SettingsPane: View {
             }
         }
     }
+
+    /// Workspaces piece 4 (decision 16).
+    private static let messageWakesHint = "Each message you send in a workspace lets other "
+        + "conversations' messages wake its agents this many times; 0 never wakes them. Messages "
+        + "beyond it wait for you."
 
     // 3a-iii-b: examples of what a box holds, read as its placeholder.
     private static let generalPlaceholder = "Tell the agent how to work here — e.g. ask before running migrations"
