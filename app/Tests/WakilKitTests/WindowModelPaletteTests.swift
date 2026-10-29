@@ -1003,14 +1003,17 @@ private let tabRenameEffect = PaletteEffect.runName(
         #expect(w.model.layoutSnapshot.focusedId == db)
     }
 
-    /// Conversations 2 of 3, Task 3: with nothing live, ⌘P draws no Running group — not an empty
-    /// header, not a loading row.
+    /// Conversations 2 of 3, Task 3: with nothing live, ⌘P draws no conversation row — not an empty
+    /// header, not a loading row. Workspaces, piece 3 (decision 27): the Running group keeps one row,
+    /// Main of the screen's place, the door to Main's view with no agent.
     @Test func nothingLiveDrawsNoRunningGroup() async throws {
         let w = await paletteWindow()
         await w.model.refreshContext()
         let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
         #expect(!entries.isEmpty)
-        #expect(!entries.contains { $0.group == .running }, "\(entries.map(\.id))")
+        let running = entries.filter { $0.group == .running }
+        #expect(running.map(\.kindLabel) == ["workspace"], "\(entries.map(\.id))")
+        #expect(running.first?.title == "Main")
     }
 
     /// Defence in depth: a step with no stamp after the window left an organisation is refused,
@@ -1085,6 +1088,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "running_read", "running_detect", "running_draft_all", "running_save", "running_secret_set", "running_try", "running_try_end",
     // Piece 2, part three: the drafting conversation's answer (agent-reachable, .control).
     "running_draft_propose",
+    // Workspaces, piece 3: the home screen's view doors.
+    "workspace_open", "workspace_new_conversation",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",

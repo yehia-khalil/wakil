@@ -641,8 +641,10 @@ struct ConversationSwitchTests {
         let entries = await model.paletteRootEntries(mode: .open) { _ in }
 
         #expect(entries.first?.group == .running)
-        let running = entries.filter { $0.group == .running }
+        // Workspaces, piece 3: grouped under Main of each place (decision 27).
+        let running = entries.filter { $0.group == .running && $0.kindLabel == "conversation" }
         #expect(running.count == 2)
+        #expect(entries.filter { $0.group == .running && $0.kindLabel == "workspace" }.map(\.title) == ["Main", "Main"])
         let first = try #require(model.liveConversations(in: placeA).first)
         let row = try #require(running.first { $0.title == "first job" })
         #expect(row.subtitle == "initech · api · staging · working")
