@@ -106,4 +106,10 @@ public struct Keymap: Sendable, Equatable {
         next[id] = nil
         return next
     }
+
+    /// Restore All's map: every command this build knows back to its default. Ids it doesn't know
+    /// are kept, so an older build can't wipe a newer one's binding.
+    public func restoringAll() -> [String: String] {
+        overrides.filter { KeyCommand.byID[$0.key] == nil }
+    }
 }

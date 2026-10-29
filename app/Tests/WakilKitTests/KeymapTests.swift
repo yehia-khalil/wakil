@@ -128,4 +128,19 @@ import Testing
         #expect(!ids("⌘S", moved).contains("editor.save"))
         #expect(ids("none", Keymap(overrides: ["editor.save": ""])).isEmpty, "no chord matches no text")
     }
+
+    /// Restore All's map: every known command back to its default, ids this build doesn't know kept.
+    @Test func restoringAllKeepsOnlyUnknownIds() {
+        let map = Keymap(overrides: ["editor.save": "⌃⌘J", "window.open": "", "future.thing": "⌃⌘K"])
+        #expect(map.restoringAll() == ["future.thing": "⌃⌘K"])
+        #expect(plain.restoringAll() == [:])
+    }
+
+    /// The Fixed rows are searched by the same rule as the commands: title or chord, either case.
+    @Test func fixedMatchingFindsByTitleOrChord() {
+        #expect(FixedKey.matching("push").map(\.title) == ["Push to talk"])
+        #expect(FixedKey.matching("⌘c").map(\.title) == ["Copy row", "Copy"])
+        #expect(FixedKey.matching(" ").count == FixedKey.all.count)
+        #expect(FixedKey.matching("⌃⌘J").isEmpty)
+    }
 }

@@ -47,7 +47,7 @@ struct KeyboardSettingsForm: View {
 
     var body: some View {
         let shown = KeyCommand.matching(query, keymap: keymap)
-        let fixed = fixedMatching(query)
+        let fixed = FixedKey.matching(query)
         VStack(alignment: .leading, spacing: 10) {
             if let error {
                 Text(error)
@@ -75,6 +75,7 @@ struct KeyboardSettingsForm: View {
                 Text("No shortcut matches “\(query)”.")
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(coolWhite.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("settings.keyboard.noMatch")
             }
             restoreAllSection
@@ -110,15 +111,6 @@ struct KeyboardSettingsForm: View {
         .frame(maxWidth: 320, alignment: .leading)
     }
 
-    /// The fixed keys the search finds, by the same rule as the commands: title or chord.
-    private func fixedMatching(_ query: String) -> [FixedKey] {
-        let needle = query.trimmingCharacters(in: .whitespaces)
-        guard !needle.isEmpty else { return FixedKey.all }
-        return FixedKey.all.filter {
-            $0.title.localizedCaseInsensitiveContains(needle) || $0.chord.localizedCaseInsensitiveContains(needle)
-        }
-    }
-
     // MARK: Rows
 
     private func commandRow(_ command: KeyCommand) -> some View {
@@ -129,10 +121,13 @@ struct KeyboardSettingsForm: View {
                     Text(command.title)
                         .font(.system(size: SettingsScale.body, weight: .medium))
                         .foregroundStyle(coolWhite.opacity(0.86))
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(command.place.placeTitle)
                         .font(.system(size: SettingsScale.meta))
                         .foregroundStyle(coolWhite.opacity(0.42))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.vertical, 6)
                 Spacer(minLength: 0)
                 if !keymap.isDefault(id) {
                     Button { restoreDefault(id) } label: {
@@ -164,6 +159,7 @@ struct KeyboardSettingsForm: View {
     private func chordBox(_ id: String) -> some View {
         let isRecording = recording == id
         let inFlight = pending?.id == id
+        let anySaving = pending != nil
         let label: String
         let opacity: Double
         if isRecording {
@@ -179,8 +175,10 @@ struct KeyboardSettingsForm: View {
             Text(label)
                 .font(.system(size: SettingsScale.body, design: isRecording ? .default : .monospaced))
                 .foregroundStyle(coolWhite.opacity(opacity))
-                .lineLimit(1)
-                .frame(width: 112, height: 22)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 6)
+                .frame(minWidth: 112, minHeight: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(coolWhite.opacity(isRecording ? 0.07 : 0.04))
@@ -189,16 +187,18 @@ struct KeyboardSettingsForm: View {
                                 .stroke(isRecording ? SettingsPalette.accent.opacity(0.85) : coolWhite.opacity(0.10),
                                         lineWidth: isRecording ? 1 : 0.5)))
                 .contentShape(Rectangle())
-                .overlay {
-                    if isRecording {
-                        KeyRecorder(
-                            key: { event in recorded(event, for: id) },
-                            cancel: { stopRecording() })
-                    }
-                }
         }
         .buttonStyle(.plain)
-        .disabled(error != nil || inFlight || writing)
+        // While any save is in flight, no box records (rule 5).
+        .disabled(error != nil || anySaving || writing)
+        // On the button, not in its label: the recorder is a plain view in the window's hierarchy.
+        .overlay {
+            if isRecording {
+                KeyRecorder(
+                    key: { event in recorded(event, for: id) },
+                    cancel: { stopRecording() })
+            }
+        }
         .accessibilityLabel(isRecording ? "Type a shortcut" : "Shortcut \(label)")
         .accessibilityIdentifier("settings.keyboard.chord.\(id)")
     }
@@ -219,15 +219,21 @@ struct KeyboardSettingsForm: View {
                 Text(key.title)
                     .font(.system(size: SettingsScale.body, weight: .medium))
                     .foregroundStyle(coolWhite.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(key.place)
                     .font(.system(size: SettingsScale.meta))
                     .foregroundStyle(coolWhite.opacity(0.30))
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.vertical, 6)
             Spacer(minLength: 0)
             Text(key.chord)
                 .font(.system(size: SettingsScale.body, design: .monospaced))
                 .foregroundStyle(coolWhite.opacity(0.40))
-                .frame(width: 112, height: 22)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 6)
+                .frame(minWidth: 112, minHeight: 22)
         }
         .frame(minHeight: SettingsScale.rowHeight)
         .overlay(alignment: .bottom) {
@@ -244,6 +250,7 @@ struct KeyboardSettingsForm: View {
                 Text("Restore All Defaults")
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(coolWhite.opacity(canWrite && !allDefault ? 0.62 : 0.30))
+                    .fixedSize(horizontal: false, vertical: true)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -260,14 +267,17 @@ struct KeyboardSettingsForm: View {
     /// `Took ⌘P from Open… · Undo`, or `Restored all defaults · Undo`.
     private func undoLine(_ line: UndoLine) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(line.text + " · ")
                     .foregroundStyle(coolWhite.opacity(0.62))
+                    .fixedSize(horizontal: false, vertical: true)
                 Button("Undo") { undoLast(line) }
                     .buttonStyle(.plain)
                     .foregroundStyle(coolWhite.opacity(canWrite ? 0.86 : 0.30))
+                    .fixedSize()
                     .disabled(!canWrite)
                     .accessibilityIdentifier("settings.keyboard.undo")
+                Spacer(minLength: 0)
             }
             .font(.system(size: SettingsScale.body))
             .accessibilityElement(children: .contain)
@@ -369,14 +379,13 @@ struct KeyboardSettingsForm: View {
         guard canWrite else { return }
         stopRecording()
         let before = keymap.overrides
-        let known = Set(KeyCommand.all.map(\.id))
         refusals = [:]
         undo = nil
         lineRefusal = nil
         restoreAllRefusal = nil
         writing = true
         Task {
-            if let refusal = await setKeys(before.filter { !known.contains($0.key) }) {
+            if let refusal = await setKeys(keymap.restoringAll()) {
                 restoreAllRefusal = refusal
             } else {
                 undo = UndoLine(row: nil, text: "Restored all defaults", before: before)

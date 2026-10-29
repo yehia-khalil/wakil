@@ -125,4 +125,13 @@ public struct FixedKey: Sendable {
         FixedKey(title: "Select next match", place: "in the editor, when no command has ⌘D", chord: "⌘D"),
         FixedKey(title: "Cancel", place: "in a prompt", chord: "Esc"),
     ]
+
+    /// Settings → Keyboard's search over the fixed keys: `KeyCommand.matching`'s rule, title or chord.
+    public static func matching(_ query: String) -> [FixedKey] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return all }
+        return all.filter {
+            $0.title.localizedCaseInsensitiveContains(needle) || $0.chord.localizedCaseInsensitiveContains(needle)
+        }
+    }
 }
