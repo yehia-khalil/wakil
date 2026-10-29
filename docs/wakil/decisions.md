@@ -71,7 +71,7 @@ by date. The charter's §4 keeps the rule and the table.
    Commit: 2ae2a062.
 
 8. **Environment is a first-class project dimension.**
-   Active context is (project, environment). An environment's `api` is an array of named
+   PM, chat and inbox have no environments. Active context is (project, environment). An environment's `api` is an array of named
    entries, each with its own `baseUrl`, optional `authRef`, and `authHeader` (default
    `Authorization`); `PickAPI` mirrors `PickDatabase`, `list_apis` mirrors `list_databases`.
    An `api_open` naming no entry in an environment of several opens the pane unpointed, with
@@ -144,7 +144,8 @@ by date. The charter's §4 keeps the rule and the table.
     The harness runs the loop, tools and context; the provider is what it talks to and how it
     authenticates. Claude Code is the first harness, and reaches a third-party or local model
     through `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` with no argv change (measured;
-    `scripts/anthropic-stub.py`): exhaust that path before building a second harness.
+    `scripts/anthropic-stub.py`; `ANTHROPIC_BASE_URL` beats `CLAUDE_CODE_OAUTH_TOKEN`, so a
+    provider record cannot half-switch): exhaust that path before building a second harness.
     `buildLaunch` builds the child environment from nothing (`CLAUDE_CONFIG_DIR`,
     `CLAUDE_CODE_OAUTH_TOKEN`, `HOME`, `PATH`), so `ANTHROPIC_API_KEY` cannot shadow a
     subscription; a non-subscription provider would add `baseURL` and `authToken` to
@@ -464,13 +465,16 @@ by date. The charter's §4 keeps the rule and the table.
     asks nothing, and leaves each resumable as a fork (Decision 12). An agent is pinned to its
     place for life: its Wakil, database, API, git and file calls go there whatever is on
     screen; routing is by caller, and a call with no agent session uses the window's. Switching
-    never stops, holds or redirects an agent. An agent cannot change its own place
-    (`ctx_set_project`, `ctx_set_environment` refused); one with no project is pinned by org.
+    never stops, holds or redirects an agent; an agent that needs the operator waits, and never
+    pulls them back. An agent cannot change its own place
+    (`ctx_set_project`, `ctx_set_environment` refused); one with no project is pinned by org
+    and, within it, follows the operator's project.
     Proposals never expire; stopping or replacing a session cancels its parked proposal,
     quitting cancels all. The org switch asks nothing about unsaved tabs. A project or
     environment switch never cancels a read; an org switch cancels the operator's in-flight DB
     reads and API sends in the org being left, not an agent's own. A legacy layout file is a
-    read-only seed for each environment of its project; the environment is in the layout scope.
+    read-only seed for each environment of its project; the environment is in the layout scope, so switching environment moves to that environment's
+    conversation instead of refetching in place. The thread does not mark an org switch.
     No background git or editor watchers. If an agent's tool socket cannot start it runs
     without Wakil's tools and the status says why. A provider switch changes only the
     on-screen place's agent. The journal records each agent-caused entry's agent and place. No
@@ -624,8 +628,11 @@ by date. The charter's §4 keeps the rule and the table.
     `<site> <username>` (split at the first space), label `<site> — Wakil (<org>)`.
     `BrowserPasswordStore` uses Security.framework in-process, the one place Swift reads the
     Keychain, so an item trusts Wakil.app only. Every read names the exact service and
-    re-checks each item's service and site; a mismatch throws. A site is the registrable
-    domain with no families; a local host is `host:port`; only http and https have keys, and a
+    re-checks each item's service and site; a mismatch throws. An ad-hoc signed build asks again per item after every rebuild (Always
+    Allow holds until the next); listing reads attributes only and never asks. A site is the registrable
+    domain; families (`github.com` with `githubusercontent.com`) apply to groups, never to
+    passwords. A local host (loopback, `localhost`, `*.localhost`, `*.test`, an IP literal) is
+    `host:port`; only http and https have keys, and a
     non-local http page gets no fill. No action returns a password; the operator's reads
     (lists, reveal, copy) call the store directly. Fill, suggest, save, delete and never are
     operator-only `.control` actions (`browser_password_*`), `password` is a `secretParams`
@@ -950,7 +957,7 @@ Keychain entries proves nothing, and `POST /bookings/X/delete` deletes.
 **Refused:** any request leaving the entry's `baseUrl`, by path or by redirect (unconditional:
 a 307/308 keeps method, body and `Authorization`); a free-text base-URL override; caller-set
 `Authorization`, `Cookie`, `Host`, `Proxy-*` and `Content-Type` headers (the send has its own
-`contentType`); a body over **1 MiB**, refused with the limit named, never truncated; a
+`contentType`; the read tool's `headers` parameter is untouched); a body over **1 MiB**, refused with the limit named, never truncated; a
 `contentType` with an empty body (an empty body sends no body and no `content-type`); and any
 mutation method in production without a typed confirmation. **The write is the window's, not
 the binary's:** `wakil-http` refuses a mutation method unless `WAKIL_IN_WINDOW` is exactly `1`
