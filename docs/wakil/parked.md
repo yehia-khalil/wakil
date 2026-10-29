@@ -180,6 +180,7 @@ sub-phase you are about to design.
 ## Owed by the acceptance runbooks (deleted 2026-10-29)
 
 Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before the runbooks were deleted from the branch (git keeps them). Grouped by sub-phase; `(security)` marks a security gap.
+They were swept from the runbooks as written and checked against `main` only where that was cheap: a line may already be fixed.
 
 **365-terminal-input-editing**
 
@@ -220,7 +221,6 @@ Items the runbooks recorded as unwalked, unbuilt or deferred, saved here before 
 
 **phase-1**
 
-- **phase-1** one config dir serves one org: Invariant 4's second half (one provider, several orgs) does not hold for `claude-code`; per-org server names not built; guard is add-time only, no retro-scan.
 - **phase-1** `get_issue` returns no comments (disclosed in its tool description); `recall` has no recency ordering and snippets carry status, not an excerpt.
 - **phase-1** nothing has ever run against a `codex` or `local` provider; they register but have no session adapter.
 
