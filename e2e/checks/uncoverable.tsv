@@ -485,3 +485,12 @@ pane.<…>.folderTag	a Text (workspaces, piece 1): a terminal header's folder ta
 window.contextLine.workspace	a Text (workspaces, piece 1): the context line's `› <workspace>`, with no press action. Read, not pressed — agent/workspaces-first-change.jsonl asserts `› write the workspace note` after the first change.
 editor.ticket.noJiraProject	the line shows in a project whose roots are a git repository on a long-lived branch, with no Jira project and no ticket on its repos; no seeded project is all three (e2e-git declares INI and holds the stub's PRs, e2e-project is not a repository). TicketProjectScopeTests and WindowModelTicketScopeTests cover it; seeded/ticket-project-scope.jsonl asserts it is absent where a project has tickets.
 editor.ticket.setJiraProject	see editor.ticket.noJiraProject: it is drawn only beside that line. Settings' Jira project field it leads to is pressed by seeded/ticket-project-scope.jsonl.
+running_secret_set	writes the operator's login Keychain; a check must not leave an item there. RunningSettingsTests covers the ref and the save; the walk adds a secret by hand.
+running_try	makes a git worktree and runs the recipe's own commands (services, setup, processes) on the machine; recipe_try's Go tests run it with sh, and the runbook walks a real repo.
+settings.running.try	see running_try.
+settings.running.tryCancel	see running_try: only exists while a Try runs.
+settings.running.tryBox	see running_try.
+settings.running.tryResult	see running_try.
+settings.running.tryError	see running_try.
+settings.running.env.newSecret	see running_secret_set.
+settings.running.proposal.save	saving Draft all or Detect rewrites the seeded project's recipes from the fixture's files; covered by RunningSettingsTests (the patch) and workspaces-running-recipe (running_save).

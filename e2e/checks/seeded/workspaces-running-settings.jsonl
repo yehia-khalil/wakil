@@ -1,0 +1,21 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.projectRunning.e2e-project"}}
+{"expect":{"tree":"contains","text":"Running"}}
+{"expect":{"tree":"contains","text":"NO RECIPE"}}
+{"expect":{"frame":"settings.running.draftAll","inside":"settings.pane"}}
+{"do":{"click":"settings.running.repo.e2e-project"}}
+{"expect":{"tree":"contains","text":"no recipe"}}
+{"do":{"click":"settings.running.detect"}}
+{"expect":{"tree":"contains","text":"Detect — e2e-project"}}
+{"expect":{"tree":"contains","text":"Nothing changes until you save."}}
+{"do":{"click":"settings.running.proposal.discard"}}
+{"expect":{"tree":"absent","text":"Detect — e2e-project"}}
+{"do":{"click":"settings.running.draftAll"}}
+{"expect":{"tree":"contains","text":"Draft all — "}}
+{"do":{"click":"settings.running.proposal.discard"}}
+{"expect":{"tree":"absent","text":"Draft all — "}}
+{"expect":{"tree":"contains","text":"NO RECIPE"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.running.detect","inside":"settings.pane"}}
+{"expect":{"frame":"settings.running.repo.e2e-project","clear":"settings.running.detect"}}
