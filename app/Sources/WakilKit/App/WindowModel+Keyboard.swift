@@ -67,11 +67,15 @@ extension WindowModel {
         return refusal
     }
 
+    /// The focused pane's kind (`"browser"`), the place a press resolves in first; nil with none.
+    public var focusedPaneKind: String? {
+        layoutSnapshot.focusedId.flatMap { id in layoutSnapshot.panes.first { $0.id == id } }?.kind
+    }
+
     /// A press: the focused pane kind's command first, then the anywhere one, each until one acts.
     /// False when none does, so the key goes on to whatever holds the keyboard.
     public func keyPressed(_ chord: KeyChord) async -> Bool {
-        let focused = layoutSnapshot.focusedId.flatMap { id in layoutSnapshot.panes.first { $0.id == id } }
-        for id in keymap.resolve(chord, paneKind: focused?.kind) where await runKeyCommand(id) {
+        for id in keymap.resolve(chord, paneKind: focusedPaneKind) where await runKeyCommand(id) {
             return true
         }
         return false

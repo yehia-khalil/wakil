@@ -66,6 +66,12 @@ public struct Keymap: Sendable, Equatable {
         return places.compactMap { inForce[$0]?[chord] }
     }
 
+    /// Whether a press of `chord` belongs to Wakil: some command holds it in the focused pane's
+    /// kind or anywhere. A key no command holds stays with whatever has the keyboard.
+    public func claims(_ chord: KeyChord, paneKind: String?) -> Bool {
+        !resolve(chord, paneKind: paneKind).isEmpty
+    }
+
     /// The command whose menu item carries `chord` as its shortcut, since SwiftUI gives a chord to
     /// one menu item only: the one in force anywhere, else the first in table order in force in
     /// its pane. Nil when no command holds it.

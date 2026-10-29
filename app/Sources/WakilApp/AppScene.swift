@@ -55,16 +55,14 @@ final class WakilAppDelegate: NSObject, NSApplicationDelegate {
     /// The keys the menu bar cannot carry (an F-key with no modifier), sent through `keyPressed`.
     private var keyMonitor: Any?
 
-    /// A key-down the menu bar could not hold as a shortcut, when the keymap gives it a command:
-    /// taken here and pressed, and passed on if every command holding it declines. Every other
-    /// key goes on untouched, to the menu bar and the first responder as before.
+    /// A key-down the menu bar could not hold as a shortcut (an F-key), when a command holds it
+    /// where the operator is: taken here and pressed. The decision is made now, before the event
+    /// is consumed, so a key no command holds there goes on untouched to whatever has the keyboard,
+    /// a web view included. A command that then declines loses the key, as a menu shortcut does.
     private func takeUnmenuedKey(_ event: NSEvent) -> Bool {
         guard let model = menu.model, let chord = KeyChord(event: event), KeyboardShortcut(chord: chord) == nil,
-              model.keymap.menuHolder(of: chord) != nil,
-              let startup else { return false }
-        Task { @MainActor in
-            if await !startup.value.model.keyPressed(chord) { WakilApplication.passOn(event) }
-        }
+              model.keymap.claims(chord, paneKind: model.focusedPaneKind) else { return false }
+        Task { @MainActor in _ = await model.keyPressed(chord) }
         return true
     }
 
@@ -498,7 +496,9 @@ private struct KeyMenuItems: View {
     /// goes on to whatever holds the keyboard, as if this menu were not here.
     private func press(_ id: String, chord: KeyChord?) {
         let event = NSApp.currentEvent
-        let typed = chord.flatMap { chord in event?.type == .keyDown ? chord : nil }
+        // Typed only when the event is the chord itself: Return on an item reached with the arrows
+        // is a key-down too, and runs the item's own command, as a click does.
+        let typed = chord.flatMap { chord in event.flatMap(KeyChord.init(event:)) == chord ? chord : nil }
         guard let startup = delegate.startup else { return }
         Task { @MainActor in
             let model = await startup.value.model

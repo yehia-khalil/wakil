@@ -19,6 +19,16 @@ import Testing
         }
     }
 
+    /// The F-key monitor's take-or-leave: a chord is Wakil's only where some command holds it.
+    @Test func claimsOnlyAChordACommandHoldsThere() {
+        let f5 = Keymap(overrides: ["browser.reload": "F5", "window.toggleRail": "F6"])
+        #expect(f5.claims(c("F5"), paneKind: "browser"))
+        #expect(!f5.claims(c("F5"), paneKind: "editor"), "a browser key outside a browser goes on")
+        #expect(!f5.claims(c("F5"), paneKind: nil))
+        #expect(f5.claims(c("F6"), paneKind: "editor"), "an anywhere key is taken in every pane")
+        #expect(!f5.claims(c("F7"), paneKind: "browser"))
+    }
+
     /// The menu bar's one item per chord: the anywhere command's, else the first pane command's.
     @Test func menuHolderPrefersTheAnywhereCommand() {
         #expect(plain.menuHolder(of: c("⌘T")) == "editor.newScratch")
