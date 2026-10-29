@@ -119,6 +119,16 @@ public struct LiveConversation: Sendable, Equatable {
     /// The hand-off it was started by, when it is handed (ticket noticing): `session_list` says
     /// `handed`, and then its key and thread.
     public let handoff: PlaceAgentHandoff?
+    /// The workspace it is in (workspaces, piece 1): its id and name; nil for Main. Filled by the
+    /// window's listing (`WorkspaceRouter.annotate`), so `session_list` names it.
+    public var workspace: (id: String, name: String)?
+
+    public static func == (a: LiveConversation, b: LiveConversation) -> Bool {
+        a.id == b.id && a.session == b.session && a.place == b.place && a.title == b.title
+            && a.titleSource == b.titleSource && a.fallbackTitle == b.fallbackTitle && a.state == b.state
+            && a.onScreen == b.onScreen && a.lastActivity == b.lastActivity && a.isProduction == b.isProduction
+            && a.handoff == b.handoff && a.workspace?.id == b.workspace?.id && a.workspace?.name == b.workspace?.name
+    }
 
     public init(
         id: String, session: String?, place: Place, title: String,
@@ -156,6 +166,7 @@ public struct LiveConversation: Sendable, Equatable {
             "onScreen": .bool(onScreen),
             "handed": .bool(handoff != nil),
         ]
+        o["workspace"] = workspace.map { .object(["id": .string($0.id), "name": .string($0.name)]) } ?? .string("main")
         if let handoff {
             o["key"] = handoff.key.map { .string($0) } ?? .null
             o["thread"] = handoff.thread.map { .string($0) } ?? .null

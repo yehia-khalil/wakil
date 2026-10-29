@@ -617,8 +617,8 @@ public final class WindowModel {
     /// A landed name's journal line being written, so `settleConversationNaming` waits for it too. Not
     /// org-derived: the name has landed, and nothing an org switch does undoes it or its line.
     @ObservationIgnored var conversationNamingJournals: [UUID: Task<Void, Never>] = [:]
-    private let panes: PaneStore
-    private let layout: LayoutStore
+    let panes: PaneStore
+    let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
     /// window, shared with the agent's path the same way `panes` and
     /// `layout` are — `WakilWiring.build` registers `term_open`,
@@ -985,7 +985,7 @@ public final class WindowModel {
     private var currentLayoutScope: LayoutScope {
         LayoutScope(
             organization: organization, project: projectKey, environment: environment,
-            lineageRoot: lineageRoot ?? landingRoot(in: place))
+            lineageRoot: currentAgent?.canvasRoot ?? landingRoot(in: place))
     }
     /// The conversation whose canvas `place`'s Landing draws over after `newConversation`: the id
     /// it reserves for its next conversation, while `landingBaselines` holds the place and it
@@ -2615,7 +2615,8 @@ public final class WindowModel {
     /// project under no conversation, both stores MOVE its contents into the incoming scope and
     /// nothing is read off disk — a brand-new conversation has no file of its own, and the seed
     /// is what is already on screen, minus every draft (re-walk finding #4).
-    private func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false) async {
+    func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false,
+                        adoptingFrom adoptable: LayoutScope? = nil) async {
         // Every way the screen changes converges here — a picker, a ⌘P jump, an org switch, a new
         // conversation, a switch — so this is where the composer is told (`tellScreenChange`),
         // once, whichever return this takes.
@@ -2739,9 +2740,11 @@ public final class WindowModel {
         backgroundLayouts[scope] = nil
 
         // Re-walk finding #4: a conversation minted over the conversation-less canvas takes it.
-        let adopted = adoptingCanvas && outgoing.map {
+        // Workspaces (decision 22): a conversation the write rule moved out of Main takes the
+        // canvas it was in into its workspace's view (`workspaceViewFollows`).
+        let adopted = (adoptingCanvas && outgoing.map {
             conversationAdoptsCanvas(from: $0, to: scope)
-        } == true
+        } == true) || (adoptable != nil && adoptable == outgoing)
         if adopted, let outgoing {
             await layout.switchScope(to: scope, adoptingFrom: outgoing)
             await panes.switchScope(to: scope, adoptingFrom: outgoing)

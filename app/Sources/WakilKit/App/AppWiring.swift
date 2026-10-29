@@ -279,8 +279,8 @@ public struct WakilWiring: Sendable {
             await model?.runningAgent(in: project, environment: environment)
         }
         // Conversations 2 of 3: `session_list`'s live conversations are the window's, live.
-        liveLookup.use({ [weak model] place in
-            await model?.liveConversationRows(in: place) ?? []
+        liveLookup.use({ [weak model, workspaces] place in
+            await workspaces.annotate(await model?.liveConversationRows(in: place) ?? [])
         }, organization: { [weak model] in await model?.organization })
         // Ticket noticing: the operator's Start and Cancel reach the window's hand-off.
         handOffLookup.use(start: { [weak model] r, reserved in

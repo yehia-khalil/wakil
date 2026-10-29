@@ -48,6 +48,43 @@ extension WindowModel {
     /// falls back to `fallbackBranchName`.
     func draftBranchName(_ request: BranchNameRequest) async -> String? { nil }
 
-    /// Where a conversation's view goes when it moves: filled by the views phase.
-    func workspaceViewFollows(_ conversation: String, from: Workspace?, to: Workspace) async {}
+    /// Where a conversation's view goes when it moves (decision 22). From Main (step 0), the canvas
+    /// it was in becomes the new workspace's view — on screen, both stores move it, as a new
+    /// conversation adopts the seed — and its editor tabs on files in Main's folders reopen in
+    /// the copy. From a workspace (a branch-off, a Move), it goes to the other workspace's view.
+    func workspaceViewFollows(_ conversation: String, from: Workspace?, to: Workspace) async {
+        guard let agent = conversations[conversation] else { return }
+        let before = agent.layoutScope
+        agent.workspace = to
+        guard let after = agent.layoutScope, after != before else { return }
+        guard currentAgent === agent else { return }
+        await activateLayout(adoptingFrom: from == nil ? before : nil)
+        if from == nil { await repointEditorTabs(in: after, into: to) }
+    }
+
+    /// Every file tab of an editor pane in `scope` on a path in Main's folder of a repo `w` has a
+    /// copy of, re-pointed to the copy (its buffer kept), and the pane's saved tabs written.
+    func repointEditorTabs(in scope: LayoutScope, into w: Workspace) async {
+        for target in await panes.editorPanesInEveryScope() where target.scope == scope {
+            let snapshot = await panes.updateEditor(in: scope, paneId: target.paneId) { s -> EditorSnapshot in
+                for i in s.tabs.indices {
+                    guard case .file(let path, let root) = s.tabs[i].subject,
+                          let moved = workspacePath(path, in: w) else { continue }
+                    s.tabs[i].subject = .file(path: moved, root: workspacePath(root, in: w) ?? root)
+                }
+                return s
+            }
+            await ScopeRouting.$home.withValue(scope) {
+                await layout.setEditorTabs(id: target.paneId, to: editorSavedTabs(snapshot))
+            }
+        }
+    }
+
+    /// The workspace on screen: the shown conversation's (nil: Main). The context line names it.
+    public var workspaceOnScreen: Workspace? { currentAgent?.workspace }
+
+    /// The tag a folder carries in the editor's and a terminal's header (spec, piece 1).
+    public func folderTag(for path: String) -> String {
+        checkoutTag(for: path, in: currentAgent?.workspace.map { [$0] } ?? [])
+    }
 }

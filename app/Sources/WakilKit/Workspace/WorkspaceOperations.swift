@@ -50,6 +50,17 @@ extension WorkspaceRouter {
         return out
     }
 
+    /// `rows` with each conversation's workspace named (`session_list`'s live half).
+    public func annotate(_ rows: [LiveConversation]) async -> [LiveConversation] {
+        var out: [LiveConversation] = []
+        for var row in rows {
+            let root = await hooks?.conversation(row.id)?.lineageRoot
+            if let w = await store.workspace(ofConversation: row.id, root: root) { row.workspace = (w.id, w.name) }
+            out.append(row)
+        }
+        return out
+    }
+
     /// Makes sure the record in memory is `org`'s.
     public func load(org: String) async -> String? {
         await store.ensure(org: org)

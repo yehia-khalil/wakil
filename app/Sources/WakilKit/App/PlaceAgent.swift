@@ -138,8 +138,15 @@ public final class PlaceAgent {
     public internal(set) var sessionEnded = false
     /// Bumped before a harness is stopped, so the pump drops what the old stream still buffers.
     var eventPumpGeneration = 0
-    /// The conversation this place is in: what its arrangement is filed under.
+    /// The conversation this place is in: what its arrangement is filed under — unless it works in
+    /// a workspace (`workspace`), whose view is filed under the workspace instead.
     public internal(set) var lineageRoot: String?
+    /// Workspaces, piece 1: the workspace this conversation is in, as the write rule last moved it
+    /// (nil: Main). Its canvas is the workspace's view, shared by every conversation in it, so
+    /// switching between them swaps only the thread (decision 22).
+    public internal(set) var workspace: Workspace?
+    /// What its canvas is filed under: the workspace's view key, else its own lineage root.
+    public var canvasRoot: String? { workspace.map { workspaceCanvasRoot($0) } ?? lineageRoot }
     /// The conversation id minted for this place's work, before or with its first session.
     public internal(set) var assignedSessionId: String? {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
@@ -206,7 +213,7 @@ public final class PlaceAgent {
         guard !place.project.isEmpty else { return nil }
         return LayoutScope(
             organization: place.organization, project: place.project,
-            environment: place.environment, lineageRoot: lineageRoot)
+            environment: place.environment, lineageRoot: canvasRoot)
     }
 
     /// A `send`: the first one names the conversation from the typed text.

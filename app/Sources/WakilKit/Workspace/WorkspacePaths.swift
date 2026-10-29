@@ -44,3 +44,13 @@ public func confinementRefusal(_ path: String, workspace: Workspace?, all: [Work
     let name = other.name.isEmpty ? other.slug : other.name
     return "\(action): \(standard(path)) is in workspace ‘\(name)’; this conversation writes only in its own workspace"
 }
+
+/// What a workspace's canvas is filed under (`LayoutScope.lineageRoot`): its view key, marked so it
+/// can never equal a conversation's lineage root.
+public func workspaceCanvasRoot(_ w: Workspace) -> String { "workspace-" + w.viewKey }
+
+/// The tag the editor and a terminal carry for a folder (spec, piece 1): a workspace's copy, or
+/// the operator's own folder in Main.
+public func checkoutTag(for path: String, in all: [Workspace]) -> String {
+    workspaceHolding(path, in: all) != nil ? "workspace copy" : "Main · your folder"
+}
