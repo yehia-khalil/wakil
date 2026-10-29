@@ -1087,7 +1087,7 @@ private func pinFixture() async throws -> (f: BrowserFixture, other: String, fil
     try await f.dispatch("browser_pin")
     #expect(await f.snapshot().tabs.count == 1)
     try files.setPins([], project: "web")
-    let reply = try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false)
+    let reply = try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false, origin: .ui)
     #expect(reply == .object(["pane": .string(f.pane), "closed": .bool(true)]))
     #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane })
 }
@@ -1241,7 +1241,7 @@ private func pinFixture() async throws -> (f: BrowserFixture, other: String, fil
 
     // A restored pane is reconciled too: a pin the file no longer holds goes.
     try files.setPins([], project: "web")
-    try await f.dispatch("browser_restore", ["pane": .string(pane)], named: false)
+    try await f.dispatch("browser_restore", ["pane": .string(pane)], named: false, origin: .ui)
     #expect(await f.panes.browserSnapshot(paneId: pane).tabs.map(\.url) == ["https://example.org/"])
 }
 
@@ -1481,7 +1481,7 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     await f.panes.browserSetPullRequests(org: "initech", BrowserPullRequests())
     let pane = try #require(await f.layout.snapshot().panes.first { $0.id == f.pane })
     #expect(BrowserPaneKind.restoreStep(for: pane) != nil)
-    try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false)
+    try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false, origin: .ui)
     let s = await f.snapshot()
     #expect(s.group("pr")?.collapsed == false && s.tabColumnHidden, "its group and column came back")
     #expect(await f.layout.snapshot().panes.contains { $0.id == f.pane }, "an empty pr group keeps the pane")
@@ -1700,7 +1700,7 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     #expect(await f.layout.browserTabs(id: other)?.tabs.first?.name == "Home", "saved in the other pane too")
     // A pane opened later takes it from the pin at its full reconcile.
     let third = await f.layout.open(kind: "browser", title: "Browser").id
-    try await f.dispatch("browser_restore", ["pane": .string(third)], named: false)
+    try await f.dispatch("browser_restore", ["pane": .string(third)], named: false, origin: .ui)
     #expect(await f.panes.browserSnapshot(paneId: third).tabs.first { $0.pin != nil }?.name == "Home")
 }
 
