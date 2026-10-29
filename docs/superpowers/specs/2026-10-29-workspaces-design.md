@@ -402,6 +402,38 @@ Replaces the Landing's columns (Running, Tickets in flight, Continue, Open). Moc
 - **A handed conversation** follows the write rule; if it branches off, its hand-off record says so,
   and its push stays *gate* (Decision 51).
 
+### Amendment 2026-10-29 — piece 1 as built
+
+Calls the build made where the umbrella left room, or where code forced a refinement:
+
+- **The decision number is 106**, not 94: `decisions.md` already runs to 105 on `main`.
+- **The record is Go's** (`internal/wakilcore/workspaces.go`), reached through wakil-git's
+  `workspaces_read` / `workspaces_write` (the window's copy only), because Go's confinement
+  (`AllowedRootPaths`, in `wakil-git` and `wakil-files`) must admit a recorded checkout and nothing
+  else. Each workspace also records an `id`, a `slug` and its `conversations` (lineage roots), so a
+  resumed conversation goes back to its workspace and pieces 3–5 can name a past one's.
+- **Snapshots never touch the shared stash list**: a stash-shaped commit (`git stash create`, plus an
+  untracked parent built in a temporary index) under `refs/wakil/snapshots/<slug>/<repo>`, put back
+  with `git stash apply <sha>`. Take-from-Main carries Main's work the same way
+  (`refs/wakil/carry/…`), and puts it back in Main's folder on any failure.
+- **A switch to a branch another folder holds**: an idle or absent holder lets go of it (a checkout
+  detaches, keeping its files; Main's folder goes back to its default branch with its changes); a
+  working holder makes the switch a new branch `<branch>--<id>` off its tip in the switcher's own
+  checkout. The thread says so. No child workspace for a switch: the switcher already has a checkout.
+- **Move to workspace…** is refused, naming decision 6, for a conversation holding a checkout,
+  rather than branching it off: a branch-off needs a write to branch from.
+- **An agent's replace across files** (`editor_replace` with no `file`) covers only its workspace's
+  copies; with none yet it is refused naming decision 7, and a named file starts the workspace.
+- **Views, as far as built**: a conversation in a workspace has the workspace's view (filed as
+  `workspace-<view key>`), shared by the workspace's conversations; step 0 carries the canvas the
+  conversation was on into it when it is on screen, terminals included. **Main's view is still per
+  conversation** (the conversations design's call 2b) until piece 3 gives Main's view a door with no
+  conversation; an off-screen conversation moved by step 0 opens its new view empty.
+- **Environment** (decision 28): the workspace records the environment it started in;
+  `workspace_set_environment` (operator-only) changes it. Moving data panes with it is piece 3's.
+- **Branch name draft** waits 4 s for the ✨ quick task, only when Branches instructions exist and
+  commit drafts are on; otherwise the fallback name.
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).
