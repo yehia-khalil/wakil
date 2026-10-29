@@ -121,7 +121,8 @@ public actor WorkspaceStore {
     }
 
     /// Takes a workspace out of the record (in memory) with its members and holds: one whose copy
-    /// was taken back because the record could not be saved.
+    /// was taken back because the record could not be saved, or (piece 2) a Try's throwaway one,
+    /// once archived.
     public func remove(_ id: String) {
         file.workspaces.removeAll { $0.id == id }
         members = members.filter { $0.value != id }

@@ -112,6 +112,9 @@ public struct WakilWiring: Sendable {
     /// Workspaces, piece 1: the record, the holds and the write rule every agent write action asks
     /// (`registerEditorActions`'s `workspaces`). Pointed at the window by `useActiveContext(of:)`.
     public let workspaces: WorkspaceRouter
+    /// Workspaces, piece 2: Run, Stop, Build and Try. Its terminals are the window's
+    /// (`WorkspaceRunTerminals`); `useActiveContext(of:)` points its thread lines at the window.
+    public let runner: WorkspaceRunner
     /// Clients pinned to an agent session's own place, for every call it makes, wherever the
     /// screen is (background agents, 2 of 4). Every handler `build` registers reaches Go
     /// through a `PlaceRoutedCaller` over the window's client and this pool. Not in
@@ -292,6 +295,7 @@ public struct WakilWiring: Sendable {
         handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
         // Workspaces, piece 1: the write rule asks the window about conversations and tells threads.
         model.useWorkspaces(workspaces)
+        model.useRunner(runner)
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -553,6 +557,16 @@ public struct WakilWiring: Sendable {
             organization: { await liveLookup.organization() }, handOff: handOffLookup, workspaces: workspaces)
         // Workspaces, piece 1: the record's read, and the operator's archive, restore, Bring to Main and Move.
         await registerWorkspaceActions(into: registry, router: workspaces, organization: { await liveLookup.organization() })
+        // Workspaces, piece 2: port blocks, Run / Stop / Build (agent-reachable, the saved recipe only),
+        // the Running settings and Try (operator-only); Archive stops what runs first.
+        await workspaces.use(ctx: routed(.context, contextClient))
+        let runner = WorkspaceRunner(
+            router: workspaces, ctx: routed(.context, contextClient),
+            terminals: WorkspaceRunTerminals(layout: layout, terminals: terminals,
+                                             organization: { await workspaceStore.organization }))
+        await workspaces.onArchive { [runner] w in await runner.archiving(w) }
+        await registerRunActions(into: registry, runner: runner, organization: { await liveLookup.organization() })
+        await registerRunningActions(into: registry, context: routed(.context, contextClient), runner: runner)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         await registerBrowserPasswordActions(
@@ -632,6 +646,7 @@ public struct WakilWiring: Sendable {
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
             workspaces: workspaces,
+            runner: runner,
             placeClients: placeClients,
             confirmations: ConfirmationBroker(),
             resumes: resumes,

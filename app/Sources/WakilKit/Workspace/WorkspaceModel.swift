@@ -27,9 +27,11 @@ public struct WorkspaceCheckout: Codable, Sendable, Equatable, Hashable {
     public var lastHolder: String?
     public var inMain: Bool
     public var snapshot: String?
+    /// The recipe's copy, clone and setup ran in this checkout (piece 2): each runs once.
+    public var setUp: Bool
 
     public init(repo: String, path: String? = nil, branch: String, base: String? = nil, ports: PortBlock? = nil,
-                lastHolder: String? = nil, inMain: Bool = false, snapshot: String? = nil) {
+                lastHolder: String? = nil, inMain: Bool = false, snapshot: String? = nil, setUp: Bool = false) {
         self.repo = repo
         self.path = path
         self.branch = branch
@@ -38,9 +40,10 @@ public struct WorkspaceCheckout: Codable, Sendable, Equatable, Hashable {
         self.lastHolder = lastHolder
         self.inMain = inMain
         self.snapshot = snapshot
+        self.setUp = setUp
     }
 
-    enum CodingKeys: String, CodingKey { case repo, path, branch, base, ports, lastHolder, inMain, snapshot }
+    enum CodingKeys: String, CodingKey { case repo, path, branch, base, ports, lastHolder, inMain, snapshot, setUp }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -52,6 +55,7 @@ public struct WorkspaceCheckout: Codable, Sendable, Equatable, Hashable {
         lastHolder = try c.decodeIfPresent(String.self, forKey: .lastHolder)
         inMain = try c.decodeIfPresent(Bool.self, forKey: .inMain) ?? false
         snapshot = try c.decodeIfPresent(String.self, forKey: .snapshot)
+        setUp = try c.decodeIfPresent(Bool.self, forKey: .setUp) ?? false
     }
 
     /// The repo's folder name, as cards and thread lines name it.

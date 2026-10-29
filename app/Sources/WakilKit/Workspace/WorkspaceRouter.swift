@@ -96,6 +96,13 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     }
 
     public func use(git: (any ToolCaller)?) { self.git = git }
+    /// wakil-ctx, for port blocks (piece 2).
+    var ctx: (any ToolCaller)?
+    public func use(ctx: (any ToolCaller)?) { self.ctx = ctx }
+    /// Piece 2's run hook: stops a workspace's processes and runs its teardown before Archive
+    /// removes its checkouts.
+    var beforeArchive: (@Sendable (Workspace) async -> Void)?
+    public func onArchive(_ hook: (@Sendable (Workspace) async -> Void)?) { beforeArchive = hook }
     func setIds(_ f: @escaping @Sendable () -> String) { newId = f }
     public func install(_ hooks: WorkspaceRouterHooks) { self.hooks = hooks }
 

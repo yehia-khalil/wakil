@@ -177,6 +177,9 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "db_remove_database", "db_set_connection", "db_set_dsn",
             // 2e-iii. `db_update_database` edits beside them.
             "db_update_database",
+            // Workspaces, piece 2: the Running settings and Try.
+            "running_detect", "running_draft_all", "running_read", "running_save", "running_secret_set",
+            "running_try", "running_try_end",
             // Conversations 2 of 3: an agent must not push aside the operator's conversation.
             // Conversations 3 of 3: nor end it.
             "session_close", "session_new", "session_set_provider", "session_switch",

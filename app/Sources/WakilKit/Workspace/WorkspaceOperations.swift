@@ -103,6 +103,7 @@ extension WorkspaceRouter {
                     throw WorkspaceWriteError(description: "‘\(await self.title(c))’ is waiting for you in ‘\(w.name)’; archive anyway with confirm true")
                 }
             }
+            await self.beforeArchive?(w)
             var checkouts = w.checkouts
             for i in checkouts.indices {
                 guard let path = checkouts[i].path else { continue }

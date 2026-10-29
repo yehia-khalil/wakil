@@ -144,3 +144,43 @@ extension WindowModel {
         checkoutTag(for: path, in: currentAgent?.workspace.map { [$0] } ?? [])
     }
 }
+
+// Workspaces, piece 2: a run's failure in the thread of the conversation that asked, and the
+// project.json the runner reads a workspace's recipes from.
+extension WindowModel {
+    /// Points the runner at this window (`WakilWiring.useActiveContext(of:)`).
+    public func useRunner(_ runner: WorkspaceRunner) {
+        Task {
+            await runner.use(say: { [weak self] conversation, text, isError in
+                await self?.sayRun(conversation, text, isError: isError)
+            })
+            await runner.use(projectPath: { [weak self] project in await self?.projectFilePath(project) })
+        }
+    }
+
+    func sayRun(_ conversation: String, _ text: String, isError: Bool) {
+        conversations[conversation]?.appendRow(label: "run", detail: text, isError: isError)
+    }
+
+    /// A project registry key's project.json, from the settings tree; nil when it is not read yet.
+    func projectFilePath(_ project: String) -> String? {
+        settings?.projects.first { $0.name == project }?.path
+    }
+}
+
+// Workspaces, piece 2: the Running settings dispatch their actions as the operator.
+extension WindowModel {
+    /// Dispatches one `running_*` (or `workspace_run`…) action from Settings; answers its result,
+    /// or the refusal's text whole (Rule 8).
+    public func runningDispatch(_ action: String, _ params: JSONValue) async -> (result: JSONValue?, error: String?) {
+        do {
+            let r = try await registry.dispatch(
+                name: action, params: params, origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            var value = r
+            if case .object(let o) = r, let s = o["structuredContent"] { value = s }
+            return (value, nil)
+        } catch {
+            return (nil, "\(error)")
+        }
+    }
+}
