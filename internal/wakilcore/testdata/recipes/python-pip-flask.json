@@ -1,0 +1,40 @@
+{
+  "repo": "python-pip-flask",
+  "kind": "flask-pip",
+  "recipe": {
+    "clone": [
+      ".venv"
+    ],
+    "setup": [
+      "python3 -m venv .venv \u0026\u0026 .venv/bin/pip install -r requirements.txt"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": ".venv/bin/flask --app app run --port $WAKIL_PORT"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "requirements.txt",
+      "processes.app": "app.py creates Flask() as app; flask run takes --port",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "requirements.txt"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [
+    {
+      "tool": "python",
+      "version": "3.12",
+      "file": ".python-version"
+    }
+  ],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": [
+    "python-pip-flask pins python 3.12 (.python-version), but none of mise, asdf or nvm was found; install those versions by hand, or install a version manager."
+  ]
+}

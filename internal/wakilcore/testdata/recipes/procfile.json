@@ -1,0 +1,33 @@
+{
+  "repo": "procfile",
+  "kind": "procfile",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "processes": [
+      {
+        "name": "web",
+        "command": "bundle exec puma -p $PORT"
+      },
+      {
+        "name": "worker",
+        "command": "bundle exec sidekiq"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "ports.PORT": "Procfile uses $PORT",
+      "processes.web": "Procfile — the repo's own entry point",
+      "processes.worker": "Procfile — the repo's own entry point",
+      "ready": "the app answering on $WAKIL_PORT"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

@@ -1,0 +1,30 @@
+{
+  "repo": "dotnet",
+  "kind": "dotnet",
+  "recipe": {
+    "setup": [
+      "dotnet restore"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "dotnet run --project Api/Api.csproj --urls http://localhost:$WAKIL_PORT"
+      }
+    ],
+    "build": "dotnet build",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "build": "Api/Api.csproj",
+      "processes.app": "Api/Api.csproj uses Microsoft.NET.Sdk.Web; dotnet run takes --urls",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "Api/Api.csproj"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

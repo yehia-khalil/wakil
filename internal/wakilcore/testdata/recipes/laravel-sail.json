@@ -1,0 +1,109 @@
+{
+  "repo": "laravel-sail",
+  "kind": "laravel-sail",
+  "recipe": {
+    "ports": {
+      "APP_PORT": "$WAKIL_PORT",
+      "FORWARD_DB_PORT": "$WAKIL_PORT_2",
+      "FORWARD_REDIS_PORT": "$WAKIL_PORT_3",
+      "VITE_PORT": "$WAKIL_PORT_1"
+    },
+    "copy": [
+      ".env"
+    ],
+    "clone": [
+      "vendor"
+    ],
+    "services": [
+      "./vendor/bin/sail up -d mysql redis"
+    ],
+    "setup": [
+      "composer install"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "./vendor/bin/sail up laravel.test"
+      },
+      {
+        "name": "queue",
+        "command": "./vendor/bin/sail artisan queue:work"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "teardown": [
+      "./vendor/bin/sail down"
+    ],
+    "notes": {
+      "clone": "composer.json",
+      "copy": "the ignored env files in your folder",
+      "ports.APP_PORT": "docker-compose.yml publishes laravel.test's port from $APP_PORT, so nothing in it is rewritten",
+      "ports.FORWARD_DB_PORT": "docker-compose.yml publishes mysql's port from $FORWARD_DB_PORT, so nothing in it is rewritten",
+      "ports.FORWARD_REDIS_PORT": "docker-compose.yml publishes redis's port from $FORWARD_REDIS_PORT, so nothing in it is rewritten",
+      "ports.VITE_PORT": "docker-compose.yml publishes laravel.test's port from $VITE_PORT, so nothing in it is rewritten",
+      "processes.app": "docker-compose.yml (Sail) laravel.test",
+      "processes.queue": ".env.example QUEUE_CONNECTION=rabbitmq",
+      "ready": "the app answering on $WAKIL_PORT",
+      "services": "docker-compose.yml (Sail)",
+      "setup": "composer.json",
+      "teardown": "docker-compose.yml (Sail)"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [
+    {
+      "key": "DB_UMBRELLA_HOST",
+      "example": "umbrella_mysql"
+    },
+    {
+      "key": "QUEUE_CONNECTION",
+      "example": "rabbitmq"
+    }
+  ],
+  "hosts": [
+    {
+      "key": "DB_HOST",
+      "host": "mysql",
+      "file": ".env.example"
+    },
+    {
+      "key": "DB_UMBRELLA_HOST",
+      "host": "umbrella_mysql",
+      "file": ".env.example"
+    }
+  ],
+  "compose": {
+    "file": "docker-compose.yml",
+    "services": [
+      "mysql",
+      "redis"
+    ],
+    "appServices": [
+      "laravel.test"
+    ],
+    "variables": [
+      {
+        "service": "laravel.test",
+        "variable": "APP_PORT"
+      },
+      {
+        "service": "laravel.test",
+        "variable": "VITE_PORT"
+      },
+      {
+        "service": "mysql",
+        "variable": "FORWARD_DB_PORT"
+      },
+      {
+        "service": "redis",
+        "variable": "FORWARD_REDIS_PORT"
+      }
+    ],
+    "fixedPorts": [],
+    "containerNames": []
+  },
+  "questions": []
+}

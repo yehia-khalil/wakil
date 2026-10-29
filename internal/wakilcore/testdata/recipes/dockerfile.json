@@ -1,0 +1,24 @@
+{
+  "repo": "dockerfile",
+  "kind": "dockerfile",
+  "recipe": {
+    "processes": [
+      {
+        "name": "app",
+        "command": "docker build -t $COMPOSE_PROJECT_NAME . \u0026\u0026 docker run --rm -p $WAKIL_PORT:8080 $COMPOSE_PROJECT_NAME"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "processes.app": "Dockerfile EXPOSE 8080; the image is named for the workspace",
+      "ready": "the container's port on $WAKIL_PORT"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

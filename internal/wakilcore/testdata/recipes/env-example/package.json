@@ -1,0 +1,1 @@
+{"name":"mailer","scripts":{"dev":"node index.js"}}

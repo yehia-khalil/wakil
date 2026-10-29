@@ -1,0 +1,53 @@
+{
+  "repo": "compose",
+  "kind": "compose",
+  "recipe": {
+    "ports": {
+      "DB_PORT": "$WAKIL_PORT"
+    },
+    "services": [
+      "docker compose up -d mysql mongo redis"
+    ],
+    "teardown": [
+      "docker compose down"
+    ],
+    "notes": {
+      "ports.DB_PORT": "docker-compose.yml publishes mysql's port from $DB_PORT, so nothing in it is rewritten",
+      "services": "docker-compose.yml: services with an image and no build",
+      "teardown": "docker-compose.yml"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "compose": {
+    "file": "docker-compose.yml",
+    "services": [
+      "mysql",
+      "mongo",
+      "redis"
+    ],
+    "appServices": [],
+    "variables": [
+      {
+        "service": "mysql",
+        "variable": "DB_PORT"
+      }
+    ],
+    "fixedPorts": [
+      {
+        "service": "mongo",
+        "from": 27017
+      }
+    ],
+    "containerNames": [
+      {
+        "service": "mysql",
+        "name": "umbrella_mysql"
+      }
+    ],
+    "cannotRunTwice": "compose's compose file names its containers (container_name: umbrella_mysql in mysql), so it cannot run in two workspaces at once. Run it from one place with Bring to Main, or remove container_name from docker-compose.yml."
+  },
+  "questions": []
+}

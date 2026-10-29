@@ -1,0 +1,8 @@
+set dotenv-load
+version := "1"
+
+install:
+    npm ci
+
+serve port="8000":
+    python -m http.server {{port}}

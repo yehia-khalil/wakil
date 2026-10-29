@@ -216,7 +216,7 @@ func splitComposePort(s string) []string {
 type PortRemap struct {
 	Service  string `json:"service"`
 	From     int    `json:"from"`
-	To       int    `json:"to"`
+	To       int    `json:"to,omitempty"`
 	Protocol string `json:"protocol,omitempty"`
 }
 

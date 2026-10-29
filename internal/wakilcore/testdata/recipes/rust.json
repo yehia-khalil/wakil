@@ -1,0 +1,34 @@
+{
+  "repo": "rust",
+  "kind": "rust",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "clone": [
+      "target"
+    ],
+    "setup": [
+      "cargo fetch"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "cargo run"
+      }
+    ],
+    "build": "cargo build",
+    "notes": {
+      "build": "Cargo.toml",
+      "clone": "Cargo.toml",
+      "ports.PORT": "the usual variable a Rust server reads; check main reads it",
+      "processes.app": "src/main.rs",
+      "setup": "Cargo.toml"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

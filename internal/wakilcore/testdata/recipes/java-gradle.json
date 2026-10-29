@@ -1,0 +1,30 @@
+{
+  "repo": "java-gradle",
+  "kind": "spring-gradle",
+  "recipe": {
+    "ports": {
+      "SERVER_PORT": "$WAKIL_PORT"
+    },
+    "processes": [
+      {
+        "name": "app",
+        "command": "./gradlew bootRun"
+      }
+    ],
+    "build": "./gradlew build",
+    "ready": {
+      "output": "/Started \\S+ in /"
+    },
+    "notes": {
+      "build": "build.gradle.kts",
+      "ports.SERVER_PORT": "Spring Boot reads SERVER_PORT",
+      "processes.app": "build.gradle.kts applies org.springframework.boot",
+      "ready": "Spring Boot's start-up line"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

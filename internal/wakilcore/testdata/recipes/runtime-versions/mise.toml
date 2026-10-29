@@ -1,0 +1,5 @@
+[env]
+FOO = "bar"
+[tools]
+node = "20"
+"go" = "1.23"

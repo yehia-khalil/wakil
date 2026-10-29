@@ -1,0 +1,34 @@
+{
+  "repo": "makefile",
+  "kind": "go",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "setup": [
+      "make setup"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "make dev"
+      }
+    ],
+    "build": "make build",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "build": "Makefile target build — the repo's own entry point",
+      "ports.PORT": "the usual variable a Go server reads; check main reads it",
+      "processes.app": "Makefile target dev — the repo's own entry point",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "Makefile target setup — the repo's own entry point"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

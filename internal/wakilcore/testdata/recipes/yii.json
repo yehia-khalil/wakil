@@ -1,0 +1,32 @@
+{
+  "repo": "yii",
+  "kind": "yii",
+  "recipe": {
+    "clone": [
+      "vendor"
+    ],
+    "setup": [
+      "composer install"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "php yii serve --port=$WAKIL_PORT"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "composer.json",
+      "processes.app": "yii serve takes --port",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "composer.json"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

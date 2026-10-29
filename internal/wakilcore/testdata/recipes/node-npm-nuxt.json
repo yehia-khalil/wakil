@@ -1,0 +1,34 @@
+{
+  "repo": "node-npm-nuxt",
+  "kind": "nuxt-npm",
+  "recipe": {
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "npm ci"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "npm run dev -- --port $WAKIL_PORT"
+      }
+    ],
+    "build": "npm run build",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "build": "package.json script build",
+      "clone": "package.json",
+      "processes.dev": "package.json script dev; nuxt.config.ts takes --port $WAKIL_PORT",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "package-lock.json"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

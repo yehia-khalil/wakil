@@ -1,0 +1,36 @@
+{
+  "repo": "rails",
+  "kind": "rails",
+  "recipe": {
+    "setup": [
+      "bundle install"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "bin/rails server -p $WAKIL_PORT"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/up"
+    },
+    "notes": {
+      "processes.app": "bin/rails server takes -p",
+      "ready": "the health route in config/routes.rb",
+      "setup": "Gemfile"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [
+    {
+      "tool": "ruby",
+      "version": "3.3.0",
+      "file": ".ruby-version"
+    }
+  ],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": [
+    "rails pins ruby 3.3.0 (.ruby-version), but none of mise, asdf or nvm was found; install those versions by hand, or install a version manager."
+  ]
+}

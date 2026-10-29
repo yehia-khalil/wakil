@@ -1,0 +1,95 @@
+{
+  "repo": "laravel",
+  "kind": "laravel",
+  "recipe": {
+    "ports": {
+      "FORWARD_REDIS_PORT": "$WAKIL_PORT_1"
+    },
+    "clone": [
+      "vendor"
+    ],
+    "services": [
+      "docker compose up -d mysql redis"
+    ],
+    "setup": [
+      "composer install"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "php artisan serve --port=$WAKIL_PORT"
+      },
+      {
+        "name": "queue",
+        "command": "php artisan queue:work"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/up"
+    },
+    "teardown": [
+      "docker compose down"
+    ],
+    "notes": {
+      "clone": "composer.json",
+      "ports.FORWARD_REDIS_PORT": "docker-compose.yml publishes redis's port from $FORWARD_REDIS_PORT, so nothing in it is rewritten",
+      "processes.app": "artisan serve takes --port",
+      "processes.queue": ".env.example QUEUE_CONNECTION=database",
+      "ready": "Laravel's health route in bootstrap/app.php",
+      "services": "docker-compose.yml: services with an image and no build",
+      "setup": "composer.json",
+      "teardown": "docker-compose.yml"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [
+    {
+      "key": "APP_NAME",
+      "example": "Initech"
+    },
+    {
+      "key": "APP_ENV",
+      "example": "local"
+    },
+    {
+      "key": "DB_CONNECTION",
+      "example": "mysql"
+    },
+    {
+      "key": "DB_HOST",
+      "example": "127.0.0.1"
+    },
+    {
+      "key": "DB_PORT",
+      "example": "3306"
+    },
+    {
+      "key": "QUEUE_CONNECTION",
+      "example": "database"
+    }
+  ],
+  "hosts": [],
+  "compose": {
+    "file": "docker-compose.yml",
+    "services": [
+      "mysql",
+      "redis"
+    ],
+    "appServices": [],
+    "variables": [
+      {
+        "service": "redis",
+        "variable": "FORWARD_REDIS_PORT"
+      }
+    ],
+    "fixedPorts": [
+      {
+        "service": "mysql",
+        "from": 3306
+      }
+    ],
+    "containerNames": []
+  },
+  "questions": []
+}
