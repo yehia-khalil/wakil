@@ -745,3 +745,50 @@ private let unsaved = "workspaces.json: CancellationError() — nothing was save
                                     origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
+
+// MARK: - Piece 5: a crew's workspace
+
+@Test func aCrewWorkspaceIsTheTicketsOrANewRecordWithNoCopies() async throws {
+    let git = fakeGit()
+    let said = Said()
+    let r = await router(git: git, said: said)
+    let made = await r.crewWorkspace(ticket: "INI-142", name: "INI-142 Login rate limit",
+                                     organization: "initech", project: "estate", environment: "staging")
+    #expect(made.tickets == ["INI-142"])
+    #expect(made.checkouts.isEmpty, "a record only: copies come at the first write")
+    #expect(made.branch == "INI-142-login-rate-limit")
+    #expect(made.environment == "staging")
+    #expect(await git.calls.filter { $0.name == "git_worktree_add" }.isEmpty)
+    let again = await r.crewWorkspace(ticket: "INI-142", name: "other", organization: "initech", project: "estate",
+                                      environment: "staging")
+    #expect(again.id == made.id, "the ticket's workspace is found again")
+    let elsewhere = await r.crewWorkspace(ticket: "INI-142", name: "x", organization: "initech", project: "estate",
+                                          environment: "qa")
+    #expect(elsewhere.id != made.id, "a workspace belongs to one environment (decision 28)")
+    let none = await r.crewWorkspace(ticket: nil, name: "Pair on the form", organization: "initech", project: "estate",
+                                     environment: "staging")
+    #expect(none.id != made.id && none.tickets.isEmpty && none.name == "Pair on the form")
+}
+
+@Test func joiningPutsAConversationInTheCrewsWorkspaceAndItsFirstWriteMakesACopyThere() async throws {
+    let git = fakeGit(mainBranch: "main")
+    let said = Said()
+    let r = await router(git: git, said: said)
+    let w = await r.crewWorkspace(ticket: "INI-142", name: "INI-142 Login", organization: "initech", project: "estate",
+                                  environment: "staging")
+    await r.join("c1", workspace: w.id)
+    await r.join("c2", workspace: w.id)
+    #expect(await r.store.workspaceId(ofConversation: "c1") == w.id)
+    #expect(await r.store.workspace(w.id)?.conversations == ["root-c1", "root-c2"])
+    #expect(await said.lines.map(\.1) == [.moved(name: "INI-142 Login"), .moved(name: "INI-142 Login")])
+    #expect(await said.moves.map(\.2) == [w.id, w.id])
+    // c1 writes in core, c2 in web: one workspace, two copies, no branch-off.
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    _ = try await asAgent("c2") { try await r.routePath("/p/web/b", action: "editor_save") }
+    let after = try #require(await r.store.workspace(w.id))
+    #expect(after.checkouts.map(\.repo).sorted() == ["/p/core", "/p/web"])
+    #expect(await r.store.all().count == 1, "no child workspace")
+    // Joining again changes nothing and says nothing.
+    await r.join("c1", workspace: w.id)
+    #expect(await said.lines.filter { $0.1 == .moved(name: "INI-142 Login") }.count == 2)
+}

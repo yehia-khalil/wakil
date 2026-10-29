@@ -110,7 +110,7 @@ public struct LiveConversation: Sendable, Equatable {
     /// message's title — `conversationDisplayTitle` with no operator's name. The name step's
     /// `Clear name — back to “<fallback>”`.
     public let fallbackTitle: String
-    public let state: ConversationState
+    public var state: ConversationState
     public let onScreen: Bool
     public let lastActivity: Date
     /// Whether its place's environment is production, so its row keeps production red
@@ -124,10 +124,18 @@ public struct LiveConversation: Sendable, Equatable {
     public var workspace: (id: String, name: String)?
     /// Workspaces piece 4: the messages it holds for the operator — the budget did not wake it.
     public let messagesWaiting: Int
+    /// Workspaces piece 5: the teammates it proposed that the operator has not started or dismissed.
+    public var proposals: [TeammateProposal] = []
+    /// Workspaces piece 5: its words after `conversation_nothing_to_do` — "done · nothing to do in
+    /// web" — until the operator's next message.
+    public var nothingToDo: String?
 
-    /// Its state in words: "waiting for you · N messages" while it holds messages, else the state.
+    /// Its state in words: "waiting for you · N messages" while it holds messages; "done · nothing
+    /// to do in web" when it said so and is not working; else the state.
     public var stateWords: String {
-        messagesWaiting > 0 ? messagesWaitingLabel(messagesWaiting) : state.rawValue
+        if messagesWaiting > 0 { return messagesWaitingLabel(messagesWaiting) }
+        if let nothingToDo, state != .working, state != .waiting { return nothingToDo }
+        return state.rawValue
     }
 
     public static func == (a: LiveConversation, b: LiveConversation) -> Bool {
@@ -135,7 +143,7 @@ public struct LiveConversation: Sendable, Equatable {
             && a.titleSource == b.titleSource && a.fallbackTitle == b.fallbackTitle && a.state == b.state
             && a.onScreen == b.onScreen && a.lastActivity == b.lastActivity && a.isProduction == b.isProduction
             && a.handoff == b.handoff && a.workspace?.id == b.workspace?.id && a.workspace?.name == b.workspace?.name
-            && a.messagesWaiting == b.messagesWaiting
+            && a.messagesWaiting == b.messagesWaiting && a.proposals == b.proposals && a.nothingToDo == b.nothingToDo
     }
 
     public init(
@@ -177,6 +185,8 @@ public struct LiveConversation: Sendable, Equatable {
             "handed": .bool(handoff != nil),
             "messagesWaiting": .integer(Int64(messagesWaiting)),
         ]
+        if !proposals.isEmpty { o["proposals"] = .array(proposals.map(\.json)) }
+        if let nothingToDo { o["nothingToDo"] = .string(nothingToDo) }
         o["workspace"] = workspace.map { .object(["id": .string($0.id), "name": .string($0.name)]) } ?? .string("main")
         if let handoff {
             o["key"] = handoff.key.map { .string($0) } ?? .null
