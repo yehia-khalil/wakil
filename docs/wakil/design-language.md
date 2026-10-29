@@ -688,12 +688,13 @@ governs, and **credentials attach at the level where the resource lives.**
 
 | Scope | Holds |
 |-------|-------|
-| **Wakil** (app-wide) | STT engine default, theme, density default, keybindings, global behavior. |
+| **Wakil** (app-wide) | STT engine default, theme, density default, keybindings (Settings → Keyboard, Decision 50), global behavior. |
 | **Organization** | The **set of providers** registered under it — each provider one Claude account, with its own config dir, its own agent binary and its own OAuth token; org-level connections + auth shared across all its projects — Jira site, Slack workspace, mailbox. |
 | **Project** | Roots; scopes (Jira key, channels); environments, each with its DB and API config **including credentials**. |
 
 The **Wakil** scope is stored in `~/.wakil/settings.json` (3b-v, Decision 38). Its settings: the editor's font size, word wrap, autosave and whether gitignored files
-are shown.
+are shown. Keyboard (Decision 50) lists every menu command with its chord and a recorder, and
+the keys that are fixed.
 
 Rationale: a Jira account is one login serving every project → Organization. A database
 belongs to a specific project's specific environment → Project → environment. This is why

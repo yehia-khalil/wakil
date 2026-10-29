@@ -1724,6 +1724,44 @@ Each entry: the call, why, and what would change our mind.
     offered in another; then the store and the fill move out of the app process, to something the agent
     cannot start.
 
+50. **One keymap, in WakilKit; the operator's changes live in `settings.json` under `"keys"`; a taken
+    chord moves; a few chords are refused; only the operator rebinds.**
+    *(2026-10-28, a call made for the operator, who skipped the questions —
+    `docs/superpowers/specs/2026-10-28-keyboard-design.md`.)*
+    Every menu command's chord is written once, in `Keyboard/` (`KeyCommands`, `Keymap`, `KeyChord`).
+    The menu bar, the dispatch rule, every tooltip, ⌘K and Settings → Keyboard read it; no view writes
+    a literal `.keyboardShortcut`. Keys inside a pane, the editor's own, the system's editing keys and
+    push-to-talk are listed as fixed and cannot be rebound. **Overrides** are `"keys"` in
+    `~/.wakil/settings.json`, command id to chord string, differences only, so a new default reaches
+    anyone who never changed that command; `""` is deliberately no chord. Ids this build does not
+    know are kept on disk and ignored. **A taken chord moves** (Rule 7): the new command gets it, the
+    other is left with none, and the row says so and offers Undo. **Refused** (the only refusals), each
+    named in the row: any chord with neither ⌘ nor ⌃ unless its key is F1–F19; the system chords
+    `⌘Q ⌘H ⌥⌘H ⌘M ⌘Tab ⌘` ⌘Space ⌃Space`; the editing chords `⌘C ⌘V ⌘X ⌘Z ⇧⌘Z ⌘A`. A stored chord
+    refused now (a hand edit, an older build) is ignored with the default in force; two stored on one
+    chord in one place: the first in table order wins.
+    **Resolution is pane-first, then anywhere.** A command bound to the focused pane's kind is tried
+    first, then the anywhere one; a command that declines falls through, and the key passes on when
+    none takes it. This is `browserKey`'s rule as data. SwiftUI gives a chord to one menu item, so the
+    menu gives a shared chord's shortcut to the anywhere command and the other item shows the chord as
+    text. Chords the menu cannot draw (F-keys) are caught by a local key monitor, which claims a key
+    only when a command holds it where focus is. While recording in Settings, the recorder gets
+    every key first; a recorded chord saves on the keystroke (Rule 2).
+    **Who writes.** `ctx_keyboard` is `.agentReachable`, `.read`; `ctx_set_key` and `ctx_set_keys`
+    are `.operatorOnly`, on `PermissionPrompt`'s list beside the editor and browser settings
+    (Decisions 30 and 38). `ctx_set_key` (`id`, `chord`) runs `Keymap.assign`, so the move and the
+    refusals hold however it is reached: `chord: null` restores the default, `""` clears it.
+    `ctx_set_keys` writes a whole map (Undo and Restore All send one), keeps ids this build does not
+    know, and refuses Decision 50 chords and malformed ones. Go (`keysettings.go`, tools `keyboard`
+    and `set_keys`) checks shape only: it refuses a bare printable character as bad shape, and Swift's
+    Decision 50 is the authority. An unreadable `settings.json` shows its error whole, defaults hold,
+    and recording is off, since a write would replace a file Wakil could not read.
+    *Why:* about thirty literal chords gave nowhere to see every key, no way to change one, and
+    tooltips that went stale; a chord with no ⌘ or ⌃ would steal typing, and the system and editing
+    chords belong to macOS and the text field.
+    *Reverse if:* an operator needs a key inside a pane, or a hold like push-to-talk, rebound — then
+    those leave the fixed list by their own design, not by widening the refusals.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,

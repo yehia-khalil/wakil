@@ -43,6 +43,17 @@ The folders and what each may use: `docs/architecture/wakilkit.md`.
 5. A control that dispatches it gets an e2e check, or a line in `e2e/checks/uncoverable.tsv` with
    its reason (see `docs/agents/e2e.md`).
 
+### A new shortcut
+
+1. Add a `KeyCommand` row in `app/Sources/WakilKit/Keyboard/KeyCommands.swift`: stable id, title,
+   `KeyGroup`, `KeyPlace` and default chord. A default Decision 50 refuses, or one already held in the
+   same place, fails `KeymapTests`.
+2. Add its case to `runKeyCommand` (`App/WindowModel+Keyboard.swift`). A command that does not apply
+   returns false, so the key falls through.
+3. Add the menu item in `AppScene.swift` from the table. Never write a literal `.keyboardShortcut`
+   or a chord in a tooltip: read `model.keymap`.
+4. An e2e check for the press, or a line in `e2e/checks/uncoverable.tsv`.
+
 ### A new MCP binary
 
 1. `cmd/<name>/main.go`: `newServer()` with `mcp.NewServer` and `mcp.AddTool`, `main()` running it over
