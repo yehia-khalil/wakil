@@ -76,9 +76,8 @@ Rules no phase may break.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Twelve have earned in; the justification
-   for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
-   writes that have earned in"*.
+   deliberate justification, never by default. Twelve have earned in; why each, and what
+   each leaves refused, is in `decisions.md`, *Invariant 6 — the writes that have earned in*.
 
    | Write | Adapter | Earned |
    |---|---|---|
@@ -91,9 +90,9 @@ Rules no phase may break.
    | Fetch, pull, push, sync, clone — remote git, with the organisation's account | wakil-git | 2026-10-22 |
    | Switch, create, rename, delete branches; stash, apply, pop, drop — local git inside the roots | wakil-git | 2026-10-23 |
    | Merge, rebase, continue, skip, abort, resolve — local git inside the roots | wakil-git | 2026-10-24 |
-   | A connection's tool the operator allowed | wakil-connect | 2026-10-25 |
+   | A connection's tool the operator ticked | wakil-connect | 2026-10-25 |
    | Act in a web page — click, type, select, press — on a site the operator allowed for the conversation; every act on a production host gated | the browser | 2026-10-25 |
-   | Reply to a review thread; resolve and unresolve one | wakil-ticket | 2026-10-26 |
+   | Reply to, resolve, unresolve a review thread | wakil-ticket | 2026-10-26 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
@@ -138,8 +137,8 @@ Revisit deliberately, not casually.
 
 ## 6. Decisions and rationale
 
-An index of 1–32, 36 and 41; `decisions.md` holds all 92 in full (two share number 41). ***Reverse if* is a gist.** Read it first: — means none stated,
-true of 55 of the 92 entries and 14 listed here.
+An index of 1–32, 36 and 41; `decisions.md` holds all 106 in full (two share number 41). ***Reverse if* is a gist.** Read it first: — means none stated,
+true of 60 of the 106 entries and 14 listed here.
 
 | # | The call | Reverse if |
 |---|---|---|
@@ -234,15 +233,15 @@ exit criterion; walk findings are in `phase-log.md`.
 | **2c-vi** | PM board pane — Jira issues as a dual-driven kanban board | — | deferred 2026-10-06; q15 for writes |
 | **2d-i** | Identifier resolution — transcripts resolved against the identifiers in scope | **2026-10-07**, walked | — |
 | **2d-ii** | Push-to-talk, Apple STT, live transcription, composer, listening state | **2026-10-08**, walked | — |
-| **2e** | The settings pane — an account added from Wakil with no credential in the operator's hands; unlink; the DSN write; the residue named | **2026-09-30**, walked | — |
+| **2e** | The settings pane: accounts added with no credential in the operator's hands; unlink; the DSN write | **2026-09-30**, walked | — |
 | **Phase 3** | Breadth — editor, API client UI, chat and inbox adapters | — | — |
 | **3a-i** | Git pane, read-only: changes by root, the spine, the Monaco diff host | **2026-10-09**, walked | — |
 | **3a-ii** | Stage, unstage, commit — the fourth write | **2026-10-22**, walked | 3a-i |
-| **3a-ii-b** | Stage and Unstage Selected Ranges in the diff tab; ✨ drafts the commit message with the quick model, the operator commits | **2026-10-22**, walked | 3a-ii |
+| **3a-ii-b** | Stage selected ranges; the quick model drafts the commit message | **2026-10-22**, walked | 3a-ii |
 | **2e-ii** | Add, rename and remove a project and an environment from Settings | — | 3a-ii |
-| **2e-iii** | Add, edit and remove an environment's API entries from Settings, the token to the Keychain; databases edited in place, removal confirmed | — | 2e-ii |
-| **2e-iv** | Edit a database's connection in Settings — host, port, database and user in project.json, only the password in the Keychain; Edit replaces Replace connection | — | 2e-iii |
-| **3a-iii** | A git account per organisation — sign in, token or SSH key in the Keychain; push, pull, fetch, sync, clone; agent instructions | **2026-10-22**, walked | 3a-ii |
+| **2e-iii** | An environment's API entries and databases edited in Settings, tokens to the Keychain | — | 2e-ii |
+| **2e-iv** | Edit a database's connection in Settings; only the password in the Keychain | — | 2e-iii |
+| **3a-iii** | A git account per organisation; remote git; agent instructions | **2026-10-22**, walked | 3a-ii |
 | **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | **2026-10-23**, walked | 3a-iii |
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **3c** | Browser | — | — |
@@ -253,11 +252,11 @@ exit criterion; walk findings are in `phase-log.md`.
 | **3d-i** | Tab groups, automatic or your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
 | **3d-iii** | Picture in picture | — | 3c-i |
 | **3d-iv** | Passwords in the Keychain | — | 3c-ii |
-| **Connections** | An organization's MCP servers — Settings → Connections, `wakil-connect` fronting each one with the credentials in place, the operator's Allow agent per tool | — | — |
-| **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
+| **Connections** | An organisation's own MCP servers, gated per tool by `wakil-connect` | — | — |
+| **Conversations** | Several live conversations per place; folds New conversation and Track | — | — |
 | **Names** | Conversations named by the quick model and renamed anywhere; browser tabs renamed | — | 3d-i (browser half) |
 | **Keyboard** | One keymap; Settings → Keyboard rebinds menu commands | — | — |
-| **Ticket view** | The editor column's Ticket view: a branch's tickets, pull requests, review threads and record | — | — |
+| **Tickets** | A branch's tickets, PRs, review threads and record in the editor column; what needs the operator; Hand to agent | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

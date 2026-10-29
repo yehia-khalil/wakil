@@ -271,18 +271,13 @@ The thread draws only events that describe work — assistant text, tool calls, 
 results, turn end — never `stream_event` / `rate_limit_event` / `session_state_changed`
 traffic.
 
-The thread overlaps the panes, which take the full height. It is four compact rows,
-resting at 32% opacity and rising to full on hover; a click expands a row in place (an
-open row toggles closed from its label), and the thread folds 1.2 s after the pointer
-leaves unless a mouse button is held. Each sent turn is a `you` row. The bottom edge is one
-flow: the thread, then status and notes, then the composer bar beside the account
-indicator.
-
-*Amended 2026-10-29 (ticket noticing walk): at rest the thread no longer sits over a pane. While
-the conversation has a thread the canvas ends above its four resting rows (a fixed reserve, so
-nothing moves as rows arrive); a row opened or hovered still rises over the canvas at full opacity.
-The operator found a done conversation's rows drawn over a maximized editor's Ticket column, both
-unreadable.*
+The thread is four compact rows below the panes: while the conversation has a thread the
+canvas ends above its four resting rows (a fixed reserve, so nothing moves as rows arrive).
+They rest at 32% opacity and rise to full on hover, over the canvas, as an opened row does; a
+click expands a row in place (an open row toggles closed from its label), and the thread folds
+1.2 s after the pointer leaves unless a mouse button is held. Each sent turn is a `you` row.
+The bottom edge is one flow: the thread, then status and notes, then the composer bar beside
+the account indicator.
 
 ## 10. Layout model
 
