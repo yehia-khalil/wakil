@@ -85,6 +85,11 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 // gitWith is git with config (`-c` pairs) placed before the subcommand, returning stderr too: a
 // rebase reports its result there.
 func (w *GitWriter) gitWith(ctx context.Context, config []string, stdin []byte, sub string, args ...string) ([]byte, []byte, error) {
+	return w.gitEnv(ctx, config, nil, stdin, sub, args...)
+}
+
+// gitEnv is gitWith with extra environment (a snapshot's temporary index, GIT_INDEX_FILE).
+func (w *GitWriter) gitEnv(ctx context.Context, config, env []string, stdin []byte, sub string, args ...string) ([]byte, []byte, error) {
 	m, _ := gitWriteLocks.LoadOrStore(w.Root, &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
@@ -108,7 +113,7 @@ func (w *GitWriter) gitWith(ctx context.Context, config []string, stdin []byte, 
 	}
 	full = append(append(append(full, config...), sub), args...)
 	cmd := exec.Command("git", full...)
-	cmd.Env = gitScrubbedEnv(w.Root)
+	cmd.Env = append(gitScrubbedEnv(w.Root), env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // a cancel kills hooks too
 	// A hook's background child can hold git's output open after git exits; Wait would block on it,
 	// holding the root's lock. After this long the pipes are closed and git's own exit status stands.
