@@ -87,6 +87,19 @@ public func registerWorkspaceActions(
         price: (production: .allow, otherwise: .allow)))
 
     await registry.register(Action(
+        name: "workspace_set_environment",
+        description: "Change the environment a workspace belongs to (decision 28): its record and the conversations started "
+            + "in it from now; running conversations keep the environment they started in.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["workspace": text, "environment": text], required: ["workspace", "environment"]),
+        handler: { params in
+            _ = try await org("workspace_set_environment")
+            let w = try await router.setEnvironment(try required(params, "workspace", "workspace_set_environment"),
+                                                    to: try required(params, "environment", "workspace_set_environment"))
+            return .object(["workspace": .string(w.id), "environment": .string(w.environment)])
+        }))
+
+    await registry.register(Action(
         name: "conversation_move",
         description: "Move to workspace… (decision 6): put a live conversation in another workspace of its project, or in "
             + "Main (workspace \"main\"), while it holds no copy; one holding a copy is not moved, so no change is stranded.",

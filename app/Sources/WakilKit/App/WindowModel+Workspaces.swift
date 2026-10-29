@@ -18,7 +18,7 @@ extension WindowModel {
     /// What the write rule needs of conversation `id`; nil when it is not live.
     func workspaceFacts(_ id: String) async -> WorkspaceConversationFacts? {
         guard let agent = conversations[id] else { return nil }
-        let roots = agent.place == place ? gitRootPaths : await mainRootPaths(forCaller: agent.caller)
+        let roots = agent.place == place ? mainGitRootPaths : await mainRootPaths(forCaller: agent.caller)
         return WorkspaceConversationFacts(
             id: agent.id, lineageRoot: agent.lineageRoot, title: agent.title, ticket: agent.handoff?.key,
             organization: agent.place.organization, project: agent.place.project,

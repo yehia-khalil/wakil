@@ -78,6 +78,8 @@ struct EditorPane: View {
     /// commit's change opened for (root, the commit and the file's names there).
     var inlineBlame: Bool = false
     var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
+    /// Workspaces, piece 1: the folder tag for a path — "Main · your folder" or "workspace copy".
+    var folderTag: (String) -> String? = { _ in nil }
     var openCommitDiff: (String, GitCommitRef) -> Void = { _, _ in }
     /// 3c-i: the hover's Open on GitHub, the commit's page, and whether ⌥ was held (`WakilLinks.open`).
     var openLink: (String, Bool) -> Void = { _, _ in }
@@ -453,7 +455,22 @@ struct EditorPane: View {
                     Task { await closeTab(subject) }
                 },
                 middleClickEnabled: isKeyboardOwner)
+            // Workspaces, piece 1: whose folder the active file is in. Whole, never cut.
+            if let tag = activeFolderTag {
+                Text(tag)
+                    .font(.system(size: 10))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.6))
+                    .fixedSize()
+                    .padding(.leading, 6)
+                    .accessibilityIdentifier("editor.folderTag")
+            }
         }
+    }
+
+    /// The tag of the active tab's file, else of the first root.
+    private var activeFolderTag: String? {
+        let path = snapshot.active.flatMap { snapshot.tabs.indices.contains($0) ? snapshot.tabs[$0].path : nil } ?? firstRoot
+        return path.isEmpty ? nil : folderTag(path)
     }
 
     /// A tab's own content between the tick and its edge: the file's glyph, its name (italic while

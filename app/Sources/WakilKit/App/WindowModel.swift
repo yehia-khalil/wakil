@@ -146,7 +146,8 @@ public final class WindowModel {
     /// repeat that fallback.
     /// `project` here is the registry key, since it becomes the shell's `WAKIL_PROJECT`.
     public var activeShellContext: (org: String, project: String, environment: String, rootPath: String) {
-        (org: organization, project: projectKey, environment: environment, rootPath: rootPath)
+        // Workspaces, piece 1: a new terminal opens in the view's copy of the first repo when it has one.
+        (org: organization, project: projectKey, environment: environment, rootPath: gitRootPaths.first ?? rootPath)
     }
 
     /// `activeShellContext` for a dispatch made for `caller`: what `term_open` and the api pane
@@ -170,15 +171,19 @@ public final class WindowModel {
     /// confine to. An agent session gets its own project's roots, and none when they cannot be
     /// read — never the window's, which belong to the project on screen.
     public func gitRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
-        // Workspaces, piece 1 (call 13): an agent also reaches its own workspace's checkouts.
-        let own = await workspaceRouter?.callerCheckoutRoots() ?? []
-        return await mainRootPaths(forCaller: caller) + own
+        // Workspaces, piece 1 (call 13): an agent reaches Main's folders and its own workspace's
+        // copies; the operator, the view on screen's folders (`gitRootPaths`).
+        if let own = await workspaceRouter?.callerCheckouts() {
+            return await mainRootPaths(forCaller: caller) + own
+        }
+        guard pinnedPlace(of: caller) != nil else { return gitRootPaths }
+        return await mainRootPaths(forCaller: caller)
     }
 
     /// Main's folders for a dispatch made for `caller`: an agent session's own project's roots,
     /// and none when they cannot be read — never the window's, which belong to the project on screen.
     func mainRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
-        guard let placeContexts, let away = pinnedPlace(of: caller) else { return gitRootPaths }
+        guard let placeContexts, let away = pinnedPlace(of: caller) else { return mainGitRootPaths }
         return (try? await placeContexts.context(for: away).rootPaths) ?? []
     }
 
@@ -818,7 +823,14 @@ public final class WindowModel {
     /// The roots git may read (the window's status, the editor's git actions): `rootPaths` when
     /// the last context read gave this window a project root, and none otherwise — never the
     /// home directory `rootPath` falls back to.
-    public var gitRootPaths: [String] { hasProjectRoot ? rootPaths : [] }
+    public var gitRootPaths: [String] {
+        // Workspaces, piece 1 (decision 22): the view's folders — the workspace's copy of each repo
+        // it has one of, Main's folder of the rest. Files, Search, Changes and new terminals read these.
+        guard let w = currentAgent?.workspace else { return mainGitRootPaths }
+        return mainGitRootPaths.map { workspacePath($0, in: w) ?? $0 }
+    }
+    /// The project's own roots (Main's folders), whatever view is on screen.
+    var mainGitRootPaths: [String] { hasProjectRoot ? rootPaths : [] }
     /// Keeps the window's git status live (3a-i; 3b-iii: while an editor pane is open). Started
     /// when an editor pane is open and the project has a root, restarted when the roots change,
     /// stopped when the last editor pane closes or the organisation changes — all in
@@ -2044,6 +2056,11 @@ public final class WindowModel {
 
     /// Puts `text` on the status line, for a test asserting something leaves it alone.
     func setStatusForTesting(_ text: String) { status = text }
+    /// The project's roots as a context read would set them.
+    func setRootPathsForTesting(_ roots: [String]) {
+        rootPaths = roots
+        hasProjectRoot = !roots.isEmpty
+    }
 
     func seedForTesting(
         providerId: String, rootPath: String, thoughts: Int,

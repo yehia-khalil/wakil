@@ -407,6 +407,7 @@ extension WakilWindow {
                     isKeyboardOwner: !(
                         model.showOrgPlane || model.organization.isEmpty || model.pending != nil
                         || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
+                    folderTag: { model.folderTag(for: $0) },
                     isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                     keyboardFocusRequests: model.keyboardFocusRequests,
                     keyboardReturns: model.keyboardReturns)
@@ -500,6 +501,7 @@ extension WakilWindow {
                     // 3a-v-a: inline blame, the app-tier setting.
                     inlineBlame: model.editorSettings.app.inlineBlame,
                     blameFor: { root, path, text in await model.editorBlame(root: root, path: path, text: text) },
+                    folderTag: { model.folderTag(for: $0) },
                     openCommitDiff: { root, ref in
                         Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
                     },

@@ -1079,7 +1079,7 @@ private let registeredBeforeThePalette: Set<String> = [
     // Names: the operator's and the agent's rename of a conversation and of a browser tab.
     "conversation_rename", "browser_rename_tab",
     // Workspaces, piece 1: the read, and the operator's archive, restore, Bring to Main and Move.
-    "workspace_list", "workspace_archive", "workspace_restore", "workspace_bring_home", "conversation_move",
+    "workspace_list", "workspace_archive", "workspace_restore", "workspace_bring_home", "workspace_set_environment", "conversation_move",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",

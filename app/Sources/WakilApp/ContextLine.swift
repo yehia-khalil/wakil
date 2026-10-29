@@ -256,6 +256,14 @@ struct ContextLine: View {
                         .foregroundStyle(coolWhite.opacity(0.50))
                         .lineLimit(1).truncationMode(.middle)
                 }
+                // Workspaces, piece 1: the view's workspace (Main names none), whole.
+                if let workspace = model.workspaceOnScreen {
+                    Text("› \(workspace.name)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(coolWhite.opacity(0.62))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("window.contextLine.workspace")
+                }
             }
         }
     }

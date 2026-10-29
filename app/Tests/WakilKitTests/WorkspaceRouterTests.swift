@@ -325,3 +325,13 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     #expect(rows.first?.holders["/p/core"] == "c1")
     #expect(Set(rows.first?.live.keys.map { $0 } ?? []) == ["c1", "c2"])
 }
+
+@Test func aWorkspacesEnvironmentIsItsOwnAndCanBeChanged() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    #expect(await r.store.workspace(id)?.environment == "staging")
+    #expect(try await r.setEnvironment(id, to: "qa").environment == "qa")
+    await #expect(throws: WorkspaceWriteError.self) { try await r.setEnvironment(id, to: " ") }
+}

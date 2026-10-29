@@ -161,3 +161,22 @@ struct WindowModelWorkspacesTests {
         await model.shutdown()
     }
 }
+
+@MainActor
+struct WindowModelWorkspaceRootsTests {
+    @Test func theViewsFoldersAreTheWorkspacesCopiesAndMainsForTheRest() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.setRootPathsForTesting(["/p/core", "/p/web"])
+        #expect(await model.send("first job"))
+        let agent = try #require(model.currentAgent)
+        #expect(model.gitRootPaths == ["/p/core", "/p/web"])
+        agent.workspace = ws
+        #expect(model.gitRootPaths == ["/h/ws/api/fix-otp/core", "/p/web"])
+        #expect(model.mainGitRootPaths == ["/p/core", "/p/web"])
+        #expect(model.activeShellContext.rootPath == "/h/ws/api/fix-otp/core")
+        await model.shutdown()
+    }
+}

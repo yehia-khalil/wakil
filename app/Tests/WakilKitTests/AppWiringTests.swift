@@ -278,7 +278,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "term_propose", "term_run", "term_scroll",
              "ticket_hand_off", "ticket_hand_off_brief", "ticket_hand_off_cancel", "ticket_hand_off_close", "ticket_hand_off_open",
              "ticket_in_flight", "ticket_link", "ticket_open", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show",
-             "workspace_archive", "workspace_bring_home", "workspace_list", "workspace_restore"])
+             "workspace_archive", "workspace_bring_home", "workspace_list", "workspace_restore", "workspace_set_environment"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)
     // #185 made `wakil-http` the third Wakil-owned client, so three

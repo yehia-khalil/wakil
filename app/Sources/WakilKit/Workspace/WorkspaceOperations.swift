@@ -167,6 +167,20 @@ extension WorkspaceRouter {
         }
     }
 
+    /// Decision 28: a workspace belongs to one environment; the operator changes it from its view's
+    /// header. Running conversations keep the environment they started in (Decision 41's pin); the
+    /// next conversation started in the workspace, and its data panes, follow the record.
+    public func setEnvironment(_ id: String, to environment: String) async throws -> Workspace {
+        try await serially {
+            let clean = environment.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty else { throw WorkspaceWriteError(description: "workspace_set_environment: name an environment") }
+            _ = try await self.named(id)
+            await self.store.update(id) { $0.environment = clean }
+            try await self.store.save()
+            return try await self.named(id)
+        }
+    }
+
     /// Move to workspace… (decision 6): only while the conversation holds no checkout; `to` nil
     /// is Main. A conversation holding one stays, so no change is stranded; its next write in
     /// another workspace's repo branches off there instead.
