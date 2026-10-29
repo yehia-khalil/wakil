@@ -1082,6 +1082,22 @@ by date. The charter's §4 keeps the rule and the table.
      Reverse if: not stated.
      Commit: fcd2825d · `app/Sources/WakilApp/EditorTicketView.swift`.
 
+106. **Workspaces: Main is for reading; an agent's first change gives its conversation a
+     workspace with a git worktree (a checkout) per repo it changes, and a view shared by the
+     workspace's conversations.** (The workspaces design calls this "Decision 94"; 94 was taken.)
+     The write rule runs at the head of every agent write action (`WorkspaceRouter`): in Main a
+     workspace is made, its copy from the commit Main's folder is on; a checkout held by an idle
+     conversation is taken over, by a working one branched off into a child workspace; a missing
+     one is made from the base, or takes the branch from Main. The operator is never a holder;
+     an agent's path in another workspace's checkout is refused. The record is
+     `~/.wakil/orgs/<org>/workspaces.json`, Go's; checkouts live under
+     `~/.wakil/orgs/<org>/workspaces/`; only recorded ones are touched. Archive snapshots
+     uncommitted work under `refs/wakil/snapshots/` and keeps branches; it is offered, never
+     automatic. Decision 41 holds for each conversation in a workspace.
+     Why: two agents in one folder stage each other's hunks and move the tree under each other.
+     Reverse if: harnesses isolate agents themselves in a way Wakil can drive.
+     Commit: this branch · `app/Sources/WakilKit/Workspace/`, `internal/wakilcore/worktree.go`.
+
 ## Invariant 6 — the writes that have earned in
 
 Moved out of `north-star.md` §4 on 2026-09-17; §4 keeps the rule and the table. Entries are
@@ -1150,6 +1166,12 @@ Local git through `wakil-git`'s `GitWriter`, on a root of the active project; pr
 everywhere, voice included. A commit stays on this Mac and Undo Last Commit reverses it; a
 discard's old copy is in the Trash. A commit runs hooks and signing, no more than the agent's
 shell can; reads run none. **Refused:** any flag off a tool's list. Reasoning: Decision 43.
+
+**Inside the project's roots includes their Wakil worktrees (2026-10-29, Decision 106).** A
+checkout recorded in the organisation's `workspaces.json` is reached as its project's root is
+(`AllowedRootPaths`), by `wakil-git` and `wakil-files`; an unrecorded worktree is not. Adding,
+removing and pruning those worktrees, snapshotting their work under `refs/wakil/`, and taking a
+branch out of Main's folder are the same local git, inside the roots, and need no new write.
 
 **Fetch, pull, push, sync, clone (2026-10-22, Decision 44).** Allow for every channel, never
 forced, journalled with its caller. A remote operation lets only Wakil's own ssh and credential

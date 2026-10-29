@@ -84,16 +84,19 @@ refused: write only in your own.
 
 // MARK: - The operator's instructions (3a-iii-b, Decision 45)
 
-/// One level's agent instructions: General, Commits and Pull requests.
+/// One level's agent instructions: General, Commits, Pull requests and Branches (workspaces,
+/// decision 10).
 public struct AgentTexts: Sendable, Equatable {
     public var general: String
     public var commits: String
     public var pullRequests: String
+    public var branches: String
 
-    public init(general: String = "", commits: String = "", pullRequests: String = "") {
+    public init(general: String = "", commits: String = "", pullRequests: String = "", branches: String = "") {
         self.general = general
         self.commits = commits
         self.pullRequests = pullRequests
+        self.branches = branches
     }
 }
 
@@ -102,7 +105,7 @@ public struct AgentTexts: Sendable, Equatable {
 /// nothing, its heading included. The project's come last, so they are the ones read most recently.
 public func agentInstructions(org: String, orgTexts: AgentTexts, project: String?, projectTexts: AgentTexts?) -> String {
     func blocks(_ level: String, _ t: AgentTexts) -> [String] {
-        [("general", t.general), ("commits", t.commits), ("pull requests", t.pullRequests)].compactMap { name, text in
+        [("general", t.general), ("commits", t.commits), ("pull requests", t.pullRequests), ("branches", t.branches)].compactMap { name, text in
             let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return body.isEmpty ? nil : "## \(level) — \(name)\n\(body)"
         }

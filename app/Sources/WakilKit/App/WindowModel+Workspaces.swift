@@ -46,7 +46,17 @@ extension WindowModel {
 
     /// The branch name the ✨ quick task drafts from the Branches instructions (decision 10); nil
     /// falls back to `fallbackBranchName`.
-    func draftBranchName(_ request: BranchNameRequest) async -> String? { nil }
+    func draftBranchName(_ request: BranchNameRequest) async -> String? {
+        let rules = branchInstructions(project: request.project)
+        guard !rules.isEmpty, commitDraftsEnabled, let tasks = quickTasks else { return nil }
+        let draft = Task { try BranchDraft.parse(try await tasks.respond(BranchDraft.request(request, instructions: rules))) }
+        let timer = Task {
+            try? await Task.sleep(for: BranchDraft.patience)
+            draft.cancel()
+        }
+        defer { timer.cancel() }
+        return try? await draft.value
+    }
 
     /// Where a conversation's view goes when it moves (decision 22). From Main (step 0), the canvas
     /// it was in becomes the new workspace's view — on screen, both stores move it, as a new

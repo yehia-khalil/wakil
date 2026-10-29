@@ -737,11 +737,13 @@ an agent's write finds its checkout.
   conversation, and tells the thread through `WorkspaceRouterHooks` (installed by `WindowModel`).
 - `WorkspaceOperations.swift` — `WorkspaceListing`, and the router's `listing`, `archive`, `restore`,
   `bringHome`, `move`.
+- `BranchDraft.swift` — `BranchDraft`: the ✨ quick task that names a workspace's branch from the Branches
+  instructions (decision 10), within `patience`, else `fallbackBranchName`.
 - `WorkspaceActions.swift` — `registerWorkspaceActions`: `workspace_list` (agent and operator),
   `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only).
 
-Uses: `MCP`, `Registry`.
-Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`.
+Uses: `Harness`, `MCP`, `Registry`.
+Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `WindowModelWorkspacesTests` (the window's side, in `App/WindowModel+Workspaces.swift`).
 
 ### Visual/ — design-language values
 

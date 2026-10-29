@@ -3284,9 +3284,11 @@ public final class WindowModel {
     /// 3a-iii-b: saves one project's agent instructions into its project.json — only the boxes
     /// passed. The re-read publishes the new text, which the agent receives in its next turn.
     public func saveProjectAgentInstructions(
-        projectPath: String, general: String? = nil, commits: String? = nil, pullRequests: String? = nil
+        projectPath: String, general: String? = nil, commits: String? = nil, pullRequests: String? = nil,
+        branches: String? = nil
     ) async -> String? {
         var params: [String: JSONValue] = ["projectPath": .string(projectPath)]
+        if let branches { params["branches"] = .string(branches) }
         if let general { params["general"] = .string(general) }
         if let commits { params["commits"] = .string(commits) }
         if let pullRequests { params["pullRequests"] = .string(pullRequests) }
@@ -3336,6 +3338,8 @@ public final class WindowModel {
         case agentGeneral
         case gitCommitInstructions
         case gitPRInstructions
+        /// Workspaces (decision 10): how a workspace's branch is named.
+        case gitBranchInstructions
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -3347,7 +3351,7 @@ public final class WindowModel {
         /// only save. The others keep Return and Save.
         public var savesOnLeave: Bool {
             switch self {
-            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions: return true
             default: return false
             }
         }
@@ -3366,6 +3370,7 @@ public final class WindowModel {
             case .agentGeneral: return "General"
             case .gitCommitInstructions: return "Commits"
             case .gitPRInstructions: return "Pull requests"
+            case .gitBranchInstructions: return "Branches"
             }
         }
     }

@@ -202,3 +202,23 @@ private func workspace(
     #expect(WorkspaceLine.addFailed(repo: "core", message: "fatal: a\nline two").text
         == "Could not make a copy of core, so the change was not made:\nfatal: a\nline two")
 }
+
+// MARK: the branch draft (decision 10)
+
+@Test func theBranchDraftCarriesTheRulesTheTicketAndTheFirstMessage() {
+    let r = BranchNameRequest(key: "INI-142", title: "Login rate limit", firstMessage: "Add a rate limit to login",
+                              repo: "/p/core", organization: "initech", project: "estate")
+    let req = BranchDraft.request(r, instructions: "<KEY>-<slug>", recent: ["INI-100-old"])
+    #expect(req.instructions.contains("Follow these branch naming rules:\n<KEY>-<slug>"))
+    #expect(req.instructions.contains("INI-100-old"))
+    #expect(req.input.contains("Ticket: INI-142"))
+    #expect(req.input.contains("Add a rate limit to login"))
+}
+
+@Test func aDraftedBranchIsMadeSafeOrRefused() throws {
+    #expect(try BranchDraft.parse(#"{"branch": "INI-142 login rate limit"}"#) == "INI-142-login-rate-limit")
+    #expect(try BranchDraft.parse("```json\n{\"branch\": \"fix-otp\"}\n```") == "fix-otp")
+    #expect(try BranchDraft.parse(#"{"branch": "--force"}"#) == "force", "never handed to git as a flag")
+    #expect(throws: WorkspaceWriteError.self) { try BranchDraft.parse(#"{"branch": "a..b"}"#) }
+    #expect(throws: WorkspaceWriteError.self) { try BranchDraft.parse("not json") }
+}

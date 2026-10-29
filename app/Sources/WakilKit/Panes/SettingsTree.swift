@@ -388,6 +388,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var agentGeneral: String
     public var gitCommitInstructions: String
     public var gitPRInstructions: String
+    /// Workspaces (decision 10): how a workspace's branch is named.
+    public var gitBranchInstructions: String = ""
     /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
     /// Empty means the repository's own git config decides.
     public var gitName: String
@@ -448,6 +450,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         agentGeneral = try container.decodeIfPresent(String.self, forKey: .agentGeneral) ?? ""
         gitCommitInstructions = try container.decodeIfPresent(String.self, forKey: .gitCommitInstructions) ?? ""
         gitPRInstructions = try container.decodeIfPresent(String.self, forKey: .gitPRInstructions) ?? ""
+        gitBranchInstructions = try container.decodeIfPresent(String.self, forKey: .gitBranchInstructions) ?? ""
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
         // `try?`: a malformed connections field must not blank the whole Settings tree.
@@ -458,7 +461,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, conversationNames, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
-            agentGeneral, gitCommitInstructions, gitPRInstructions
+            agentGeneral, gitCommitInstructions, gitPRInstructions, gitBranchInstructions
         case gitName, gitEmail, connections, jiraTokenStored
     }
 
@@ -524,11 +527,14 @@ public struct SettingsAgentTexts: Sendable, Equatable, Decodable {
     public var general: String
     public var commits: String
     public var pullRequests: String
+    /// Workspaces (decision 10): how a workspace's branch is named.
+    public var branches: String
 
-    public init(general: String = "", commits: String = "", pullRequests: String = "") {
+    public init(general: String = "", commits: String = "", pullRequests: String = "", branches: String = "") {
         self.general = general
         self.commits = commits
         self.pullRequests = pullRequests
+        self.branches = branches
     }
 
     public init(from decoder: Decoder) throws {
@@ -536,9 +542,10 @@ public struct SettingsAgentTexts: Sendable, Equatable, Decodable {
         general = try c.decodeIfPresent(String.self, forKey: .general) ?? ""
         commits = try c.decodeIfPresent(String.self, forKey: .commits) ?? ""
         pullRequests = try c.decodeIfPresent(String.self, forKey: .pullRequests) ?? ""
+        branches = try c.decodeIfPresent(String.self, forKey: .branches) ?? ""
     }
 
-    private enum CodingKeys: String, CodingKey { case general, commits, pullRequests }
+    private enum CodingKeys: String, CodingKey { case general, commits, pullRequests, branches }
 }
 
 public struct SettingsProject: Sendable, Equatable, Decodable {

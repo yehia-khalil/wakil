@@ -89,6 +89,8 @@ struct SettingsPane: View {
     /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
     /// or pull requests, exactly one given. Answers the refusal or nil.
     var saveProjectAgentInstructions: (String, String?, String?, String?) async -> String? = { _, _, _, _ in nil }
+    /// Workspaces (decision 10): a project's Branches text.
+    var saveProjectBranchInstructions: (String, String) async -> String? = { _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String) async -> String? = { _, _, _ in nil }
     /// Saves the org's ghost-text or fast-path switch (3b-ix). Answers the refusal or nil.
@@ -1028,6 +1030,9 @@ struct SettingsPane: View {
                                 identifier: "settings.org.git.commits", in: tree)
                 organisationBox(.gitPRInstructions, placeholder: Self.pullRequestsPlaceholder,
                                 identifier: "settings.org.git.pullRequests", in: tree)
+                // Workspaces (decision 10): how a workspace's branch is named.
+                organisationBox(.gitBranchInstructions, placeholder: Self.branchesPlaceholder,
+                                identifier: "settings.org.git.branches", in: tree)
             }
 
         case .providers:
@@ -1112,6 +1117,10 @@ struct SettingsPane: View {
                                placeholder: Self.pullRequestsPlaceholder,
                                identifier: "settings.project.agent.pullRequests", project: project) { path, text in
                         await saveProjectAgentInstructions(path, nil, nil, text)
+                    }
+                    projectBox("Branches", stored: project.agent.branches, placeholder: Self.branchesPlaceholder,
+                               identifier: "settings.project.agent.branches", project: project) { path, text in
+                        await saveProjectBranchInstructions(path, text)
                     }
                 }
                 if !project.roots.isEmpty {
@@ -1338,6 +1347,7 @@ struct SettingsPane: View {
     // 3a-iii-b: examples of what a box holds, read as its placeholder.
     private static let generalPlaceholder = "Tell the agent how to work here — e.g. ask before running migrations"
     private static let commitsPlaceholder = "Tell the agent how to write commits — e.g. imperative subject under 72 characters"
+    private static let branchesPlaceholder = "Tell Wakil how to name a workspace's branch — e.g. <KEY>-<short summary>, lower case"
     private static let pullRequestsPlaceholder = "Tell the agent how to write pull requests — e.g. what changed and why, then how to test"
 
     /// An organisation's agent box, saved through the organisation's one-field write. Keyed to the
@@ -1609,6 +1619,7 @@ struct SettingsPane: View {
         case .agentGeneral: return tree.org.agentGeneral
         case .gitCommitInstructions: return tree.org.gitCommitInstructions
         case .gitPRInstructions: return tree.org.gitPRInstructions
+        case .gitBranchInstructions: return tree.org.gitBranchInstructions
         }
     }
 

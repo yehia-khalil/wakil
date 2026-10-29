@@ -23,7 +23,10 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Pane arrangement per project (a browser pane's `browserTabs` — id, URL, title, group, pin and name per tab — `browserGroups`, `browserColumnHidden` and `browserActiveTab` are saved with it; only the active tab loads on restore) | `~/.wakil/layouts/<org>/<project>.json` | Swift: `LayoutPersistence` |
 | The organisation's open pull requests, behind the pull-request group (3d-i) | **memory only**: `PaneStore`'s browser kind, refreshed from `wakil-ctx`'s `github_pull_requests` every five minutes and by ⌘R; never written | Swift: `browserSetPullRequests` |
 | The vertical tab column's width (3d-i) | the user defaults key `browser.tabColumn.width`, one width for every pane | Swift: `BrowserTabColumn` |
-| Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
+| Pane arrangement per conversation in Main, or per workspace (its view, shared by its conversations; the folder is `workspace-<view key>`) | `~/.wakil/layouts/<org>/conversations/<lineageRoot or workspace-<key>>/<project>.json` | Swift: `LayoutPersistence` |
+| Workspaces (each: id, name, slug, project, environment, tickets, parent, branch, checkouts — repo, path, branch, base, ports, last holder, in Main, snapshot — conversations by lineage root, view, archived); an unreadable file is never written over | `~/.wakil/orgs/<org>/workspaces.json` | Go: `workspaces.go` (`wakil-git` `workspaces_write`, the window only) |
+| A workspace's checkouts (git worktrees of the project's roots; only recorded ones are touched) | `~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder>` | Go: `worktree.go` (`git_worktree_add` / `_remove`, `git_take_from_main`) |
+| A removed checkout's uncommitted work (a stash-shaped commit, never on the shared stash list); a branch carried out of Main while it moves | `refs/wakil/snapshots/<slug>/<repo>`, `refs/wakil/carry/<slug>/<repo>` in the repository | Go: `SnapshotCreate`, `TakeFromMain` |
 | The window's own memory (`railCollapsed`: the rail put away to its spine; absent means shown) | `~/.wakil/layouts/window.json` | Swift: `LayoutPersistence.saveWindowState`, from `WindowModel` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |
 | A ticket's record (next, decisions, not done, waiting on, verified, rulings; empty lists as `[]`) and its log (append-only, the old line written before each change) | `~/.wakil/orgs/<org>/tickets/<KEY>.json`, `<KEY>.log.jsonl` (`<KEY>.json.lock` beside each, taken per key) | Go: `ticketrecord.go` (`wakil-ticket` `ticket_record_write`, `ticket_branch`'s seen/branch/PR fields) |
@@ -56,6 +59,8 @@ never written to `project.json`, only the ref.
   result set is not persisted; the pane's page and sort (`PaneFetch`) are, with the layout.
 - **Recent api sends**, capped at `PaneStore.recentCap` (200) per list, gone with the session.
 - **Live PTYs** (`TerminalStore`).
+- **Who holds each checkout, and which workspace each live conversation is in** (`WorkspaceStore`):
+  holds are live, so a relaunch holds nothing; the record keeps each checkout's last holder.
 - **Pending confirmations** (`ConfirmationBroker`, one per conversation), resume and provider-switch requests (`ResumeBroker`,
   `ProviderSwitchBroker`).
 - **The window's own state** (`WindowModel`): context, snapshots, thought thread, status, palette.

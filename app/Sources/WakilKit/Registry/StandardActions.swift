@@ -1132,7 +1132,7 @@ public func registerStandardActions(
         ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
         ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
         ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
-         ["projectPath", "general", "commits", "pullRequests"], ["projectPath"], []),
+         ["projectPath", "general", "commits", "pullRequests", "branches"], ["projectPath"], []),
     ] {
         await registry.register(Action(
             name: name,
@@ -1498,6 +1498,7 @@ public func registerStandardActions(
                 "agentGeneral": .object(["type": .string("string")]),
                 "gitCommitInstructions": .object(["type": .string("string")]),
                 "gitPRInstructions": .object(["type": .string("string")]),
+                "gitBranchInstructions": .object(["type": .string("string")]),
             ]),
             "required": .array([.string("id")]),
         ]),

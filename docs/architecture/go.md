@@ -93,6 +93,13 @@ credentials taken out; `ReadOrigin`) and `git_blame`'s `pushed`, which marks the
 of origin's remote-tracking branches holds with one `rev-list <ids> --not --remotes=origin`
 (`MarkPushed`, its own 1 s `PushedDeadline`; a failure or timeout marks nothing and never fails the blame).
 
+Workspaces, piece 1 (`cmd/wakil-git/workspaces.go`, the window's copy only): `workspaces_read` /
+`workspaces_write` (the record, `workspaces.go`), `git_worktree_add` / `_remove` / `_list` / `_prune`,
+`git_snapshot_apply`, `git_take_from_main` and `git_release_branch` (`worktree.go`). A worktree is added
+and removed from one of the project's own roots; a removal with `snapshot` keeps the work first.
+Confinement (`AllowedRootPaths`) admits the project's recorded checkouts beside its roots, here and in
+`wakil-files` (whose search covers Main's roots unless roots are named).
+
 ### wakil-files
 
 The editor's file capability (3b-i, 3b-ii). Seven tools:
