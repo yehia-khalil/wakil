@@ -26,9 +26,10 @@ public func registerKeyboardActions(into registry: ActionRegistry, context: (any
 
     await registry.register(Action(
         name: "ctx_set_key",
-        description: "Give one command a chord: id is the command, chord its new chord (⌃⌘W) or "
-            + "null for none. A command in the same place that held the chord loses it, and the "
-            + "reply's tookFrom names it. Decision 50's chords are refused. Operator-only.",
+        description: "Change one command's chord: id is the command; chord is its new chord (⌃⌘W), "
+            + "\"\" for none, or null to restore its default. A command in the same place that held "
+            + "the chord loses it, and the reply's tookFrom names it. Decision 50's chords are "
+            + "refused. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -37,7 +38,7 @@ public func registerKeyboardActions(into registry: ActionRegistry, context: (any
                 "id": .object(["type": .string("string")]),
                 "chord": .object(["type": .array([.string("string"), .string("null")])]),
             ]),
-            "required": .array([.string("id")]),
+            "required": .array([.string("id"), .string("chord")]),
         ]),
         handler: { params in
             guard let context else {
@@ -46,45 +47,49 @@ public func registerKeyboardActions(into registry: ActionRegistry, context: (any
             guard case .object(let fields) = params, case .string(let id)? = fields["id"] else {
                 throw StandardActionError.missingParam(action: "ctx_set_key", param: "id")
             }
+            guard let chordParam = fields["chord"] else {
+                throw StandardActionError.missingParam(action: "ctx_set_key", param: "chord")
+            }
+            guard KeyCommand.byID[id] != nil else {
+                throw StandardActionError.serverError(action: "ctx_set_key", message: unknownCommand(id))
+            }
+            // Parsed before the read, so a malformed chord costs no round trip.
             var chord: KeyChord?
-            if case .string(let text)? = fields["chord"] {
-                guard let parsed = KeyChord(text) else {
-                    throw StandardActionError.serverError(
-                        action: "ctx_set_key", message: "\(text) is not a shortcut.")
+            switch chordParam {
+            case .null, .string(""): chord = nil
+            case .string(let text): chord = try parsedChord(text, action: "ctx_set_key")
+            default:
+                throw StandardActionError.missingParam(action: "ctx_set_key", param: "chord")
+            }
+            let keymap = Keymap(overrides: try await readStoredKeys(context, action: "ctx_set_key"))
+            let overrides: [String: String]
+            let tookFrom: String?
+            if chordParam == .null {
+                overrides = keymap.restoringDefault(id)
+                tookFrom = nil
+            } else {
+                switch keymap.assign(id, chord) {
+                case .success(let next): (overrides, tookFrom) = (next.overrides, next.tookFrom)
+                case .failure(let refusal):
+                    throw StandardActionError.serverError(action: "ctx_set_key", message: refusal.message)
                 }
-                chord = parsed
-            }
-            let read = try await callCheckedTool(
-                context, tool: "keyboard", arguments: .object([:]),
-                action: "ctx_set_key", timeout: MCPClient.readReplyTimeout)
-            // The whole map is written back, so a read that did not decode writes nothing.
-            guard let stored = decodeKeyboard(fromResult: read) else {
-                throw StandardActionError.serverError(action: "ctx_set_key", message: "keyboard answered no keys")
-            }
-            // A file Wakil could not read is not written over: that is the data-loss case.
-            if let appError = stored.appError {
-                throw StandardActionError.serverError(action: "ctx_set_key", message: appError)
-            }
-            let assignment: Keymap.Assignment
-            switch Keymap(overrides: stored.keys).assign(id, chord) {
-            case .success(let next): assignment = next
-            case .failure(let refusal):
-                throw StandardActionError.serverError(action: "ctx_set_key", message: refusal.message)
             }
             // The whole map in one write: a move is the chord given and the chord taken, together.
             _ = try await callCheckedTool(
                 context, tool: "set_keys",
-                arguments: .object(["keys": .object(assignment.overrides.mapValues { .string($0) })]),
+                arguments: .object(["keys": .object(overrides.mapValues { .string($0) })]),
                 action: "ctx_set_key", timeout: MCPClient.readReplyTimeout)
-            return .object(["tookFrom": assignment.tookFrom.map { .string($0) } ?? .null])
+            return .object(["tookFrom": tookFrom.map { .string($0) } ?? .null])
         }
     ))
 
-    // Undo and Restore All: the map before a change, or an empty one, written back whole.
+    // Undo and Restore All: the map before a change, or an empty one, written back whole. Ids this
+    // build doesn't know are kept from disk, so an older build can't wipe a newer one's binding.
     await registry.register(Action(
         name: "ctx_set_keys",
-        description: "Replace the keymap's whole override map: keys maps a command id to its "
-            + "chord, an empty chord for none; an id left out keeps its default. Operator-only.",
+        description: "Replace the keymap's override map: keys maps a command id to its chord, "
+            + "\"\" for none; an id left out keeps its default. Overrides for ids this build "
+            + "doesn't know are kept. Decision 50's chords are refused. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -101,16 +106,53 @@ public func registerKeyboardActions(into registry: ActionRegistry, context: (any
             guard let context else {
                 throw StandardActionError.missingClient(action: "ctx_set_keys", role: "context")
             }
-            guard case .object(let fields) = params, case .object(let keys)? = fields["keys"],
-                  keys.values.allSatisfy({ if case .string = $0 { return true } else { return false } })
-            else {
+            guard case .object(let fields) = params, case .object(let given)? = fields["keys"] else {
                 throw StandardActionError.missingParam(action: "ctx_set_keys", param: "keys")
             }
+            var keys: [String: String] = [:]
+            for id in given.keys.sorted() {
+                guard case .string(let text)? = given[id] else {
+                    throw StandardActionError.missingParam(action: "ctx_set_keys", param: "keys")
+                }
+                if KeyCommand.byID[id] != nil, !text.isEmpty,
+                   try parsedChord(text, action: "ctx_set_keys").isRefused {
+                    throw StandardActionError.serverError(action: "ctx_set_keys", message: KeyChord.refusedReason)
+                }
+                keys[id] = text
+            }
+            for (id, chord) in try await readStoredKeys(context, action: "ctx_set_keys")
+            where KeyCommand.byID[id] == nil && keys[id] == nil {
+                keys[id] = chord
+            }
             return try await callCheckedTool(
-                context, tool: "set_keys", arguments: .object(["keys": .object(keys)]),
+                context, tool: "set_keys", arguments: .object(["keys": .object(keys.mapValues { .string($0) })]),
                 action: "ctx_set_keys", timeout: MCPClient.readReplyTimeout)
         }
     ))
+}
+
+private func unknownCommand(_ id: String) -> String { "\(id) is not a command this build knows." }
+
+/// A chord's text parsed, or the sentence `ctx_set_key` and `ctx_set_keys` refuse it with.
+private func parsedChord(_ text: String, action: String) throws -> KeyChord {
+    guard let chord = KeyChord(text) else {
+        throw StandardActionError.serverError(action: action, message: "\(text) is not a shortcut.")
+    }
+    return chord
+}
+
+/// The stored overrides, for a write that sends the whole map back. A read that didn't decode, or
+/// a settings.json Wakil couldn't read, refuses the write: that is the data-loss case.
+private func readStoredKeys(_ context: any ToolCaller, action: String) async throws -> [String: String] {
+    let read = try await callCheckedTool(
+        context, tool: "keyboard", arguments: .object([:]), action: action, timeout: MCPClient.readReplyTimeout)
+    guard let stored = decodeKeyboard(fromResult: read) else {
+        throw StandardActionError.serverError(action: action, message: "keyboard answered no keys")
+    }
+    if let appError = stored.appError {
+        throw StandardActionError.serverError(action: action, message: appError)
+    }
+    return stored.keys
 }
 
 /// `keyboard`'s answer: the stored overrides, and settings.json's error (nil when it read).

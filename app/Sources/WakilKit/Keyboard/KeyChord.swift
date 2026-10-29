@@ -12,7 +12,7 @@ public struct KeyChord: Hashable, Sendable {
         public static let command = Modifiers(rawValue: 8)
     }
 
-    public enum Key: Hashable, Sendable {
+    public enum KeyName: Hashable, Sendable {
         /// A single printing character, lowercased.
         case character(Character)
         case returnKey, tab, space, escape, delete, up, down, left, right
@@ -20,9 +20,9 @@ public struct KeyChord: Hashable, Sendable {
     }
 
     public var modifiers: Modifiers
-    public var key: Key
+    public var key: KeyName
 
-    public init(modifiers: Modifiers, key: Key) {
+    public init(modifiers: Modifiers, key: KeyName) {
         self.modifiers = modifiers
         self.key = key.normalized
     }
@@ -38,7 +38,7 @@ public struct KeyChord: Hashable, Sendable {
         (.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"),
     ]
 
-    private static let namedKeys: [(Key, String)] = [
+    private static let namedKeys: [(KeyName, String)] = [
         (.returnKey, "↩"), (.tab, "Tab"), (.space, "Space"), (.escape, "Esc"), (.delete, "⌫"),
         (.up, "↑"), (.down, "↓"), (.left, "←"), (.right, "→"),
     ]
@@ -96,8 +96,8 @@ public struct KeyChord: Hashable, Sendable {
         }
     }
 
-    private static let keysByCode: [UInt16: Key] = {
-        var table: [UInt16: Key] = [
+    private static let keysByCode: [UInt16: KeyName] = {
+        var table: [UInt16: KeyName] = [
             36: .returnKey, 48: .tab, 49: .space, 51: .delete, 53: .escape,
             123: .left, 124: .right, 125: .down, 126: .up,
         ]
@@ -133,8 +133,8 @@ public struct KeyChord: Hashable, Sendable {
     }
 }
 
-private extension KeyChord.Key {
-    var normalized: KeyChord.Key {
+private extension KeyChord.KeyName {
+    var normalized: KeyChord.KeyName {
         if case .character(let c) = self { return .character(Character(c.lowercased())) }
         return self
     }

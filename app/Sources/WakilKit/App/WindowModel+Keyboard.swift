@@ -7,6 +7,13 @@ public enum KeySetOutcome: Equatable, Sendable {
     case refused(String)
 }
 
+/// What `setKey` does to a command: give it a chord, leave it with none, or put its default back.
+public enum KeyChange: Equatable, Sendable {
+    case chord(KeyChord)
+    case clear
+    case restoreDefault
+}
+
 extension WindowModel {
     /// Re-reads the keymap's overrides. An unreadable settings.json puts the defaults in force and
     /// its error in `keymapError`; a failed read keeps what the window had, as the browser's does.
@@ -20,13 +27,18 @@ extension WindowModel {
         keymap = Keymap(overrides: stored.appError == nil ? stored.keys : [:])
     }
 
-    /// Gives `id` a chord (nil for none) through `ctx_set_key`, then re-reads the keymap.
-    public func setKey(_ id: String, _ chord: KeyChord?) async -> KeySetOutcome {
+    /// Changes `id`'s chord through `ctx_set_key`, then re-reads the keymap.
+    public func setKey(_ id: String, _ change: KeyChange) async -> KeySetOutcome {
+        let chord: JSONValue
+        switch change {
+        case .chord(let c): chord = .string(c.text)
+        case .clear: chord = .string("")
+        case .restoreDefault: chord = .null
+        }
         let outcome: KeySetOutcome
         do {
             let reply = try await registry.dispatch(
-                name: "ctx_set_key",
-                params: .object(["id": .string(id), "chord": chord.map { .string($0.text) } ?? .null]),
+                name: "ctx_set_key", params: .object(["id": .string(id), "chord": chord]),
                 origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             if case .object(let o) = reply, case .string(let from)? = o["tookFrom"] {
                 outcome = .took(from)
