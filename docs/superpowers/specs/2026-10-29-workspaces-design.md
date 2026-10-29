@@ -335,6 +335,33 @@ worktree*; refused: any command not in the recipe, and editing the recipe.
 card and in the thread of the conversation that started it, so it fixes what is in its reach or
 says why it cannot. It never blocks the write that made the worktree (Rule 8).
 
+#### Amendment 2026-10-29: piece 2's Go core
+
+What building the Go side settled (plan `docs/superpowers/plans/2026-10-29-workspaces-2-running.md`):
+
+- **Shape in `project.json`.** `recipes` by name; each root carries `recipe`, `overrides` (a recipe
+  whose absent fields inherit) and `doesntRun` beside its `path`. `processes` is an ordered list of
+  `{name, command}`; `services`, `setup`, `teardown` are lists of commands; `build` one command;
+  `ready` is `{url}` or `{output}` (a substring or `/regexp/`) with `timeoutSeconds` (default 120).
+  An env value is a string or `{"secret": "<ref>"}` (Keychain `wakil:<org>:<ref>`). A shared
+  service names the repo its commands run in with `in`. `notes` keep, per field, where a value came
+  from. A repo's name is its folder's.
+- **Merge.** Lists and single values replace; `ports`, `env` and `notes` merge per variable;
+  processes merge by name, and an override's empty command removes a shared one. Validation lists
+  every problem whole; a name Wakil exports (`WAKIL_*`, `COMPOSE_*`) cannot be set by a recipe.
+- **Env.** Besides the ports, `WAKIL_DIR` and `WAKIL_DIR_<REPO>` (each repo's folder: its checkout,
+  or Main's), and `COMPOSE_PROJECT_NAME`. Two folders that sanitise to one `<REPO>` are refused.
+- **Compose.** The override is attached by `COMPOSE_FILE` (the repo's file, its own override file,
+  then `.wakil/compose.ports.yml`), so `sail` and `docker compose` in the recipe pick it up as
+  written. Fixed ports take the block offsets the recipe's `ports` leave free.
+- **Draft all.** A shared service is proposed when two or more repos' example env files point at a
+  host another repo's compose file defines; it is named `<repo>-services` and runs there. A host no
+  compose file defines becomes a question.
+- **Runtime versions.** With mise (or asdf for `.tool-versions`, nvm for `.nvmrc`) on the machine,
+  the draft's setup starts with its install; without one, a question.
+- **Where.** The tools are on `wakil-ctx` (window-owned, not agent-facing); the agent reaches running
+  only through piece 2's Swift actions. `recipe_ready_wait` polls loopback URLs only.
+
 ### 3. The home screen and ⌘P
 
 Replaces the Landing's columns (Running, Tickets in flight, Continue, Open). Mockup: `home.html`.

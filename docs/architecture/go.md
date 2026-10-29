@@ -76,6 +76,16 @@ The editor settings: `editor_settings` answers both tiers; `set_editor_settings`
 `set_project_pm_key` sets a project's Jira project (`scopes.pm.projectKey`, upper-cased; empty clears it),
 which a project's Ticket tab and its ⌘P tickets are scoped by.
 
+How a repo runs (workspaces piece 2, `cmd/wakil-ctx/recipes.go`): `recipe_detect` and `recipe_draft_all`
+(drafts from a repo's files, no model; `recipedetect.go`, `recipedraftall.go`), `recipe_effective` and
+`recipe_save` (the `recipes` in `project.json`, merged with a repo's overrides, validated whole;
+`recipe.go`), `recipe_plan` (the ordered steps, env and files the window runs; `recipeplan.go`),
+`recipe_ready_wait` (a loopback URL polled, or an output line matched), `ports_allocate` (blocks of
+ten from 41200; `ports.go`) and `compose_override` (fixed compose ports moved into the block with
+`!override`; `compose.go`). Only `recipe_save` writes. Folders read are confined to the project's
+repos and the organisation's `workspaces/` (`ConfineRunDir`). Compose files are read with
+`go.yaml.in/yaml/v3`.
+
 ### wakil-db
 
 Databases of the active environment (`cmd/wakil-db/main.go`). Window-launched; behind the `db_*`
@@ -215,6 +225,12 @@ meant for a human are `UserError` (`mcperr.go`). By area:
   (what `config_tree` returns; each environment carries `production`, from
   `EnvironmentIsProduction`, which the browser reads to price a site), `production.go` (`EnvironmentIsProduction`,
   `EnvironmentIsReadOnly`), `pickname.go`. See [state.md](state.md) for the files.
+- **Running a repo** (workspaces piece 2) — `recipe.go` (`Recipe`, `RepoRun`, `EffectiveRecipe`,
+  `ValidateRecipes`, `SaveRecipes`), `recipedetect.go` (`DetectRecipe`; fixtures under
+  `testdata/recipes/`, one per Detect row, `-update` rewrites the expected drafts),
+  `recipedraftall.go` (`DraftAllRecipes`), `ports.go` (`AllocatePortBlocks`, `WakilEnv`,
+  `ExpandWakil`), `compose.go` (`ParseCompose`, `ComposeOverride`), `recipeplan.go` (`BuildRunPlan`,
+  `MergeDotEnv`, `WaitReadyURL`), `recipedirs.go` (`RepoDirs`, `ConfineRunDir`).
 - **Keychain** — `secrets.go` (`SecretGet`, `SecretSet`; service name `wakil:<org>:<ref>` from
   `keychainService`), `credpresence.go` (`SecretPresence`; runs `/usr/bin/security` at its absolute
   path; `WAKIL_KEYCHAIN` names the keychain file; `WAKIL_SECURITY_BINARY` overrides the tool in test
