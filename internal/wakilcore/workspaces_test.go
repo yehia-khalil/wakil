@@ -28,7 +28,7 @@ func TestWorkspacesRoundTrip(t *testing.T) {
 		ID: "w1", Name: "Fix OTP guard order", Slug: "fix-otp", Project: "estate", Environment: "staging",
 		Tickets: []string{"INI-142"}, Branch: "fix-otp",
 		Checkouts: []WorkspaceCheckout{{Repo: "/p/core", Path: path, Branch: "fix-otp", Base: "main",
-			Ports: &PortBlock{First: 41200, Count: 10}, LastHolder: "root-1"}},
+			Ports: &PortBlock{First: 41200, Count: 10}, LastHolder: "root-1", SetUp: true}},
 		Conversations: []string{"root-1"}, View: "w1",
 	}}}
 	if err := SaveWorkspaces("initech", in); err != nil {
@@ -38,7 +38,8 @@ func TestWorkspacesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out.Workspaces) != 1 || out.Workspaces[0].Checkouts[0].Ports.First != 41200 || out.Workspaces[0].Tickets[0] != "INI-142" {
+	if len(out.Workspaces) != 1 || out.Workspaces[0].Checkouts[0].Ports.First != 41200 || out.Workspaces[0].Tickets[0] != "INI-142" ||
+		!out.Workspaces[0].Checkouts[0].SetUp {
 		t.Fatalf("%+v", out)
 	}
 }

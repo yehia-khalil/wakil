@@ -33,6 +33,8 @@ type WorkspaceCheckout struct {
 	LastHolder string     `json:"lastHolder,omitempty"`
 	InMain     bool       `json:"inMain,omitempty"`
 	Snapshot   string     `json:"snapshot,omitempty"`
+	// SetUp says the recipe's copy, clone and setup ran in this checkout (piece 2): once each.
+	SetUp bool `json:"setUp,omitempty"`
 }
 
 // Workspace is one piece of work. Conversations are lineage roots; View is the key its canvas is

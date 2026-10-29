@@ -97,6 +97,34 @@ func repoDir(projectPath string, p *wakilcore.Project, repo string) (string, err
 	return dir, nil
 }
 
+// buildPlan builds a repo's run plan, every folder confined to the project's repos and the
+// organisation's workspaces; it also answers the organisation the plan's secrets are under.
+func buildPlan(a recipePlanArgs) (wakilcore.RunPlan, string, error) {
+	path, p, err := recipeProject(a.ProjectPath)
+	if err != nil {
+		return wakilcore.RunPlan{}, "", err
+	}
+	p.SetDir(path)
+	org, err := wakilcore.CurrentOrg()
+	if err != nil {
+		return wakilcore.RunPlan{}, "", err
+	}
+	dirs := wakilcore.RepoDirs(path, *p)
+	for _, c := range a.Checkouts {
+		if err := wakilcore.ConfineRunDir(c.Path, org, dirs); err != nil {
+			return wakilcore.RunPlan{}, "", err
+		}
+	}
+	mainDir := dirs[a.Repo]
+	if r, ok := p.Recipes[a.Repo]; ok && r.In != nil {
+		mainDir = dirs[*r.In]
+	}
+	plan, err := wakilcore.BuildRunPlan(*p, wakilcore.PlanInput{
+		Org: org, Workspace: a.Workspace, Repo: a.Repo, MainDir: mainDir, Checkouts: a.Checkouts,
+	})
+	return plan, org, err
+}
+
 // asObject is v as the JSON object a client sees.
 func asObject(v any) map[string]any {
 	b, _ := json.Marshal(v)
@@ -186,28 +214,7 @@ func registerRecipeTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "recipe_plan", Description: "The run plan for a repo (or a shared service) in a workspace: dir; env (WAKIL_PORT, WAKIL_PORT_1…9, WAKIL_PORT_<REPO>, WAKIL_DIR, WAKIL_DIR_<REPO>, WAKIL_WORKSPACE, WAKIL_REPO, COMPOSE_PROJECT_NAME, COMPOSE_FILE when an override is needed, the recipe's ports and env expanded); secrets as Keychain service names to read at run time, never values; envFile when the recipe also writes .env; files to write first (the compose port override); steps in order (need, copy, clone, service, setup, process) each with once (workspace, checkout) and longRunning; build; ready (url expanded, or an output line, with a timeout); teardown; warnings (a compose file that cannot run twice). Commands are not expanded. Runs nothing."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a recipePlanArgs) (*mcp.CallToolResult, map[string]any, error) {
-			path, p, err := recipeProject(a.ProjectPath)
-			if err != nil {
-				return toolErr(err), nil, nil
-			}
-			p.SetDir(path)
-			org, err := wakilcore.CurrentOrg()
-			if err != nil {
-				return toolErr(err), nil, nil
-			}
-			dirs := wakilcore.RepoDirs(path, *p)
-			for _, c := range a.Checkouts {
-				if err := wakilcore.ConfineRunDir(c.Path, org, dirs); err != nil {
-					return toolErr(err), nil, nil
-				}
-			}
-			mainDir := dirs[a.Repo]
-			if r, ok := p.Recipes[a.Repo]; ok && r.In != nil {
-				mainDir = dirs[*r.In]
-			}
-			plan, err := wakilcore.BuildRunPlan(*p, wakilcore.PlanInput{
-				Org: org, Workspace: a.Workspace, Repo: a.Repo, MainDir: mainDir, Checkouts: a.Checkouts,
-			})
+			plan, _, err := buildPlan(a)
 			if err != nil {
 				return toolErr(err), nil, nil
 			}
