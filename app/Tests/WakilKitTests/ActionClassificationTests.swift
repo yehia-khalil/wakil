@@ -135,6 +135,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "browser_revoke_site",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
+            // Workspaces, piece 1: moving a conversation between workspaces is the operator's.
+            "conversation_move",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree_for",
             // Connections: which account a service is reached as, its secrets and its switches.
             "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",
@@ -185,6 +187,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "settings_open", "term_run",
             // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
             "ticket_hand_off", "ticket_hand_off_cancel",
+            // Workspaces, piece 1: archive, Bring to Main and restore are the operator's (the card's ⋯).
+            "workspace_archive", "workspace_bring_home", "workspace_restore",
         ])
 
     let reachable = await wiring.registry.all()

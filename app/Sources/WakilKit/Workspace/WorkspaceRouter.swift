@@ -72,7 +72,7 @@ public struct WorkspaceRouterHooks: Sendable {
 public actor WorkspaceRouter: WorkspaceWriteRouting {
     public let store: WorkspaceStore
     private var git: (any ToolCaller)?
-    private var hooks: WorkspaceRouterHooks?
+    var hooks: WorkspaceRouterHooks?
     private var running = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
     /// Overridable clock and ids, for tests.
@@ -99,6 +99,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
 
     public func routeRoot(_ root: String, action: String) async throws -> String {
         guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return root }
+        await store.ensure(org: facts.organization)
         return try await serially {
             guard let repo = try await self.repo(of: root, conversation: c, facts: facts, action: action) else { return root }
             return try await self.checkout(repo.repo, conversation: c, facts: facts, action: action)
@@ -107,6 +108,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
 
     public func routePath(_ path: String, action: String) async throws -> String {
         guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return path }
+        await store.ensure(org: facts.organization)
         return try await serially {
             guard let repo = try await self.repo(of: path, conversation: c, facts: facts, action: action) else { return path }
             let dest = try await self.checkout(repo.repo, conversation: c, facts: facts, action: action)
@@ -118,6 +120,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         guard let c = agentConversation(), let facts = await hooks?.conversation(c) else {
             return RoutedSwitch(root: root, branch: branch)
         }
+        await store.ensure(org: facts.organization)
         return try await serially {
             guard let repo = try await self.repo(of: root, conversation: c, facts: facts, action: action) else {
                 return RoutedSwitch(root: root, branch: branch)
@@ -129,14 +132,16 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
 
     /// Every made checkout of the caller's own workspace (an agent's), else nothing: the roots
     /// beside Main's that its file and git actions may reach (call 13).
-    public func callerCheckoutRoots() async -> [String] {
-        guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return [] }
+    public func callerCheckoutRoots() async -> [String] { await callerCheckouts() ?? [] }
+
+    public func callerCheckouts() async -> [String]? {
+        guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return nil }
         return await store.workspace(ofConversation: c, root: facts.lineageRoot)?.checkouts.compactMap(\.path) ?? []
     }
 
     // MARK: one write at a time
 
-    private func serially<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
+    func serially<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
         while running {
             await withCheckedContinuation { waiting.append($0) }
         }
@@ -394,7 +399,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
 
     // MARK: git
 
-    private func call(_ tool: String, _ args: [String: JSONValue]) async throws -> JSONValue {
+    func call(_ tool: String, _ args: [String: JSONValue]) async throws -> JSONValue {
         guard let git else { throw WorkspaceWriteError(description: "\(tool): wakil-git is not running") }
         let r = try await callCheckedTool(git, tool: tool, arguments: .object(args), action: tool,
                                           timeout: MCPClient.mutationReplyTimeout)
@@ -403,7 +408,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     }
 
     /// Main's folder of `repo`: its branch (nil when detached) and how many files it has changes in.
-    private func mainState(_ repo: String) async -> (branch: String?, uncommitted: Int)? {
+    func mainState(_ repo: String) async -> (branch: String?, uncommitted: Int)? {
         guard let git,
               let r = try? await callCheckedTool(git, tool: "git_status", arguments: .object(["root": .string(repo)]),
                                                  action: "git_status", timeout: MCPClient.readReplyTimeout)
@@ -419,17 +424,17 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         return (branch, paths.count)
     }
 
-    private func string(_ v: JSONValue, _ key: String) -> String? {
+    nonisolated func string(_ v: JSONValue, _ key: String) -> String? {
         if case .object(let o) = v, case .string(let s)? = o[key] { return s }
         return nil
     }
 
-    private func flag(_ v: JSONValue, _ key: String) -> Bool {
+    nonisolated private func flag(_ v: JSONValue, _ key: String) -> Bool {
         if case .object(let o) = v, case .bool(let b)? = o[key] { return b }
         return false
     }
 
-    private func repoName(_ repo: String) -> String { (repo as NSString).lastPathComponent }
+    nonisolated func repoName(_ repo: String) -> String { (repo as NSString).lastPathComponent }
 }
 
 /// A drafted branch name made safe to hand git: spaces to "-", nothing that starts a flag; nil

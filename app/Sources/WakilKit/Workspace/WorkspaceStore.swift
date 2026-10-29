@@ -19,6 +19,8 @@ public actor WorkspaceStore {
     public private(set) var loadFailure: String?
     /// Bumped by every change, so a view can tell its copy is stale.
     public private(set) var revision = 0
+    /// The organisation the record in memory is of; nil before the first read.
+    public private(set) var organization: String?
 
     public init() {}
 
@@ -63,6 +65,15 @@ public actor WorkspaceStore {
         return loadFailure
     }
 
+    /// Reads `org`'s record when the one in memory is another's (or none was read): the first write
+    /// in an organisation after a switch, or an agent of another organisation (Invariant 4).
+    public func ensure(org: String) async {
+        guard organization != org else { return }
+        clear()
+        organization = org
+        await reload()
+    }
+
     /// Writes the record. Refused while it could not be read, so an unreadable file is never
     /// written over.
     public func save() async throws {
@@ -73,6 +84,7 @@ public actor WorkspaceStore {
 
     /// Forgets everything (an organisation switch); `reload` reads the incoming one's.
     public func clear() {
+        organization = nil
         file = WorkspacesFile()
         holds = [:]
         members = [:]
@@ -133,6 +145,12 @@ public actor WorkspaceStore {
                 if let i = w.checkouts.firstIndex(where: { $0.repo == hold.repo }) { w.checkouts[i].lastHolder = root }
             }
         }
+        revision += 1
+    }
+
+    /// Nobody holds `hold` from now (its checkout went to Main).
+    public func unhold(_ hold: WorkspaceHold) {
+        holds[hold] = nil
         revision += 1
     }
 

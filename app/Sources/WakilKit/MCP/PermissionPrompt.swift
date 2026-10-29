@@ -99,6 +99,10 @@ public let operatorOnlyActions: Set<String> = [
     // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
     // push aside the operator's conversation.
     "session_new", "session_switch",
+    // Workspaces, piece 1: archiving, restoring, Bring to Main and moving a conversation between
+    // workspaces are the operator's (the card's ⋯ menu); an agent does not move work out from under
+    // another conversation, nor itself.
+    "workspace_archive", "workspace_restore", "workspace_bring_home", "conversation_move",
     // Conversations 3 of 3: nor end it.
     "session_close",
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
@@ -285,6 +289,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator switches between conversations — an agent must not "
             + "push aside the operator's conversation. Tell the operator which conversation the work "
             + "needs; they can switch to it with \u{2318}P."
+    case "workspace_archive", "workspace_restore", "workspace_bring_home", "conversation_move":
+        return "\(toolName): only the operator archives, restores and brings a workspace to Main, and moves a "
+            + "conversation between workspaces. Your writes already land in your own workspace; tell the "
+            + "operator what the work needs, and they can do it from the workspace's card."
     case "session_close":
         return "\(toolName): only the operator closes a conversation — an agent must not end the "
             + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."

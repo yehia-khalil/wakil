@@ -109,6 +109,9 @@ public struct WakilWiring: Sendable {
     /// window by `useActiveContext(of:)`, and read from `wakil-ctx` until then — which is
     /// all `--dispatch`, with no window, ever has.
     let gitRoots: GitRootsSource
+    /// Workspaces, piece 1: the record, the holds and the write rule every agent write action asks
+    /// (`registerEditorActions`'s `workspaces`). Pointed at the window by `useActiveContext(of:)`.
+    public let workspaces: WorkspaceRouter
     /// Clients pinned to an agent session's own place, for every call it makes, wherever the
     /// screen is (background agents, 2 of 4). Every handler `build` registers reaches Go
     /// through a `PlaceRoutedCaller` over the window's client and this pool. Not in
@@ -287,6 +290,8 @@ public struct WakilWiring: Sendable {
             await model?.cancelHandOff(conversation)
         })
         handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
+        // Workspaces, piece 1: the write rule asks the window about conversations and tells threads.
+        model.useWorkspaces(workspaces)
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -534,13 +539,20 @@ public struct WakilWiring: Sendable {
         // there is one, `wakil-ctx`'s until then.
         let gitRoots = GitRootsSource(context: contextClient)
         let gitStatus = GitStatus(git: routed(.git, gitClient), roots: { await gitRoots.current() })
+        // Workspaces, piece 1. Through the routed client, so an agent of another place reaches its
+        // own organisation's record and project (`routed`).
+        let workspaceStore = WorkspaceStore()
+        await workspaceStore.use(git: routed(.git, gitClient))
+        let workspaces = WorkspaceRouter(store: workspaceStore, git: routed(.git, gitClient))
         let gitWrites = GitWriteFlights()
         let ticketStore = EditorTicketStore(ticket: routed(.ticket, ticketClient))
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore,
-            organization: { await liveLookup.organization() }, handOff: handOffLookup)
+            organization: { await liveLookup.organization() }, handOff: handOffLookup, workspaces: workspaces)
+        // Workspaces, piece 1: the record's read, and the operator's archive, restore, Bring to Main and Move.
+        await registerWorkspaceActions(into: registry, router: workspaces, organization: { await liveLookup.organization() })
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         await registerBrowserPasswordActions(
@@ -619,6 +631,7 @@ public struct WakilWiring: Sendable {
             commitDrafts: commitDrafts,
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
+            workspaces: workspaces,
             placeClients: placeClients,
             confirmations: ConfirmationBroker(),
             resumes: resumes,

@@ -201,6 +201,9 @@ private let keptPerPlace: Set<String> = [
 ]
 
 private let orgIndependent: Set<String> = [
+    // Workspaces, piece 1: the router box. Its store keys the record by organisation itself
+    // (`WorkspaceStore.ensure(org:)` reads the incoming one's at its first write there).
+    "workspaceRouter",
     // The rail's collapse is the window's own, kept in `window.json`; no switch changes it.
     "railCollapsed",
     // Names: a landed name's journal line, written whichever organisation is on screen; awaited only by

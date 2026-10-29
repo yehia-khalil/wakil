@@ -25,6 +25,7 @@ App -> Registry
 App -> Speech
 App -> Terminal
 App -> Visual
+App -> Workspace
 Browser -> Harness
 Browser -> Layout
 Browser -> Panes

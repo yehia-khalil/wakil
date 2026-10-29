@@ -19,6 +19,8 @@ public protocol WorkspaceWriteRouting: Sendable {
     /// A branch switch or create: the root to run it in and the branch to ask for — a new branch off
     /// the target's tip when a working conversation holds the target.
     func routeSwitch(root: String, branch: String, action: String) async throws -> RoutedSwitch
+    /// The made checkouts of the calling agent's workspace; nil for the operator's dispatch.
+    func callerCheckouts() async -> [String]?
 }
 
 /// A switch as the write rule lets it run.

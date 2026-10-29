@@ -735,6 +735,10 @@ an agent's write finds its checkout.
 - `WorkspaceRouter.swift` — `WorkspaceRouter` (actor), the one `WorkspaceWriteRouting` (`Core/`): every
   agent write action asks it at its head; it carries out `decideWrite` through wakil-git, moves the
   conversation, and tells the thread through `WorkspaceRouterHooks` (installed by `WindowModel`).
+- `WorkspaceOperations.swift` — `WorkspaceListing`, and the router's `listing`, `archive`, `restore`,
+  `bringHome`, `move`.
+- `WorkspaceActions.swift` — `registerWorkspaceActions`: `workspace_list` (agent and operator),
+  `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only).
 
 Uses: `MCP`, `Registry`.
 Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`.

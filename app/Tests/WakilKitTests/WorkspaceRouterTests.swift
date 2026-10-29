@@ -53,6 +53,7 @@ private func router(
 ) async -> WorkspaceRouter {
     let store = WorkspaceStore()
     await store.use(load: { WorkspacesFile() }, save: { _ in })
+    await store.ensure(org: "initech")
     let r = WorkspaceRouter(store: store, git: git)
     let counter = IdCounter()
     await r.setIds { counter.next() }
@@ -239,4 +240,88 @@ private func asAgent<T: Sendable>(_ conversation: String, _ body: @Sendable () a
     #expect(failure?.contains("is not readable") == true)
     await #expect(throws: WorkspaceWriteError.self) { try await store.save() }
     #expect(await saved.lines.isEmpty)
+}
+
+// MARK: archive, restore, Bring to Main, Move
+
+private func gitWithSnapshot() -> RecordingToolCaller {
+    RecordingToolCaller(reply: { name, args in
+        guard case .object(let a) = args else { return .object([:]) }
+        func s(_ k: String) -> String { if case .string(let v)? = a[k] { v } else { "" } }
+        switch name {
+        case "git_status": return .object(["branch": .string("main"), "files": .array([])])
+        case "git_worktree_add":
+            return .object(["path": .string("/h/ws/\(s("project"))/\(s("slug"))/\((s("root") as NSString).lastPathComponent)"),
+                            "branch": .string(s("branch"))])
+        case "git_worktree_remove": return .object(["snapshot": .string("abc123")])
+        default: return .object([:])
+        }
+    })
+}
+
+@Test func archiveSnapshotsAndRemovesEveryCopyAndRestoreRemakesItAtTheNextWrite() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, states: ["c1": .idle], said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    let archived = try await r.archive(id, confirmed: false)
+    #expect(archived.archived)
+    #expect(archived.checkouts.first?.path == nil)
+    #expect(archived.checkouts.first?.snapshot == "refs/wakil/snapshots/fix-otp-guard-order/core")
+    let rm = try #require(await git.calls.first { $0.name == "git_worktree_remove" })
+    #expect(rm.arguments == .object(["root": .string("/p/core"), "path": .string("/h/ws/estate/fix-otp-guard-order/core"),
+                                     "snapshot": .string("refs/wakil/snapshots/fix-otp-guard-order/core")]))
+    let restored = try await r.restore(id)
+    #expect(!restored.archived)
+    // The conversation left with the archive; put back in, its next write re-makes the copy and applies the snapshot.
+    await r.store.move("c1", root: "root-c1", to: id)
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let apply = try #require(await git.calls.first { $0.name == "git_snapshot_apply" })
+    #expect(apply.arguments == .object(["root": .string("/h/ws/estate/fix-otp-guard-order/core"),
+                                        "ref": .string("refs/wakil/snapshots/fix-otp-guard-order/core")]))
+}
+
+@Test func archiveIsRefusedWhileAConversationInItWorksAndAsksWhenOneWaits() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, states: ["c1": .working], said: Said(), titles: ["c1": "backend"])
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    await #expect(throws: WorkspaceWriteError(description: "‘backend’ is working in ‘backend’; archive it once it stops")) {
+        try await r.archive(id, confirmed: false)
+    }
+    let waiting = await router(git: git, states: ["c1": .waiting], said: Said())
+    _ = try await asAgent("c1") { try await waiting.routePath("/p/core/a", action: "editor_save") }
+    let wid = try #require(await waiting.store.workspace(ofConversation: "c1")?.id)
+    await #expect(throws: WorkspaceWriteError.self) { try await waiting.archive(wid, confirmed: false) }
+    #expect(try await waiting.archive(wid, confirmed: true).archived)
+}
+
+@Test func bringToMainSwitchesMainsFolderToTheBranchWithTheCopysWork() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, states: ["c1": .idle], said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    let w = try await r.bringHome(id, repo: "core")
+    #expect(w.checkouts.first?.inMain == true)
+    #expect(w.checkouts.first?.path == nil)
+    let names = await git.calls.map(\.name)
+    #expect(Array(names.suffix(3)) == ["git_worktree_remove", "git_switch", "git_snapshot_apply"])
+    #expect(await r.store.holder(of: WorkspaceHold(workspace: id, repo: "/p/core")) == nil)
+}
+
+@Test func moveIsRefusedForAConversationHoldingACopyAndAllowedOtherwise() async throws {
+    let git = gitWithSnapshot()
+    let said = Said()
+    let r = await router(git: git, said: said)
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    await #expect(throws: WorkspaceWriteError.self) { try await r.move("c1", to: nil) }
+    let moved = try await r.move("c2", to: id)
+    #expect(moved?.id == id)
+    #expect(await r.store.workspace(ofConversation: "c2")?.id == id)
+    #expect(await said.lines.last?.1 == .moved(name: "Fix OTP guard order"))
+    let rows = await r.listing(project: "estate")
+    #expect(rows.count == 1)
+    #expect(rows.first?.holders["/p/core"] == "c1")
+    #expect(Set(rows.first?.live.keys.map { $0 } ?? []) == ["c1", "c2"])
 }

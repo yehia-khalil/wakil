@@ -112,6 +112,9 @@ public final class WindowModel {
     /// still in use after every harness change, so a client for a place no session holds any
     /// more is stopped. Nil in tests that route no call; production passes the wiring's.
     private let placeClients: PlaceClients?
+    /// Workspaces, piece 1: the write rule's router (`WakilWiring.workspaces`), set by
+    /// `useWorkspaces`; nil in a window built without one (tests), whose writes are not routed.
+    @ObservationIgnored var workspaceRouter: WorkspaceRouter?
     /// What an agent's place's own `wakil-ctx` says about it — its roots and production
     /// flags — read through `placeClients`. Nil exactly when that is: a window that routes no
     /// call has no place but its own to answer for.
@@ -167,6 +170,14 @@ public final class WindowModel {
     /// confine to. An agent session gets its own project's roots, and none when they cannot be
     /// read — never the window's, which belong to the project on screen.
     public func gitRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
+        // Workspaces, piece 1 (call 13): an agent also reaches its own workspace's checkouts.
+        let own = await workspaceRouter?.callerCheckoutRoots() ?? []
+        return await mainRootPaths(forCaller: caller) + own
+    }
+
+    /// Main's folders for a dispatch made for `caller`: an agent session's own project's roots,
+    /// and none when they cannot be read — never the window's, which belong to the project on screen.
+    func mainRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
         guard let placeContexts, let away = pinnedPlace(of: caller) else { return gitRootPaths }
         return (try? await placeContexts.context(for: away).rootPaths) ?? []
     }
