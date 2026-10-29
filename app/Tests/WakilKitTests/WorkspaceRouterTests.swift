@@ -57,6 +57,7 @@ private func router(
     let r = WorkspaceRouter(store: store, git: git)
     let counter = IdCounter()
     await r.setIds { counter.next() }
+    await r.setFolderExists { !$0.contains("/gone/") }
     await r.install(WorkspaceRouterHooks(
         conversation: { id in facts(id, title: titles[id] ?? "Fix OTP guard order") },
         states: { states },
@@ -357,4 +358,17 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     #expect(await r.store.holdsAny("c1"))
     await r.store.release("c1")
     #expect(!(await r.store.holdsAny("c1")))
+}
+
+@Test func aCopyDeletedOutsideWakilIsPrunedAndRemadeAtTheNextWrite() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, said: Said())
+    await r.store.add(Workspace(id: "w", name: "Gone", slug: "gone", project: "estate", environment: "staging",
+                                branch: "gone", checkouts: [WorkspaceCheckout(repo: "/p/core", path: "/h/ws/estate/gone/core", branch: "gone")]))
+    await r.store.move("c1", root: "root-c1", to: "w")
+    let path = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    #expect(path == "/h/ws/estate/gone/core/a")
+    let names = await git.calls.map(\.name)
+    #expect(names.contains("git_worktree_prune"))
+    #expect(names.contains("git_worktree_add"))
 }

@@ -75,6 +75,9 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     var hooks: WorkspaceRouterHooks?
     private var running = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
+    /// Whether a checkout's folder is on disk; overridable for tests.
+    var folderExists: @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    func setFolderExists(_ f: @escaping @Sendable (String) -> Bool) { folderExists = f }
     /// Overridable clock and ids, for tests.
     var newId: @Sendable () -> String = { UUID().uuidString.lowercased() }
 
@@ -195,6 +198,15 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         if let mine, !member {
             await store.move(c, root: facts.lineageRoot, to: mine.id)
             await hooks?.moved(c, mine, mine)
+        }
+        // A checkout deleted outside Wakil: git forgets it, and it is re-made below on its branch.
+        if let mine, let gone = mine.checkout(of: repo)?.path, !folderExists(gone) {
+            _ = try? await call("git_worktree_prune", ["root": .string(repo)])
+            await store.update(mine.id) { w in
+                if let i = w.checkouts.firstIndex(where: { $0.repo == repo }) { w.checkouts[i].path = nil }
+            }
+            try? await store.save()
+            return try await checkout(repo, conversation: c, facts: facts, action: action)
         }
         var mainBranch: String?
         if mine != nil, mine?.checkout(of: repo)?.path == nil {
