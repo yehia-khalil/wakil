@@ -25,12 +25,24 @@ import SwiftUI
 /// conversation is in one list only, so a past session resumed leaves Continue.
 /// With nothing live the column is not drawn, and the two columns stand as before.
 ///
+/// **Tickets in flight, its own block atop the Continue column** (ticket noticing): the
+/// organisation's tickets and keyless PRs in flight, most urgent first (`WindowModel.ticketNeedsRows`),
+/// five at most and then `All 7 in ⌘P  #`, each with its most urgent state in words — amber when it
+/// waits on the operator; a handed agent that finished reads "agent finished" (`landingTicketState`).
+/// **Tickets only** (walk 2026-10-29, §1 nothing twice): a handed ticket's conversation is Running's
+/// row, never this block's, and *Continue · newest first* is its own titled block under it, not
+/// inside it. A row runs `ticket_open` (`openTicket`), which opens or focuses the editor on Ticket;
+/// the branch never switches (Rule 6). With nothing in flight the block is not drawn; a source
+/// that could not be read is said under the rows, whole (Rule 8).
+///
 /// **Invariant 2.** Every control dispatches through `WindowModel` — a Running
 /// row through `switchToRunning` (`session_switch`), a
 /// Continue row through `continueSession` (`session_resume`), an Open row through
 /// `openPane`/`openTerminalPane` — the same actions ⌘P's rows run.
 struct Landing: View {
     let model: WindowModel
+    /// Opens ⌘P in open mode with `#` typed: every ticket in flight (`All N in ⌘P`).
+    let openTicketsPalette: () -> Void
 
     @State private var sessions: [PaletteItem] = []
     @State private var projects: [WindowModel.ProjectListing] = []
@@ -81,10 +93,10 @@ struct Landing: View {
                     threeColumns(running, widths: (248, 320, 248), spacing: 36)
                 }
             } else if hasProject {
-                twoColumns("Continue · newest first", { continueRows }, "Open", { openRows })
+                twoColumns({ continueColumn(width: $0) }, "Open", { openRows })
             } else {
                 // The empty workspace's one job is to get you a project.
-                twoColumns("Projects", { projectRows }, "Continue · newest first", { continueRows })
+                twoColumns("Projects", { projectRows }, { continueColumn(width: $0) })
             }
             Spacer(minLength: 0)
         }
@@ -107,6 +119,8 @@ struct Landing: View {
             readFor = place
             loaded = true
         }
+        // The Landing drawn: In flight read when the last read is over 60 s old (spec, *When it reads*).
+        .task(id: model.organization) { await model.ticketNeedsRead(force: false) }
     }
 
     private func threeColumns(
@@ -114,7 +128,7 @@ struct Landing: View {
     ) -> some View {
         HStack(alignment: .top, spacing: spacing) {
             column("Running", width: widths.0) { runningRows(running) }
-            column("Continue · newest first", width: widths.1) { continueRows }
+            continueColumn(width: widths.1)
             column("Open", width: widths.2) { openRows }
         }
     }
@@ -122,13 +136,28 @@ struct Landing: View {
     /// Two columns take 1048pt at the artboard's widths, wider than the ~920 a 1000pt window
     /// leaves the Landing (#57), so a narrower window takes them narrower, as `threeColumns` does.
     private func twoColumns<First: View, Second: View>(
-        _ firstLabel: String, _ first: @escaping () -> First,
-        _ secondLabel: String, _ second: @escaping () -> Second
+        _ first: @escaping (CGFloat) -> First, _ secondLabel: String, _ second: @escaping () -> Second
+    ) -> some View {
+        let pair = { (widths: (CGFloat, CGFloat), spacing: CGFloat) in
+            HStack(alignment: .top, spacing: spacing) {
+                first(widths.0)
+                column(secondLabel, width: widths.1) { second() }
+            }
+        }
+        return ViewThatFits(in: .horizontal) {
+            pair((620, 380), 48)
+            pair((500, 340), 36)
+        }
+    }
+
+    /// The empty workspace's pair: Projects, then the Continue column.
+    private func twoColumns<First: View, Second: View>(
+        _ firstLabel: String, _ first: @escaping () -> First, _ second: @escaping (CGFloat) -> Second
     ) -> some View {
         let pair = { (widths: (CGFloat, CGFloat), spacing: CGFloat) in
             HStack(alignment: .top, spacing: spacing) {
                 column(firstLabel, width: widths.0) { first() }
-                column(secondLabel, width: widths.1) { second() }
+                second(widths.1)
             }
         }
         return ViewThatFits(in: .horizontal) {
@@ -154,7 +183,8 @@ struct Landing: View {
     private static let columnMaxHeight: CGFloat = 460
 
     private func column<Content: View>(
-        _ label: String, width: CGFloat, @ViewBuilder content: () -> Content
+        _ label: String, width: CGFloat, maxHeight: CGFloat = Landing.columnMaxHeight,
+        @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(label.uppercased())
@@ -172,7 +202,7 @@ struct Landing: View {
                     .frame(width: width, alignment: .leading)
             }
             .frame(width: width)
-            .frame(maxHeight: Self.columnMaxHeight)
+            .frame(maxHeight: maxHeight)
             // `.fixedSize` on the vertical axis only: the ScrollView is
             // greedy by nature and would otherwise take the whole cap even
             // for two rows.
@@ -217,6 +247,123 @@ struct Landing: View {
                 }
             }
         }
+    }
+
+    // MARK: - Tickets in flight
+
+    /// The tickets in flight, most urgent first; read in `body`, so a new read redraws them.
+    private var tickets: [TicketNeedsRow] { model.ticketNeedsRows }
+
+    private static let continueLabel = "Continue · newest first"
+
+    /// The Continue column: **Tickets in flight** and **Continue · newest first** as two titled
+    /// blocks, one under the other (walk 2026-10-29) — each its own slab, the pair within the one
+    /// column's height cap: Continue scrolls in what the tickets leave.
+    @ViewBuilder
+    private func continueColumn(width: CGFloat) -> some View {
+        let tickets = tickets
+        if tickets.isEmpty {
+            column(Self.continueLabel, width: width) { continueRows }
+        } else {
+            VStack(alignment: .leading, spacing: Self.blockGap) {
+                column("Tickets in flight", width: width, maxHeight: .infinity) { ticketRows(tickets) }
+                column(Self.continueLabel, width: width, maxHeight: continueCap(tickets)) { continueRows }
+            }
+        }
+    }
+
+    /// The gap between the column's two blocks.
+    private static let blockGap: CGFloat = 22
+
+    /// What the Continue block may take under the tickets: the column's cap less the tickets block
+    /// as drawn — its label (~37 with its spacing), its slab's padding (16), each row (~37), the
+    /// `All N in ⌘P` line (~36) and each unread-source line (~26) — the gap, and Continue's own label.
+    /// Never under two rows' worth, so Continue is always there to scroll.
+    private func continueCap(_ tickets: [TicketNeedsRow]) -> CGFloat {
+        let landing = landingTicketRows(tickets)
+        let partial = ticketPartialLine(model.ticketNeeds?.partial ?? []).count
+        let block = 37 + 16 + CGFloat(landing.shown.count) * 37 + (landing.allLine == nil ? 0 : 36) + CGFloat(partial) * 26
+        return max(130, Self.columnMaxHeight - block - Self.blockGap - 37)
+    }
+
+    @ViewBuilder
+    private func ticketRows(_ rows: [TicketNeedsRow]) -> some View {
+        let landing = landingTicketRows(rows)
+        ForEach(Array(landing.shown.enumerated()), id: \.element.id) { index, row in
+            ticketRow(row, index: index)
+        }
+        if let all = landing.allLine {
+            HStack(spacing: 8) {
+                Text(all).font(.system(size: 12.5)).foregroundStyle(coolWhite.opacity(0.62))
+                // ⌘P's mode key for tickets, as `>` is for commands.
+                Text("#").font(.system(size: 11, design: .monospaced)).foregroundStyle(coolWhite.opacity(0.40))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 10)
+            .background(coolWhite.opacity(hovered == "tickets:all" ? 0.04 : 0))
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? "tickets:all" : nil }
+            }
+            .onTapGesture(perform: openTicketsPalette)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, openTicketsPalette)
+            .accessibilityIdentifier("landing.tickets.all")
+        }
+        // A source In flight could not read, whole, under the rows (Rule 8); the rest still drawn.
+        ForEach(ticketPartialLine(model.ticketNeeds?.partial ?? []), id: \.self) { line in
+            Text(line)
+                .font(.system(size: 11))
+                .foregroundStyle(coolWhite.opacity(0.62))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 6)
+                .accessibilityIdentifier("landing.tickets.partial")
+        }
+    }
+
+    /// `INI-142  Sign-in keeps the last organization` — a keyless PR as `#215 · api` — and its most
+    /// urgent state at the right: amber when it waits on the operator (hue only for meaning, §5).
+    private func ticketRow(_ row: TicketNeedsRow, index: Int) -> some View {
+        let hoverKey = "ticket:\(row.id)"
+        let open = { Task { await model.openTicket(ticketOpenParams(row)) } }
+        let state = landingTicketState(row)
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            // §6: identifiers are monospace, always.
+            Text(ticketNeedsRowName(row))
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(coolWhite.opacity(0.86))
+                .lineLimit(1)
+                .fixedSize()
+            Text(row.title)
+                .font(.system(size: 13))
+                .foregroundStyle(coolWhite.opacity(0.80))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            Text(state.words)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(state.needsYou ? Color(TerminalPalette.amber) : coolWhite.opacity(0.50))
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 11)
+        .background(coolWhite.opacity(hovered == hoverKey ? 0.04 : 0))
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? hoverKey : nil }
+        }
+        .onTapGesture { _ = open() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default) { _ = open() }
+        // Ordinal, as a Running row's: a check cannot know the order's keys ahead.
+        .accessibilityIdentifier("landing.tickets.\(index)")
+        .accessibilityValue(state.needsYou ? "needs you" : "")
     }
 
     // MARK: - Continue

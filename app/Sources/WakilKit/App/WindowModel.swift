@@ -325,6 +325,8 @@ public final class WindowModel {
     /// Every write to `status`, counted, so the palette can tell a failure its run wrote from
     /// an older one still showing (`paletteFailure(since:)`).
     @ObservationIgnored private var statusWrites = 0
+    /// Writes `status` from an extension in another file (a hand-off's failure, whole).
+    func say(_ text: String) { status = text }
 
     /// The gate's own sentence, when a pane's last `runFromQueryLine` was
     /// given something that is neither a read nor a mutation — keyed by
@@ -894,6 +896,16 @@ public final class WindowModel {
     /// The background fetch running now and its root, which an operator's write on that root cancels.
     var backgroundFetchCurrent: (root: String, cancel: () -> Void, done: Task<Void, Never>)?
     var appActive = true
+    /// Ticket noticing: the active organisation's last `ticket_in_flight` read — what the rail, the
+    /// Ticket label, the Landing and ⌘P count and list. Kept on a failed read; emptied by an org switch.
+    public private(set) var ticketNeeds: InFlightState?
+    /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.
+    var screenLocked = false
+    /// The 2-minute read while Wakil is in front and the screen unlocked (`updateTicketPoll`), its
+    /// interval, and its sleep (tests replace it).
+    var ticketPollTask: Task<Void, Never>?
+    let ticketPollInterval: Duration = .seconds(120)
+    var ticketPollSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -1516,6 +1528,10 @@ public final class WindowModel {
         // Conversations 3 of 3: a session of a conversation since closed acts for nothing.
         registry.setCallerRefusal { [weak self] action, caller in
             await self?.closedConversationRefusal(action, caller)
+        }
+        // Ticket noticing: a handed conversation's git writes are priced tighter.
+        registry.setHandedLookup { [weak self] caller in
+            await self?.handedPricing(for: caller)
         }
         registry.setScopeLookup { [weak self] caller in
             guard pinnedPlace(of: caller) != nil else { return nil }
@@ -2231,6 +2247,8 @@ public final class WindowModel {
             // Settings opens. Launch and an org switch both come here, so
             // this is the one that asks for a probe, after the canvas below.
             await capacity.refresh()
+            // Ticket noticing: the organisation's reply drafts, kept across quits and switches.
+            ticketLoadDrafts()
             contextRead = true
         } catch {
             status = "context: \(error)"
@@ -2303,6 +2321,18 @@ public final class WindowModel {
         // wherever the environment can have changed — launch, a project
         // switch, an environment switch — which is exactly this one place.
         await refreshDatabases()
+        // Ticket noticing: the window is ready in an organisation — its first context read with one.
+        // A switch does this at its own end (`setOrganization`), once its clients point at the new org.
+        if !switching, !organization.isEmpty, let ticket, await ticket.inFlightAt() == nil { ticketOrganizationReady() }
+        updateTicketPoll()
+    }
+
+    /// Ticket noticing: copies the store's last In flight read into `ticketNeeds` (here, where its
+    /// setter is).
+    func mirrorTicketNeeds() async {
+        guard let ticket else { return }
+        let needs = await ticket.lastInFlight()
+        if needs != ticketNeeds { ticketNeeds = needs }
     }
 
     /// Resets what belongs to the organisation itself, and nothing that belongs to a place in
@@ -2467,6 +2497,10 @@ public final class WindowModel {
         editorReviews = .empty
         editorTicket = .empty
         ticketBranches = [:]
+        // Ticket noticing: the outgoing org's needs go, and its 2-minute read stops; the switch reads
+        // the incoming org and starts the read again (`ticketOrganizationReady`).
+        ticketNeeds = nil
+        stopTicketPoll()
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
@@ -4773,6 +4807,8 @@ public final class WindowModel {
         if reviews != editorReviews { editorReviews = reviews }
         let ticketView = await panes.editorTicketView()
         if ticketView != editorTicket { editorTicket = ticketView }
+        // A read a write or ↻ started lands here too: the needs follow the store's last In flight.
+        await mirrorTicketNeeds()
         await readReviewHeads()
     }
 
@@ -5375,6 +5411,15 @@ public final class WindowModel {
     public func openPane(kind: String) async -> Bool {
         await enterConversation()
         return await dispatchLayout("pane_open", .object(["kind": .string(kind)])) != nil
+    }
+
+    /// A Landing or ⌘P ticket row (`ticketOpenParams`): work begun, as a pane opening is, then
+    /// `ticket_open` — the editor pane opened or focused on Ticket, that ticket shown, the branch
+    /// never switched (Rule 6). A refusal is in `status`.
+    public func openTicket(_ params: JSONValue) async {
+        await enterConversation()
+        _ = await dispatchLayout("ticket_open", params)
+        await refreshPanes()
     }
 
     /// Marks work begun and brings the canvas in line with the conversation
@@ -6996,16 +7041,17 @@ public final class WindowModel {
             keymap: keymap)
     }
 
-    /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
+    /// The root list for `mode`: ⌘K's catalog for the context now, ⌘P's sources, or — after a
+    /// leading `#` — the tickets in flight alone.
     ///
     /// **Every call is a new generation** (P7 a): a source that answers after this returns
     /// reaches `onLate` with the whole list — but only while this is still the latest build and
     /// the palette has not closed. A ⌘P whose tables came from the cache asks `wakil-db` again
     /// in the background (P7 d), and the fresh tables arrive the same way.
     public func paletteRootEntries(
-        mode: PaletteMode, onLate: @escaping @Sendable ([PaletteEntry]) -> Void
+        mode: PaletteMode, line: String = "", onLate: @escaping @Sendable ([PaletteEntry]) -> Void
     ) async -> [PaletteEntry] {
-        await paletteRoot(mode: mode) { onLate($0.rows) }.rows
+        await paletteRoot(mode: mode, line: line) { onLate($0.rows) }.rows
     }
 
     /// One root list and the generation it was built under: what the controller holds on screen
@@ -7018,8 +7064,12 @@ public final class WindowModel {
     /// `paletteRootEntries`, with each delivery's generation. **The rows are stamped as they are
     /// delivered** — here, and for a late source or a table refresh in `paletteLate` and
     /// `paletteTablesRefreshed` — never when the build begins.
+    ///
+    /// `line` is the line as typed, for the ticket source's rows (`TicketSource`). In `.tickets` mode the
+    /// rows come from the last In flight read at once; a read over 60 s old is made, and its rows land
+    /// late through `paletteLate`, as a slow source's do.
     public func paletteRoot(
-        mode: PaletteMode, onLate: @escaping @Sendable (PaletteRoot) -> Void
+        mode: PaletteMode, line: String = "", onLate: @escaping @Sendable (PaletteRoot) -> Void
     ) async -> PaletteRoot {
         paletteGeneration += 1
         let generation = paletteGeneration
@@ -7029,9 +7079,20 @@ public final class WindowModel {
         if generation == paletteGeneration {
             paletteBuilding = (generation, identity, context)
         }
-        guard mode == .open else {
+        if mode == .commands {
             let rows = CommandCatalog.entries(for: context)
             paletteDelivered(generation)
+            return PaletteRoot(generation: generation, rows: rows)
+        }
+        if mode == .tickets {
+            let rows = await paletteTicketSource(line: "#").entries()
+            paletteDelivered(generation)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.ticketNeedsRead(force: false)
+                let fresh = await self.paletteTicketSource(line: "#").entries()
+                if fresh != rows { self.paletteLate(fresh, generation: generation, onLate: onLate) }
+            }
             return PaletteRoot(generation: generation, rows: rows)
         }
 
@@ -7041,7 +7102,7 @@ public final class WindowModel {
         let late: @Sendable ([PaletteEntry]) -> Void = { [weak self] rows in
             Task { @MainActor in self?.paletteLate(rows, generation: generation, onLate: onLate) }
         }
-        let rows = await openModeEntries(paletteOpenSources(tables: tables?.source), onLate: late)
+        let rows = await openModeEntries(paletteOpenSources(tables: tables?.source, line: line), onLate: late)
         if generation == paletteGeneration, paletteLatest?.generation != generation {
             paletteLatest = (generation, rows)
         }
@@ -7372,6 +7433,14 @@ public final class WindowModel {
             apiSendRequestToken += 1
             apiSendRequests[value("pane")] = apiSendRequestToken
             return nil
+        case "window.ticketHandOff":
+            // ⌘↩ on a ticket or PR row: the ticket opens on its Ticket view, then the hand-off popover
+            // opens from its header (`ticket_hand_off_open`).
+            guard case .object(let o) = params, let open = o["open"], let handOff = o["handOff"] else {
+                return "window.ticketHandOff needs open and handOff"
+            }
+            if let error = await paletteDispatch("ticket_open", open, mark: mark) { return error }
+            return await dispatchLayout("ticket_hand_off_open", handOff) != nil ? nil : paletteFailure(since: mark)
         case "ctx_set_environment":
             return await setEnvironment(value("name")) ? nil : paletteFailure(since: mark)
         case "ctx_set_project":
@@ -7399,14 +7468,15 @@ public final class WindowModel {
             // A changed file names no pane (3b-iii): the editor pane it went to is the one acted on,
             // by `editor_changes_select`'s own rule — the focused editor pane, else the first.
             let named = optionalString(params, "pane") ?? optionalString(params, "id")
-                ?? (name == "editor_changes_select" ? focusedEditorPane() : nil)
+                ?? (name == "editor_changes_select" || name == "ticket_open" ? focusedEditorPane() : nil)
             return await focusActedOn(since: before, named: named, mark: mark)
         }
     }
 
     /// The palette's actions that open a pane when they name none. `editor_changes_select` (3b-iii)
     /// opens an editor pane when there is none, as the Git pane it replaced was opened.
-    private static let paletteOpensAPane: Set<String> = ["db_read_table", "api_open", "editor_changes_select"]
+    /// `ticket_open` opens one the same way when there is none.
+    private static let paletteOpensAPane: Set<String> = ["db_read_table", "api_open", "editor_changes_select", "ticket_open"]
 
     /// Drops a Send request whose pane has closed.
     private func pruneApiSendRequests() {
@@ -7487,8 +7557,8 @@ public final class WindowModel {
         }
     }
 
-    /// ⌘P's sources, in group order.
-    private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
+    /// ⌘P's sources, in group order. The ticket source answers nothing for an empty `line`.
+    private func paletteOpenSources(tables: TablesSource?, line: String) -> [any PaletteSource] {
         // Read now, on the main actor: the live set as the palette opens.
         let running = liveConversationRows()
         var sources: [any PaletteSource] = [
@@ -7510,6 +7580,7 @@ public final class WindowModel {
         if let fileSource, editorFocused { sources.append(fileSource) }
         sources.append(changed)
         if let fileSource, !editorFocused { sources.append(fileSource) }
+        sources.append(paletteTicketSource(line: line))
         sources.append(ItemsSource.projects(
             organisation: { [weak self] in await self?.organization ?? "" },
             read: { [weak self] org in await self?.currentOrganisationProjects(org) ?? ([], nil) }))
@@ -8898,7 +8969,31 @@ public final class WindowModel {
         // Read BEFORE the swap and before `session_record_parent` below
         // adds this fork to the map, so it is the parent's own lineage
         // being asked about and not one this call has already altered.
-        let inheritedRoot = await lineageRootOfSession(parent, as: caller)
+        let lineage = await lineageOfSession(parent, as: caller)
+        let inheritedRoot = lineage.root
+        // F16: a session from another conversation may be a handed one's. It is handed with May
+        // push off from before its session is installed — before any message can reach it — and
+        // the carry below then sets what the stored hand-off says, or lifts it when there is none.
+        // A lineage that could not be read keeps the mark: whose session it is cannot be told. So
+        // does a window with no `wakil-ticket` client (`carryHandOff`). A session of this
+        // conversation's own chain is its own, handed or not. A resume that stops short puts back
+        // what was there.
+        let handOffFrom: String?, lineageUnread: String?, recordedParent: Bool
+        switch lineage {
+        case .root(let root) where root != parent: (handOffFrom, lineageUnread, recordedParent) = (root, nil, true)
+        // A session with no recorded parent is its own root — but it may be a later session of a
+        // handed conversation whose `session_record_parent` failed, so finding no hand-off from it
+        // cannot lift the mark.
+        case .root, .none: (handOffFrom, lineageUnread, recordedParent) = (parent, nil, false)
+        case .unread(let why): (handOffFrom, lineageUnread, recordedParent) = (nil, why, false)
+        }
+        let provisional = agent.handoff == nil && !agent.sessionIds.contains(parent)
+            && (lineageUnread != nil || handOffFrom != agent.id)
+        var carried = false
+        if provisional {
+            agent.handoff = PlaceAgentHandoff(key: nil, pr: nil, thread: nil, root: thread.cwd, branch: "", mayPush: false)
+        }
+        defer { if provisional, !carried { agent.handoff = nil } }
 
         do {
             try await next.start(
@@ -8969,6 +9064,17 @@ public final class WindowModel {
             name: "session_record_parent",
             params: .object(["child": .string(child), "parent": .string(parent)]),
             origin: .ui, caller: caller, confirmation: nil)
+        // F16: a session of a handed conversation resumed into another conversation carries
+        // its hand-off there, so the gate keeps applying. The conversation's own resumes and forks
+        // keep its id, and with it the hand-off.
+        if provisional {
+            carried = true
+            if let handOffFrom {
+                await carryHandOff(from: handOffFrom, to: agent, root: thread.cwd, recordedParent: recordedParent)
+            } else {
+                noteHandOffUnknown(lineageUnread ?? "no answer", in: agent)
+            }
+        }
         // Last, and only once the swap has actually happened: the canvas
         // follows the conversation. A resume that returned early above
         // never reaches here, so a refused resume leaves the arrangement
@@ -9009,17 +9115,31 @@ public final class WindowModel {
     /// `nil` means the project's seed — the same thing a brand-new
     /// conversation gets, which is a state the operator already
     /// understands.
-    private func lineageRootOfSession(_ id: String, as caller: DispatchCaller) async -> String? {
-        guard let result = try? await registry.dispatch(
-            name: "session_get", params: .object(["id": .string(id)]),
-            origin: .ui, caller: caller, confirmation: nil)
-        else { return nil }
+    ///
+    /// **Its answer says which nil it is** (F16): `SessionLineage.none` is a well-formed reply with
+    /// an empty root, `unread` a call that failed or a reply with no string `lineageRoot`. The
+    /// lineage root is nil for both, as before; a hand-off's carry needs the difference, since an
+    /// unread lineage may be a handed conversation's.
+    func lineageOfSession(_ id: String, as caller: DispatchCaller) async -> SessionLineage {
+        let result: JSONValue
+        do {
+            result = try await registry.dispatch(
+                name: "session_get", params: .object(["id": .string(id)]),
+                origin: .ui, caller: caller, confirmation: nil)
+        } catch {
+            return .unread("session_get: \(error)")
+        }
         guard case .object(let object) = result,
             case .object(let structured)? = object["structuredContent"],
-            case .string(let root)? = structured["lineageRoot"],
-            !root.isEmpty
-        else { return nil }
-        return root
+            case .string(let root)? = structured["lineageRoot"]
+        else { return .unread("session_get answered no lineage root") }
+        return root.isEmpty ? .none : .root(root)
+    }
+
+    /// `lineageOfSession`'s answer: a root, a well-formed none, or why it could not be read.
+    enum SessionLineage: Equatable {
+        case root(String), none, unread(String)
+        var root: String? { if case .root(let r) = self { r } else { nil } }
     }
 
     /// TEST-ONLY: the session id `autoResumeAfterSwitch()` last decided to
@@ -9415,6 +9535,10 @@ public final class WindowModel {
         // the orgs would be written into a thread that never changed: each place's thread is its
         // own, and the context line already says where the operator is.
         await rebuildQuickTasks()
+        // Ticket noticing: the incoming org's stale hand-offs end, its In flight is read, and its
+        // 2-minute read starts.
+        ticketOrganizationReady()
+        updateTicketPoll()
     }
 
     /// One chip per conversation not on screen that has something to show — in another place,
@@ -9436,7 +9560,8 @@ public final class WindowModel {
                 else { return nil }
                 return AgentChip(
                     place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
-                    conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1])
+                    conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1],
+                    handoffNote: agent.handoffFailure)
             }
             .sorted {
                 ($0.place.organization, $0.place.project, $0.place.environment, $0.ordinal)
@@ -9466,7 +9591,7 @@ public final class WindowModel {
                         waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
                         working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
-                    isProduction: agent.productionEnvironment)
+                    isProduction: agent.productionEnvironment, handoff: agent.handoff)
             }
     }
 
@@ -9644,7 +9769,7 @@ public final class WindowModel {
     /// `placeRemoved`: the place itself was removed (`closeConversations`), so its arrangement is
     /// not written back under a name that is gone, and the place shows nothing after it — neither
     /// its next conversation, which closes too, nor its Landing.
-    private func endConversation(_ agent: PlaceAgent, placeRemoved: Bool = false) async {
+    func endConversation(_ agent: PlaceAgent, placeRemoved: Bool = false) async {
         guard conversations[agent.id] === agent, closing.insert(agent.id).inserted else { return }
         defer { closing.remove(agent.id) }
         if closeQuestion?.conversation == agent.id { closeQuestion = nil }
@@ -9683,6 +9808,8 @@ public final class WindowModel {
         }
         if let scope { await releaseCanvas(scope) }
         retainAgentPlace()
+        // Ticket noticing: its hand-off ends with it.
+        if agent.handoff != nil { await endHandOff(of: agent) }
         onConversationClosed?(agent.id)
     }
 
@@ -9996,6 +10123,22 @@ public final class WindowModel {
             defer { landingBecoming = nil }
             tellScreenChange()
         }
+        return created
+    }
+
+    /// `agent(for:)`'s off-screen sibling (ticket noticing, Task 9): a new conversation in `place`,
+    /// on `providerId`, listed and given its chip, but shown nowhere — no place's screen names it,
+    /// nothing reserved is taken and the screen is not told of a change — so a hand-off starts
+    /// beside whatever the operator is doing (Invariant 5). Its first `send` starts its session.
+    func backgroundAgent(in place: Place, providerId: String) -> PlaceAgent {
+        let id = UUID().uuidString
+        let created = PlaceAgent(
+            id: id, place: place, providerId: providerId,
+            mirror: TerminalMirrorFeed(panes: panes, layout: layout), ordinal: conversationsMade)
+        conversationsMade += 1
+        conversations[id] = created
+        conversationOrder.append(id)
+        refreshChipProduction(of: created)
         return created
     }
 
@@ -10697,6 +10840,8 @@ public final class WindowModel {
             agent.turnInFlight = false
             agent.noteResult()
             markUnseen(failed: isError, for: agent)
+            // A handed agent's turn ending may have pushed or drafted: its ticket is read again.
+            if agent.handoff != nil { Task { [weak self] in await self?.handOffTurnEnded(agent) } }
         }
         // Names: the first clean exchange — its reply's start, then the one ask.
         switch event {
@@ -11048,6 +11193,7 @@ public final class WindowModel {
     public func shutdown() async {
         socketsClosed = true
         stopBackgroundFetch()
+        stopTicketPoll()
         stopBrowserPullRequestsLoop()
         for agent in conversations.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()

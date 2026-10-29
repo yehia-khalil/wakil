@@ -577,6 +577,9 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
     /// The In flight or Waiting on you row `ticketShown` was picked from — its root and branch, since
     /// two rows can carry one key — nil for a key picked alone. Never saved, as `ticketShown`.
     public var ticketShownAt: TicketShownAt?
+    /// The pull request `ticket_open` named, whose section the Ticket view scrolls into view; nil
+    /// for none. Never saved, as `ticketShown`.
+    public var ticketScrollPR: Int?
     public static let initial = EditorColumnState(shown: false, view: .files, width: 240, open: [])
     public init(shown: Bool, view: EditorColumnView, width: Double, open: [String],
                 changesClosed: Set<String> = [], changesHighlight: EditorChangesRow? = nil) {
@@ -602,11 +605,19 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
     }
 }
 
-/// Where a ticket shown from In flight is read: its row's root and branch.
+/// Where a ticket shown from In flight is read: its row's root and branch. A row no project holds
+/// has neither: it is named by its PR's repository and number instead, and nothing is read for it.
 public struct TicketShownAt: Sendable, Equatable, Hashable {
     public let root: String
     public let branch: String
-    public init(root: String, branch: String) { self.root = root; self.branch = branch }
+    public let repo: String
+    public let pr: Int
+    public init(root: String, branch: String, repo: String = "", pr: Int = 0) {
+        self.root = root; self.branch = branch; self.repo = repo; self.pr = pr
+    }
+    /// What a keyless row's branch read is kept by in the store: `<root>:<branch>` (git names no
+    /// branch with a colon), else `<repo>#<pr>` for a row no project holds — never a ticket key.
+    public var id: String { root.isEmpty ? "\(repo)#\(pr)" : "\(root):\(branch)" }
 }
 
 /// Where the canvas draws a pane: its frame, moved by a live drag only while

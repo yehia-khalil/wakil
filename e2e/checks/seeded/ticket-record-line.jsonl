@@ -20,7 +20,7 @@
 {"expect":{"tree":"contains","text":"Log in with a token"}}
 {"expect":{"tree":"contains","text":"Tokens live in the Keychain"}}
 {"expect":{"tree":"contains","text":"Invariant 4"}}
-{"expect":{"tree":"contains","text":"1 decision"}}
+{"expect":{"tree":"contains","text":"Decisions 1"}}
 {"do":{"click":"editor.ticket.add"}}
 {"do":{"click":"editor.ticket.add:notDone"}}
 {"expect":{"focus":"editor.ticket.new:notDone"}}
@@ -28,7 +28,7 @@
 {"do":{"focus":"window.composer"}}
 {"expect":{"focus":"window.composer"}}
 {"expect":{"tree":"contains","text":"Wire the token refresh"}}
-{"expect":{"tree":"contains","text":"1 not done"}}
+{"expect":{"tree":"contains","text":"Not done 1"}}
 {"do":{"type":{"into":"editor.ticket.line:decisions:d1","text":"Tokens live in the Keychain, never in a file"}}}
 {"do":{"type":{"into":"editor.ticket.line:decisions:d1:why","text":"Invariant 4, the org boundary"}}}
 {"do":{"focus":"window.composer"}}

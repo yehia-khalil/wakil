@@ -16,7 +16,7 @@
 {"expect":{"pane":"editor-1","field":"ticket.marked","equals":"INI-142"}}
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].number","equals":"212"}}
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].openThreads","equals":"2"}}
-{"expect":{"tree":"contains","text":"INI-142 Log in with a token In Progress · waiting on reviewer, you"}}
+{"expect":{"tree":"contains","text":"INI-142 Log in with a token In Progress"}}
 {"expect":{"tree":"contains","text":"#212  ini-142-login → main      open · checks 1/2 · 1 failing"}}
 {"expect":{"tree":"contains","text":"✗ lint"}}
 {"expect":{"tree":"contains","text":"no Jira site configured for org \"e2e-fixture\" — set one with: wakil org set e2e-fixture --jira-base https://<site>.atlassian.net"}}

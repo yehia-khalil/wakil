@@ -170,3 +170,28 @@ private func lit(_ title: String, _ words: [String], subtitle: String = "") -> [
                              kindLabel: "file", verb: "open", action: .focusPane(id: "y"))
     #expect(PaletteSearch.rank([dimmed, plain], query: "env").map(\.title) == ["xenv.txt", "env.php"])
 }
+
+@Suite struct PaletteSearchTicketTests {
+    /// Words put a ticket after every matching file and table and before projects, even when a
+    /// project row outscores it.
+    @Test func wordQueryPlacesTicketsAfterFilesBeforeProjects() async {
+        let file = PaletteEntry(id: "editorfile:/src/api/login_org.go", group: .resources, title: "login_org.go",
+                                subtitle: "internal · api", kindLabel: "file", verb: "open",
+                                action: .openInEditor(path: "/src/api/login_org.go"))
+        let project = PaletteEntry(id: "project:login-org", group: .projects, title: "login portal",
+                                   subtitle: "org", kindLabel: "project", verb: "switch to", action: .setProject("login-org"))
+        let session = PaletteEntry(id: "session:s1", group: .sessions, title: "login work", subtitle: "org",
+                                   kindLabel: "session", verb: "switch to", action: .resumeSession("s1"))
+        let tickets = await paletteTicketSource("login org").entries()
+        let ticket = try! #require(tickets.first { $0.id == "ticket:INI-142" })
+        #expect(ticket.tier == .belowResources)
+        // The project outscores the ticket by words alone.
+        let w = PaletteSearch.words("login org")
+        #expect(PaletteSearch.score(project, words: w)! > PaletteSearch.score(ticket, words: w)!)
+        let ranked = PaletteSearch.rank([project, session] + tickets + [file], query: "login org").map(\.id)
+        #expect(ranked == [file.id, "ticket:INI-142", project.id, session.id])
+        // With no file matching, the ticket still comes before projects.
+        let noFile = PaletteSearch.rank([project, session] + tickets, query: "login org").map(\.id)
+        #expect(noFile == ["ticket:INI-142", project.id, session.id])
+    }
+}

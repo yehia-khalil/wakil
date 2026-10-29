@@ -384,6 +384,7 @@ at narrow widths.
 
 - **⌥↓/⌥↑ step threads only while focus is in a review box or the Ticket column**; in the text
   they stay Monaco's Move Line Down / Up.
+- **2026-10-28:** a ticket picked from In flight on a branch the root has not checked out draws no boxes in the working tree's files (their lines are another branch's) — except: a picked ticket's thread opens at its PR head, read-only (blame's commit tab, its box on GitHub's line; a head not here says so whole, nothing fetched).
 
 ### Plan pre-flight (2026-10-26, my calls)
 

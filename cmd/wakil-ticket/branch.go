@@ -122,25 +122,89 @@ type TicketBranch struct {
 }
 
 // InFlightRow is one row of In flight or Waiting on you. State is the row's one state in words
-// ("#212 · 2 threads", "checks failing"), composed here for the window to show as is.
+// ("#212 · 2 threads", "checks failing"), composed here for the window to show as is; a Waiting on
+// you row is one PR, and State names its most urgent reason. Key is "" for a PR that carries no
+// ticket. Repo is <host>/<owner>/<repo>; URL the PR's. Root is the first root on Repo, and Project
+// the project holding it; both "" for a repository no project holds. Handoffs are the ticket's
+// (or a keyless PR's) open hand-offs; a ticket with one and no other row is In flight, State "agent".
+//
+// The numbers behind the words, so the window counts without parsing them: Threads are the
+// waiting threads' ids, Failing the failing checks' names on the last commit, Review whether the
+// PR asks for the viewer's review, Activity (RFC 3339) the newest of the PR's last change and the
+// waiting threads' last comments, and Count the items they make — one per thread, one for any
+// failing check, one for the review request.
 type InFlightRow struct {
-	Key    string `json:"key"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
-	State  string `json:"state"`
-	Root   string `json:"root"`
-	Branch string `json:"branch"`
-	PR     int    `json:"pr"`
+	Key      string                 `json:"key"`
+	Title    string                 `json:"title"`
+	Status   string                 `json:"status"`
+	State    string                 `json:"state"`
+	Root     string                 `json:"root"`
+	Branch   string                 `json:"branch"`
+	Project  string                 `json:"project"`
+	Repo     string                 `json:"repo"`
+	URL      string                 `json:"url"`
+	PR       int                    `json:"pr"`
+	Threads  []string               `json:"threads"`
+	Failing  []string               `json:"failing"`
+	Review   bool                   `json:"review"`
+	Activity string                 `json:"activity"`
+	Handoffs []wakilcore.HandoffRef `json:"handoffs"`
+	Count    int                    `json:"count"`
 }
 
+// InFlight's Count is the items of Waiting on you: the sum of its rows' counts.
 type InFlight struct {
 	WaitingOnYou []InFlightRow `json:"waitingOnYou"`
 	InFlight     []InFlightRow `json:"inFlight"`
 	Partial      []SourceNote  `json:"partial"`
+	Count        int           `json:"count"`
+}
+
+// newRow is a row with every list an array.
+func newRow(r InFlightRow) InFlightRow {
+	if r.Threads == nil {
+		r.Threads = []string{}
+	}
+	if r.Failing == nil {
+		r.Failing = []string{}
+	}
+	if r.Handoffs == nil {
+		r.Handoffs = []wakilcore.HandoffRef{}
+	}
+	return r
+}
+
+// newest is the later of two RFC 3339 times; one that does not parse loses.
+func newest(a, b string) string {
+	ta, ea := time.Parse(time.RFC3339, a)
+	tb, eb := time.Parse(time.RFC3339, b)
+	switch {
+	case ea != nil:
+		if eb != nil {
+			return a
+		}
+		return b
+	case eb != nil:
+		return a
+	case tb.After(ta):
+		return b
+	}
+	return a
 }
 
 // orgRoots is every root of every project of the organization.
 func orgRoots(org string) []string {
+	var roots []string
+	for _, r := range orgProjectRoots(org) {
+		roots = append(roots, r.Root)
+	}
+	return roots
+}
+
+type projectRoot struct{ Project, Root string }
+
+// orgProjectRoots is orgRoots with the project (its registry name) that holds each root.
+func orgProjectRoots(org string) []projectRoot {
 	reg, err := wakilcore.LoadRegistryFor(org)
 	if err != nil {
 		return nil
@@ -150,13 +214,15 @@ func orgRoots(org string) []string {
 		names = append(names, n)
 	}
 	sortStrings(names)
-	var roots []string
+	var roots []projectRoot
 	for _, n := range names {
 		p, err := wakilcore.LoadProject(reg[n].Path)
 		if err != nil {
 			continue
 		}
-		roots = append(roots, wakilcore.ProjectRootPaths(wakilcore.Resolved{Org: org, Project: p, ProjectPath: reg[n].Path})...)
+		for _, root := range wakilcore.ProjectRootPaths(wakilcore.Resolved{Org: org, Project: p, ProjectPath: reg[n].Path}) {
+			roots = append(roots, projectRoot{Project: n, Root: root})
+		}
 	}
 	return roots
 }
@@ -611,7 +677,9 @@ func contains(s []string, v string) bool {
 }
 
 // readInFlight is ticket_in_flight: each root's local branches that carry a ticket, and per
-// GitHub host one search of the operator's open PRs and the PRs asking for their review.
+// GitHub host one search of the operator's open PRs and the PRs asking for their review. Waiting
+// on you is one row per PR (by repository and number), the authored PRs first, then the review
+// requests, in the order first seen; a PR seen from two roots is one row, counted once.
 func readInFlight(ctx context.Context, org string) InFlight {
 	ctx, cancel := context.WithTimeout(ctx, readBudget)
 	defer cancel()
@@ -626,9 +694,13 @@ func readInFlight(ctx context.Context, org string) InFlight {
 	var rows []rowAt
 	owners := map[string]map[string]bool{} // GitHub host -> owners
 	rootOf := map[string]string{}          // repo key -> the first root on it
+	projectOf := map[string]string{}       // root -> the project holding it
 	var hosts []string
-	for _, root := range orgRoots(org) {
-		r, err := openRoot(ctx, org, root)
+	for _, pr := range orgProjectRoots(org) {
+		if _, ok := projectOf[pr.Root]; !ok {
+			projectOf[pr.Root] = pr.Project
+		}
+		r, err := openRoot(ctx, org, pr.Root)
 		if err != nil {
 			continue
 		}
@@ -656,7 +728,8 @@ func readInFlight(ctx context.Context, org string) InFlight {
 				continue
 			}
 			jira.start(key)
-			rows = append(rows, rowAt{row: InFlightRow{Key: key, State: "local branch", Root: r.Root, Branch: b.Name}, repo: r.RepoKey})
+			rows = append(rows, rowAt{row: newRow(InFlightRow{Key: key, State: "local branch", Root: r.Root, Branch: b.Name,
+				Project: pr.Project, Repo: r.RepoKey}), repo: r.RepoKey})
 		}
 	}
 
@@ -698,6 +771,41 @@ func readInFlight(ctx context.Context, org string) InFlight {
 		return ""
 	}
 	var waiting []InFlightRow
+	waitingAt := map[string]int{} // "<repo>#<number>" -> its row in waiting
+	// wait adds p's reasons to its one Waiting on you row, making the row the first time.
+	wait := func(host string, p wakilcore.PullRequest, threads, failing []string, review bool, activity string) {
+		repo := repoOfPR(host, p.URL)
+		id := fmt.Sprintf("%s#%d", repo, p.Number)
+		i, ok := waitingAt[id]
+		if !ok {
+			key := prKey(p)
+			if key != "" {
+				jira.start(key)
+			}
+			root := rootOf[repo]
+			project := ""
+			if root != "" {
+				project = projectOf[root]
+			}
+			i = len(waiting)
+			waitingAt[id] = i
+			waiting = append(waiting, newRow(InFlightRow{Key: key, Title: p.Title, Root: root, Branch: p.Head, Project: project,
+				Repo: repo, URL: p.URL, PR: p.Number}))
+		}
+		row := &waiting[i]
+		for _, t := range threads {
+			if !contains(row.Threads, t) {
+				row.Threads = append(row.Threads, t)
+			}
+		}
+		for _, c := range failing {
+			if !contains(row.Failing, c) {
+				row.Failing = append(row.Failing, c)
+			}
+		}
+		row.Review = row.Review || review
+		row.Activity = newest(row.Activity, activity)
+	}
 	for i, host := range hosts {
 		res := results[i]
 		if res.note != nil {
@@ -715,44 +823,37 @@ func readInFlight(ctx context.Context, org string) InFlight {
 			for j := range rows {
 				if rows[j].repo == repo && rows[j].row.Branch == p.Head {
 					rows[j].row.PR, rows[j].row.State = p.Number, state
+					rows[j].row.URL, rows[j].row.Activity = p.URL, p.UpdatedAt
 					matched = true
 				}
 			}
 			if !matched && key != "" {
-				rows = append(rows, rowAt{row: InFlightRow{Key: key, State: state, Root: root, Branch: p.Head, PR: p.Number}, repo: repo})
+				rows = append(rows, rowAt{row: newRow(InFlightRow{Key: key, State: state, Root: root, Branch: p.Head, PR: p.Number,
+					Project: projectOf[root], Repo: repo, URL: p.URL, Activity: p.UpdatedAt}), repo: repo})
 			}
 			// The viewer wrote the PR, so their login is its author.
-			threads, failing := 0, false
+			var threads, failing []string
+			activity := p.UpdatedAt
 			for _, t := range p.Threads {
 				if t.Resolved || t.Outdated || len(t.Comments) == 0 {
 					continue
 				}
-				if t.Comments[len(t.Comments)-1].Author != p.Author {
-					threads++
+				if last := t.Comments[len(t.Comments)-1]; last.Author != p.Author {
+					threads = append(threads, t.ID)
+					activity = newest(activity, last.CreatedAt)
 				}
 			}
 			for _, c := range p.Checks {
 				if c.State == "failure" {
-					failing = true
+					failing = append(failing, c.Name)
 				}
 			}
-			switch {
-			case threads > 0:
-				noun := "threads"
-				if threads == 1 {
-					noun = "thread"
-				}
-				waiting = append(waiting, InFlightRow{Key: key, State: fmt.Sprintf("#%d · %d %s", p.Number, threads, noun), Root: root, Branch: p.Head, PR: p.Number, Title: p.Title})
-			case failing:
-				waiting = append(waiting, InFlightRow{Key: key, State: "checks failing", Root: root, Branch: p.Head, PR: p.Number, Title: p.Title})
+			if len(threads) > 0 || len(failing) > 0 {
+				wait(host, p, threads, failing, false, activity)
 			}
 		}
 		for _, p := range res.requested {
-			key := prKey(p)
-			if key != "" {
-				jira.start(key)
-			}
-			waiting = append(waiting, InFlightRow{Key: key, State: "review requested", Root: rootOf[repoOfPR(host, p.URL)], Branch: p.Head, PR: p.Number, Title: p.Title})
+			wait(host, p, nil, nil, true, p.UpdatedAt)
 		}
 	}
 
@@ -766,14 +867,96 @@ func readInFlight(ctx context.Context, org string) InFlight {
 			row.Title, row.Status = rec.Seen.Title, rec.Seen.Status
 		}
 	}
+	// Each row carries its ticket's open hand-offs, a keyless PR's kept by its PR. Hand-offs that
+	// cannot be read are said (Rule 8); those that could be still show.
+	open, err := wakilcore.OpenTicketHandoffs(org)
+	if err != nil {
+		out.Partial = append(out.Partial, SourceNote{Source: "wakil", Message: "hand-offs not read: " + err.Error()})
+	}
+	carried := map[string]bool{}
+	handoffsOf := func(row InFlightRow) []wakilcore.HandoffRef {
+		key := strings.ToUpper(row.Key)
+		if key == "" {
+			if row.PR == 0 || row.Repo == "" {
+				return []wakilcore.HandoffRef{}
+			}
+			key = wakilcore.PRHandoffKey(row.Repo, row.PR)
+		}
+		carried[key] = true
+		refs := []wakilcore.HandoffRef{}
+		for _, h := range open[key] {
+			refs = append(refs, h.Ref())
+		}
+		return refs
+	}
 	for _, r := range rows {
 		row := r.row
+		row.Handoffs = handoffsOf(row)
 		fill(&row)
 		out.InFlight = append(out.InFlight, row)
 	}
 	for _, row := range waiting {
+		// The most urgent reason in words: threads, then a failing check, then the review asked.
+		switch {
+		case len(row.Threads) > 0:
+			noun := "threads"
+			if len(row.Threads) == 1 {
+				noun = "thread"
+			}
+			row.State = fmt.Sprintf("#%d · %d %s", row.PR, len(row.Threads), noun)
+		case len(row.Failing) > 0:
+			row.State = "checks failing"
+		case row.Review:
+			row.State = "review requested"
+		}
+		row.Count = len(row.Threads)
+		if len(row.Failing) > 0 {
+			row.Count++
+		}
+		if row.Review {
+			row.Count++
+		}
+		out.Count += row.Count
+		row.Handoffs = handoffsOf(row)
 		fill(&row)
 		out.WaitingOnYou = append(out.WaitingOnYou, row)
+	}
+	// A ticket (or keyless PR) with a live handed conversation and no other row is in flight too.
+	var handed []string
+	for key := range open {
+		if !carried[key] {
+			handed = append(handed, key)
+		}
+	}
+	sortStrings(handed)
+	for _, key := range handed {
+		hs := open[key]
+		last := hs[len(hs)-1]
+		var row InFlightRow
+		if repo, n, ok := wakilcore.ParsePRHandoffKey(key); ok {
+			root := rootOf[repo]
+			row = InFlightRow{Repo: repo, PR: n, URL: fmt.Sprintf("https://%s/pull/%d", repo, n), Root: root, Project: projectOf[root]}
+		} else {
+			row = InFlightRow{Key: key}
+			if rec, err := wakilcore.ReadTicketRecord(org, key); err == nil {
+				for _, b := range rec.Branches {
+					if root := rootOf[b.Repo]; root != "" {
+						row.Root, row.Branch, row.Repo, row.Project = root, b.Branch, b.Repo, projectOf[root]
+						break
+					}
+				}
+			}
+		}
+		if row.Project == "" {
+			row.Project = last.Place.Project
+		}
+		row = newRow(row)
+		row.State, row.Activity = "agent", last.At
+		for _, h := range hs {
+			row.Handoffs = append(row.Handoffs, h.Ref())
+		}
+		fill(&row)
+		out.InFlight = append(out.InFlight, row)
 	}
 	out.Partial = append(out.Partial, jira.notes()...)
 	if out.WaitingOnYou == nil {
@@ -861,5 +1044,5 @@ func (b TicketBranch) normalized() TicketBranch {
 func emptyRecord(key string) wakilcore.TicketRecord {
 	return wakilcore.TicketRecord{Key: key, Branches: []wakilcore.TicketBranchRef{}, PRs: []wakilcore.TicketPRRef{},
 		Decisions: []wakilcore.TicketLine{}, NotDone: []wakilcore.TicketLine{}, WaitingOn: []wakilcore.TicketLine{},
-		Verified: []wakilcore.TicketLine{}, Rulings: []wakilcore.TicketLine{}}
+		Verified: []wakilcore.TicketLine{}, Rulings: []wakilcore.TicketLine{}, Handoffs: []wakilcore.TicketHandoff{}}
 }

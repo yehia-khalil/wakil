@@ -134,14 +134,15 @@ import from the Passwords app's CSV).
 
 | View | File | What it is |
 |---|---|---|
-| `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover |
+| `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover. Waiting on you: the amber tick and ` · N` on an editor row, or a `Tickets · N` row when no editor is open |
 | `RailPeek` | `RailPeek.swift` | The collapsed rail (⌃⌘R, `rail_set`): the spine of marks, the 6 pt edge zone and the rail sliding out over the canvas on a 150 ms rest |
 | `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line |
 | `ComposerBar` | `ComposerBar.swift` | The bar typed and spoken text land in; Return sends |
 | `ThoughtThread` | `ThoughtThread.swift` | The agent's progress, rising from the bottom edge |
 | `ConfirmationPlane` | `ConfirmationPlane.swift` | The typed confirmation for a gated mutation; the site question (3c-ii): **Don't Allow** / **Allow for this conversation**, a click for a typed request and the typed word for a spoken one |
 | `OrgPlane` | `OrgPlane.swift` | ⌘⇧O: every organisation on the machine; create, adopt, switch |
-| `Landing` | `Landing.swift` | What the window draws before the session has done anything |
+| `Landing` | `Landing.swift` | What the window draws before the session has done anything; *Tickets in flight* above *Continue*, at most five rows |
+| `TicketHandOffPopover` | `TicketHandOffPopover.swift` | Hand to agent: brief, harness, provider, May push, Start and Cancel; anchored on the Ticket header, a thread's box or ⌘P |
 | `PalettePlane`, `PaletteController` | `Palettes.swift` | ⌘K and ⌘P, driving `PaletteModel` |
 | `VoidView` | `VoidView.swift` | The Metal void behind everything (shader `app/Shaders/Void.metal`) |
 | `DataSurface` | `DataSurface.swift` | The db pane's grid: its keys (⌘C, Space, ↑↓, Esc), right-click menu and footer Cancel |

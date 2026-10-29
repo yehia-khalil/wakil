@@ -183,6 +183,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // does hold, and an agent able to open a surface it may drive
             // no part of holds a handle to nothing.
             "settings_open", "term_run",
+            // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
+            "ticket_hand_off", "ticket_hand_off_cancel",
         ])
 
     let reachable = await wiring.registry.all()
@@ -208,4 +210,16 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
     await registry.register(action)
     let descriptor = await registry.all().first { $0.name == "test.unclassified" }
     #expect(descriptor?.audience == nil)
+}
+
+/// Ticket noticing, Task 4: **Restore yours** is a control the agent may reach, as the draft it
+/// undoes is — it writes only the operator's own words back, by "operator".
+@Test func reviewReplyDraftRestoreIsAgentReachable() async throws {
+    let wiring = try await wiringWithNoBinaries()
+    await wiring.shutdown()
+
+    let restore = try #require(await wiring.registry.all().first { $0.name == "review_reply_draft_restore" })
+    #expect(restore.audience == .agentReachable)
+    #expect(restore.kind == .control)
+    #expect(!operatorOnlyActions.contains("review_reply_draft_restore"))
 }

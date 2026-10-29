@@ -101,6 +101,9 @@ struct EditorPane: View {
     /// Ticket view: what the column's Ticket view draws (`WindowModel.editorTicket`), and `dispatch`
     /// answering its reply or throwing its refusal, for a link's answer and a write's refusal.
     var ticket: EditorTicketViewState = .empty
+    /// What waits on the operator (`ticketNeedsCount`, `ticketNeedsLabel`): the Ticket label's count.
+    var ticketCount = 0
+    var ticketCountLabel: String?
     var dispatchThrowingReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
 
     @State private var host = EditorHost()
@@ -128,6 +131,8 @@ struct EditorPane: View {
     @State private var treeBrowsed: String?
     /// The revealed file's row, until the column has drawn and selected it.
     @State private var pendingReveal: String?
+    /// The Hand to agent popover's field as typed, when it is anchored here.
+    @State private var handOffDraft = TicketHandOffDraft()
 
     private var activeTab: EditorTab? {
         snapshot.active.flatMap { $0 < snapshot.tabs.count ? snapshot.tabs[$0] : nil }
@@ -140,6 +145,12 @@ struct EditorPane: View {
                        loading: files.loading, dirErrors: files.dirErrors, showIgnored: showIgnored)
     }
 
+    /// The Hand to agent popover, when it opened in THIS pane (`TicketHandOffState.pane`).
+    private var handOff: TicketHandOffState? { ticket.handoff.flatMap { $0.pane == pane.id ? $0 : nil } }
+    /// From the header with the Ticket view showing: anchored to its **Hand to agent**; else to the
+    /// editor, under its top edge, where the box that opened it is.
+    private var handOffInColumn: Bool { handOff?.source == .header && column.shown && column.view == .ticket }
+
     /// Save-as starts in the selected row's folder, else the first root.
     private var saveAsBase: String {
         treeSelected.flatMap { id in treeRows.first { $0.id == id } }.map(editorFolder(of:)) ?? firstRoot
@@ -149,7 +160,7 @@ struct EditorPane: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 if column.shown {
-                    EditorColumn(column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
+                    EditorColumn(openLink: openLink, column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
                                  gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
                                  dispatchThrowing: dispatchThrowing,
@@ -159,7 +170,9 @@ struct EditorPane: View {
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
                                  pendingReveal: $pendingReveal, browsed: $treeBrowsed,
                                  changes: changes, timeline: timeline, timelineTab: activeTab,
-                                 ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply)
+                                 ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply,
+                                 ticketCount: ticketCount, ticketCountLabel: ticketCountLabel,
+                                 handOffAnchored: handOffInColumn)
                 }
                 editorStack
             }
@@ -250,9 +263,13 @@ struct EditorPane: View {
             // arrive: the keyboard stays where the operator was (Rule 6). `editorFrontTabArrived`.
             // A tree click on a file whose tab is already open and pinned brings that tab forward
             // too: browsing all the same, so the keyboard stays in the tree (`treeBrowsed`).
-            let front = now.active.flatMap { now.tabs.indices.contains($0) ? now.tabs[$0].path : nil }
+            // A head tab (a picked ticket's thread at its PR's head) is browsed by its key.
+            func browsable(_ s: EditorSnapshot) -> String? {
+                s.active.flatMap { s.tabs.indices.contains($0) ? (s.tabs[$0].path ?? editorReviewHeadKey(s.tabs[$0])) : nil }
+            }
+            let front = browsable(now)
             let browsing = front != nil && front == treeBrowsed
-            if front != old.active.flatMap({ old.tabs.indices.contains($0) ? old.tabs[$0].path : nil }) {
+            if front != browsable(old) {
                 treeBrowsed = nil
             }
             if !browsing, editorFrontTabArrived(old: old, now: now), isFocusedPane, !saveAsRequested,
@@ -326,6 +343,21 @@ struct EditorPane: View {
                                     identifier: comparing != nil ? "editor.compare.diff" : "editor.monaco")
                 }
                 if snapshot.tabs.isEmpty, comparing == nil { emptyState }
+                // Hand to agent from a review box (or the header, its Ticket view hidden).
+                Color.clear.frame(width: 1, height: 1)
+                    .popover(isPresented: Binding(get: { handOff != nil && !handOffInColumn }, set: { shown in
+                        if !shown, handOff?.starting == false {
+                            let p = handOffDraft.closeParams(handOff)
+                            Task { await dispatch("ticket_hand_off_close", p) }
+                        }
+                    }), arrowEdge: .bottom) {
+                        if let handOff {
+                            TicketHandOffPopover(state: handOff, dispatch: dispatch, dispatchReply: dispatchThrowingReply,
+                                                 draft: handOffDraft)
+                                // One field per subject and open: typed text never carries to another.
+                                .id(handOff.subject)
+                        }
+                    }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -617,8 +649,10 @@ struct EditorPane: View {
     // MARK: - Review boxes
 
     /// A review box's control, as the registry action every caller uses (Invariant 2): the draft
-    /// kept on blur and dropped by Discard (`review_reply_draft`), Send (`review_reply_send`, gated:
-    /// the plane shows the text and the thread's place), Resolve and Unresolve (`review_resolve`), and
+    /// kept on blur and dropped by Discard (`review_reply_draft`), Restore yours
+    /// (`review_reply_draft_restore`), Send (`review_reply_send`, gated:
+    /// the plane shows the text and the thread's place), Hand to agent (`ticket_hand_off_open`, the
+    /// popover only), Agent on it (`session_switch` to the hand-off at work on it), Resolve and Unresolve (`review_resolve`), and
     /// ⌥↓ / ⌥↑ from the box (`review_step` from that thread). A Send is drawn as sending from the press
     /// until its dispatch — the plane included — is over, and is not pressed twice (Rule 5).
     private func reviewOp(_ thread: String, _ op: String, _ text: String?, _ delta: Int?) {
@@ -629,15 +663,29 @@ struct EditorPane: View {
                 await dispatch("review_reply_draft", ["thread": .string(thread), "text": text.map { .string($0) } ?? .null])
             case "discard":
                 await dispatch("review_reply_draft", ["thread": .string(thread), "text": .null])
+            case "restore":
+                // **Restore yours**: one click, no question (Rule 1) — the agent's draft it replaces was
+                // the later value, and the operator's own words come back as theirs.
+                await dispatch("review_reply_draft_restore", ["thread": .string(thread)])
             case "send":
                 guard let t, let body = text, !body.isEmpty, host.beginReviewSend(thread) else { return }
                 // The text as sent is the draft until the post succeeds (a failed or refused Send keeps it).
+                // Unchanged text writes nothing (`EditorTicketStore.setDraft`): an agent's draft stays the
+                // agent's, and the operator's replaced one restorable, until the post lands.
                 await dispatch("review_reply_draft", ["thread": .string(thread), "text": .string(body)])
                 await dispatch("review_reply_send", [
                     "root": .string(t.root), "repo": .string(t.repo), "pr": .integer(Int64(t.number)),
                     "thread": .string(thread), "body": .string(body), "path": .string(t.path),
                     "line": .integer(Int64(t.line))])
                 host.endReviewSend(thread)
+            case "handoff":
+                // Hand to agent: the popover opens prefilled from this thread (`ticket_hand_off_open`);
+                // only the operator's Start in it hands anything off.
+                await dispatch("ticket_hand_off_open", ["thread": .string(thread)])
+            case "agent":
+                // **Agent on it**: the hand-off at work on this thread — its conversation, as its chip opens it.
+                guard let conversation = host.reviews.handed[thread] else { return }
+                await dispatch("session_switch", ["conversation": .string(conversation)])
             case "resolve", "unresolve":
                 guard let t else { return }
                 await dispatch("review_resolve", ["root": .string(t.root), "thread": .string(thread),
@@ -649,8 +697,8 @@ struct EditorPane: View {
                 let reply = await dispatchReply("review_step", ["delta": .integer(Int64(delta ?? 1)), "from": .string(thread)])
                 var to: String?
                 if case .object(let o)? = reply, case .string(let t)? = o["thread"] { to = t }
-                let key = to.flatMap { host.reviews.thread($0) }
-                    .map { editorTabKey(.file(path: $0.root + "/" + $0.path, root: $0.root)) }
+                // The tab it opened in: its file, or a picked ticket's at its PR's head.
+                let key = to.flatMap { host.reviews.thread($0) }.map { editorTabKey(host.reviews.subject($0)) }
                 host.renderer?.focusReview(thread: to, key: key)
             default: break
             }

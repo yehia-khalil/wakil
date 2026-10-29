@@ -286,3 +286,23 @@ import Testing
                           price: (.block, .allow), agentPrice: .gate, production: prod) == .block)
     }
 }
+
+// MARK: - A handed agent (ticket noticing, Task 9)
+
+/// Publish, merge and rebase ask always; push and sync ask unless May push, which prices them as
+/// any agent's (nil: the action's own agent price); everything else is unchanged.
+@Test func handedPriceTable() {
+    for action in ["editor_changes_publish", "editor_changes_merge", "editor_changes_rebase"] {
+        #expect(handedAgentPrice(action, mayPush: false) == .gate, "\(action)")
+        #expect(handedAgentPrice(action, mayPush: true) == .gate, "\(action)")
+    }
+    for action in ["editor_changes_push", "editor_changes_sync"] {
+        #expect(handedAgentPrice(action, mayPush: false) == .gate, "\(action)")
+        #expect(handedAgentPrice(action, mayPush: true) == nil, "\(action)")
+    }
+    for action in ["editor_changes_commit", "editor_changes_fetch", "editor_changes_pull", "editor_changes_stage",
+                   "ticket_record_update", "review_reply_draft", "review_reply_send"] {
+        #expect(handedAgentPrice(action, mayPush: false) == nil, "\(action)")
+        #expect(handedAgentPrice(action, mayPush: true) == nil, "\(action)")
+    }
+}

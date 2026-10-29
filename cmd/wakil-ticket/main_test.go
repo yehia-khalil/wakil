@@ -705,21 +705,41 @@ func TestInFlightBranchesAndMyPRs(t *testing.T) {
 	// Rows carry the root as the project names it, never with its symlinks resolved: the window
 	// matches them against its own roots (macOS's temp dir is under the /var -> /private/var link).
 	real := f.repo
+	none, refs := []string{}, []wakilcore.HandoffRef{}
+	at := func(r InFlightRow) InFlightRow {
+		r.Root, r.Project, r.Repo = real, "api", "github.com/initech/api"
+		if r.PR != 0 {
+			r.URL = fmt.Sprintf("https://github.com/initech/api/pull/%d", r.PR)
+		}
+		if r.Threads == nil {
+			r.Threads = none
+		}
+		if r.Failing == nil {
+			r.Failing = none
+		}
+		r.Handoffs = refs
+		return r
+	}
 	wantInFlight := []InFlightRow{
-		{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · open", Root: real, Branch: "ini-142-login", PR: 212},
-		{Key: "INI-150", Title: "Cache the org list", Status: "In Progress", State: "local branch", Root: real, Branch: "ini-150-cache"},
-		{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "#220 · open", Root: real, Branch: "ini-160-retry", PR: 220},
+		at(InFlightRow{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · open", Branch: "ini-142-login", PR: 212}),
+		at(InFlightRow{Key: "INI-150", Title: "Cache the org list", Status: "In Progress", State: "local branch", Branch: "ini-150-cache"}),
+		at(InFlightRow{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "#220 · open", Branch: "ini-160-retry", PR: 220}),
 	}
 	if !reflect.DeepEqual(got.InFlight, wantInFlight) {
 		t.Errorf("in flight =\n%+v\nwant\n%+v", got.InFlight, wantInFlight)
 	}
 	wantWaiting := []InFlightRow{
-		{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · 1 thread", Root: real, Branch: "ini-142-login", PR: 212},
-		{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "checks failing", Root: real, Branch: "ini-160-retry", PR: 220},
-		{Title: "Speed up the build", State: "review requested", Root: real, Branch: "build-speed", PR: 301},
+		at(InFlightRow{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · 1 thread", Branch: "ini-142-login", PR: 212,
+			Threads: []string{"T_1"}, Activity: "2026-10-25T10:00:00Z", Count: 1}),
+		at(InFlightRow{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "checks failing", Branch: "ini-160-retry", PR: 220,
+			Failing: []string{"unit"}, Count: 1}),
+		at(InFlightRow{Title: "Speed up the build", State: "review requested", Branch: "build-speed", PR: 301, Review: true, Count: 1}),
 	}
 	if !reflect.DeepEqual(got.WaitingOnYou, wantWaiting) {
 		t.Errorf("waiting on you =\n%+v\nwant\n%+v", got.WaitingOnYou, wantWaiting)
+	}
+	if got.Count != 3 {
+		t.Errorf("count = %d, want 3", got.Count)
 	}
 	var searches int
 	for _, r := range f.s.gql {
@@ -792,6 +812,50 @@ func TestTicketRecordEditKeepsOtherFields(t *testing.T) {
 	if msg := callErr(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
 		"line": map[string]any{"text": "x"}, "by": "someone"}); !strings.Contains(msg, "operator, agent or wakil") {
 		t.Errorf("unknown by: %q", msg)
+	}
+}
+
+// A record line written with a root and branch names where the ticket is worked on: the record
+// gains that branch, by Wakil, beside the ones reads found, and drops none.
+func TestRecordWriteWithRootAddsTheBranch(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	read := wakilcore.TicketBranchRef{Repo: "github.com/initech/api", Branch: "ini-142-login", Source: "branch"}
+	if err := wakilcore.RecordTicketSeen("initech", "INI-142", wakilcore.TicketSeen{}, []wakilcore.TicketBranchRef{read}, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+	b := call(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
+		"line": map[string]any{"text": "answer the review"}, "by": "agent", "conversation": "c1",
+		"root": f.repo, "branch": "ini-142-review"})
+	var r wakilcore.TicketRecord
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	want := []wakilcore.TicketBranchRef{read, {Repo: "github.com/initech/api", Branch: "ini-142-review", Source: "wakil"}}
+	if !reflect.DeepEqual(r.Branches, want) {
+		t.Errorf("branches = %+v, want %+v", r.Branches, want)
+	}
+	if r.Next == nil || r.Next.Text != "answer the review" {
+		t.Errorf("next = %+v", r.Next)
+	}
+
+	// A branch without a root names no place: the line lands, the branches stay as they were.
+	b = call(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
+		"line": map[string]any{"text": "ship it"}, "by": "agent", "branch": "ini-142-other"})
+	_ = json.Unmarshal(b, &r)
+	if len(r.Branches) != 2 || r.Next == nil || r.Next.Text != "ship it" {
+		t.Errorf("branch alone: %+v", r)
+	}
+
+	// A root outside the organisation's projects is refused, and nothing is written.
+	if msg := callErr(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
+		"line": map[string]any{"text": "elsewhere"}, "by": "agent", "root": t.TempDir(), "branch": "x"}); msg == "" {
+		t.Error("an outside root was not refused")
+	}
+	b = call(t, cs, "ticket_record", map[string]any{"key": "INI-142"})
+	_ = json.Unmarshal(b, &r)
+	if r.Next == nil || r.Next.Text != "ship it" || len(r.Branches) != 2 {
+		t.Errorf("after the refusal: %+v", r)
 	}
 }
 
@@ -901,4 +965,398 @@ func TestReviewThreadDescribesTheThreadFromGitHub(t *testing.T) {
 	if msg := callErr(t, cs, "review_thread", map[string]any{"root": f.repo, "thread": "T_gone"}); !strings.Contains(msg, "T_gone") {
 		t.Errorf("unknown thread: %q", msg)
 	}
+}
+
+// readInFlightTool calls ticket_in_flight and returns its reply decoded and raw.
+func readInFlightTool(t *testing.T) (InFlight, map[string]any) {
+	t.Helper()
+	b := call(t, connect(t), "ticket_in_flight", map[string]any{})
+	var got InFlight
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	_ = json.Unmarshal(b, &raw)
+	return got, raw
+}
+
+// searchReply answers MyOpenPRs' search with authored and requested.
+func searchReply(authored, requested []any) func(gqlRequest) (int, string) {
+	return func(gqlRequest) (int, string) {
+		if authored == nil {
+			authored = []any{}
+		}
+		if requested == nil {
+			requested = []any{}
+		}
+		return 200, mustJSON(map[string]any{"data": map[string]any{
+			"authored": map[string]any{"nodes": authored}, "requested": map[string]any{"nodes": requested}}})
+	}
+}
+
+// threadAt is a thread whose comments are given as author, createdAt pairs.
+func threadAt(id string, pairs ...string) map[string]any {
+	var comments []any
+	for i := 0; i+1 < len(pairs); i += 2 {
+		comments = append(comments, map[string]any{"author": map[string]any{"login": pairs[i]}, "body": "comment", "createdAt": pairs[i+1]})
+	}
+	return map[string]any{"id": id, "path": "a.go", "line": 1, "isOutdated": false, "isResolved": false, "comments": map[string]any{"nodes": comments}}
+}
+
+// A PR with two threads waiting and a failing check is one row that counts 3: the rail counts
+// per item, the row carries every reason, and its words are its most urgent one.
+func TestInFlightOneRowPerPRCarriesEveryReason(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	f.s.search = searchReply([]any{prNode(212, "INI-142 keep", "ini-142-login", "main",
+		[]any{thread("T_1", "a.go", 1, "milton"), thread("T_2", "b.go", 2, "peter", "milton")},
+		[]any{check("unit (Linux)", "FAILURE"), check("lint", "SUCCESS")})}, nil)
+	got, raw := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v, want one row", got.WaitingOnYou)
+	}
+	row := got.WaitingOnYou[0]
+	if !reflect.DeepEqual(row.Threads, []string{"T_1", "T_2"}) || !reflect.DeepEqual(row.Failing, []string{"unit (Linux)"}) || row.Review {
+		t.Errorf("reasons = threads %v failing %v review %v", row.Threads, row.Failing, row.Review)
+	}
+	if row.Count != 3 || got.Count != 3 {
+		t.Errorf("count = row %d reply %d, want 3", row.Count, got.Count)
+	}
+	if row.State != "#212 · 2 threads" || row.Key != "INI-142" || row.PR != 212 {
+		t.Errorf("row = %+v", row)
+	}
+	if row.Root != f.repo || row.Project != "api" || row.Repo != "github.com/initech/api" || row.URL != "https://github.com/initech/api/pull/212" {
+		t.Errorf("place = root %q project %q repo %q url %q", row.Root, row.Project, row.Repo, row.URL)
+	}
+	w := raw["waitingOnYou"].([]any)[0].(map[string]any)
+	if h, ok := w["handoffs"].([]any); !ok || len(h) != 0 {
+		t.Errorf("handoffs = %#v, want []", w["handoffs"])
+	}
+	if _, ok := raw["count"].(float64); !ok {
+		t.Errorf("reply has no count: %v", raw)
+	}
+}
+
+// A PR whose branch, title and body carry no ticket key still waits on the operator: it is a row
+// named by its PR, and it counts.
+func TestInFlightKeylessPRIsARow(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	f.s.search = searchReply([]any{prNode(215, "Speed up the build", "build-speed", "main", nil, []any{check("unit (Linux)", "FAILURE")})}, nil)
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v", got.WaitingOnYou)
+	}
+	row := got.WaitingOnYou[0]
+	if row.Key != "" || row.PR != 215 || row.Title != "Speed up the build" || row.Branch != "build-speed" || row.State != "checks failing" {
+		t.Errorf("row = %+v", row)
+	}
+	if !reflect.DeepEqual(row.Failing, []string{"unit (Linux)"}) || row.Count != 1 || got.Count != 1 {
+		t.Errorf("failing %v count %d reply %d", row.Failing, row.Count, got.Count)
+	}
+	if row.Repo != "github.com/initech/api" || row.URL == "" || row.Root != f.repo {
+		t.Errorf("place = %+v", row)
+	}
+}
+
+// A review asked of the operator on a repository no project holds counts and shows, with no
+// root: it is opened on GitHub, by its URL.
+func TestInFlightReviewRequestOutsideEveryProject(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	asked := prNode(7, "INI-142 bill the token", "ini-142-bill", "main", nil, nil)
+	asked["url"] = "https://github.com/initech/billing/pull/7"
+	asked["author"] = map[string]any{"login": "milton"}
+	f.s.search = searchReply(nil, []any{asked})
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v", got.WaitingOnYou)
+	}
+	row := got.WaitingOnYou[0]
+	if row.Root != "" || row.Project != "" || row.URL != "https://github.com/initech/billing/pull/7" || row.Repo != "github.com/initech/billing" {
+		t.Errorf("place = root %q project %q url %q repo %q", row.Root, row.Project, row.URL, row.Repo)
+	}
+	if !row.Review || row.Count != 1 || got.Count != 1 || row.State != "review requested" || row.Key != "INI-142" {
+		t.Errorf("row = %+v, reply count %d", row, got.Count)
+	}
+	if row.Threads == nil || row.Failing == nil {
+		t.Errorf("lists are not arrays: %+v", row)
+	}
+}
+
+// A thread whose last comment is the operator's waits on someone else: not counted, not listed.
+func TestInFlightThreadLastWordMineNotCounted(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	f.s.search = searchReply([]any{
+		prNode(212, "INI-142 keep", "ini-142-login", "main",
+			[]any{thread("T_1", "a.go", 1, "milton", "peter"), thread("T_2", "b.go", 2, "milton")}, nil),
+		prNode(213, "INI-150 cache", "ini-150-cache", "main", []any{thread("T_3", "c.go", 3, "milton", "peter")}, nil),
+	}, nil)
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v, want only #212", got.WaitingOnYou)
+	}
+	if row := got.WaitingOnYou[0]; !reflect.DeepEqual(row.Threads, []string{"T_2"}) || row.Count != 1 || got.Count != 1 {
+		t.Errorf("row = %+v, reply count %d", row, got.Count)
+	}
+}
+
+// Two worktrees of one repository are two roots on github.com/initech/api: the PR they share is
+// one row, counted once.
+func TestInFlightTwoWorktreesCountOnce(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	second := filepath.Join(t.TempDir(), "api-review")
+	git(t, f.repo, "worktree", "add", "-q", "-b", "ini-150-cache", second, "main")
+	pp := filepath.Join(f.home, "proj", ".wakil", "project.json")
+	writeFile(t, pp, `{"name":"api","org":"initech","roots":[{"path":`+jsonString(f.repo)+`},{"path":`+jsonString(second)+`}],"scopes":{"pm":{"provider":"jira","projectKey":"INI"}},"environments":{}}`)
+	f.s.search = searchReply([]any{prNode(212, "INI-142 keep", "ini-142-login", "main",
+		[]any{thread("T_1", "a.go", 1, "milton"), thread("T_2", "b.go", 2, "milton")},
+		[]any{check("unit (Linux)", "FAILURE")})}, nil)
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 || got.Count != 3 {
+		t.Fatalf("waiting on you = %+v, count %d, want one row counting 3", got.WaitingOnYou, got.Count)
+	}
+	if row := got.WaitingOnYou[0]; row.Root != f.repo {
+		t.Errorf("root = %q, want the first root on the repository", row.Root)
+	}
+}
+
+// A row's activity is the newest of the PR's own last change and its waiting threads' last
+// comments; a thread the operator answered last is not activity waiting on them.
+func TestInFlightActivityIsNewest(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	commented := prNode(212, "INI-142 keep", "ini-142-login", "main", []any{
+		threadAt("T_1", "milton", "2026-10-26T11:00:00Z"),
+		threadAt("T_2", "milton", "2026-10-26T12:00:00Z", "peter", "2026-10-27T15:00:00Z"),
+	}, nil)
+	commented["updatedAt"] = "2026-10-25T08:00:00Z"
+	pushed := prNode(215, "INI-150 cache", "ini-150-cache", "main",
+		[]any{threadAt("T_3", "milton", "2026-10-25T09:00:00Z")}, nil)
+	pushed["updatedAt"] = "2026-10-27T12:00:00Z"
+	asked := prNode(301, "Speed up the build", "build-speed", "main", nil, nil)
+	asked["author"] = map[string]any{"login": "milton"}
+	asked["updatedAt"] = "2026-10-24T07:00:00Z"
+	f.s.search = searchReply([]any{commented, pushed}, []any{asked})
+	got, _ := readInFlightTool(t)
+	want := map[int]string{212: "2026-10-26T11:00:00Z", 215: "2026-10-27T12:00:00Z", 301: "2026-10-24T07:00:00Z"}
+	if len(got.WaitingOnYou) != 3 {
+		t.Fatalf("waiting on you = %+v", got.WaitingOnYou)
+	}
+	for _, row := range got.WaitingOnYou {
+		if row.Activity != want[row.PR] {
+			t.Errorf("#%d activity = %q, want %q", row.PR, row.Activity, want[row.PR])
+		}
+	}
+}
+
+func handedTo(conversation string) wakilcore.TicketHandoff {
+	return wakilcore.TicketHandoff{Conversation: conversation, Title: "INI-142 · keep the org", Thread: "T_1", Harness: "claude-code",
+		Provider: "anthropic", Place: wakilcore.Place{Organization: "initech", Project: "api", Environment: "local"}}
+}
+
+// A row carries its ticket's open hand-offs, not the ended ones.
+func TestInFlightCarriesOpenHandoffs(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	now := time.Now()
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-142", handedTo("c1"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-142", handedTo("c2"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := wakilcore.EndTicketHandoffs("initech", []string{"c1"}, false, now); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := readInFlightTool(t)
+	if len(got.InFlight) != 1 || got.InFlight[0].Key != "INI-142" || got.InFlight[0].State != "local branch" {
+		t.Fatalf("in flight = %+v", got.InFlight)
+	}
+	want := []wakilcore.HandoffRef{{ID: "h2", Conversation: "c2", Thread: "T_1"}}
+	if !reflect.DeepEqual(got.InFlight[0].Handoffs, want) {
+		t.Errorf("handoffs = %+v, want %+v", got.InFlight[0].Handoffs, want)
+	}
+}
+
+// Rule 8: hand-offs that cannot be read are said, as a partial note — the ticket hand-offs that
+// could be read still show.
+func TestInFlightUnreadableHandoffsAreSaid(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-142", handedTo("c1"), false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := wakilcore.OrgDirFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tickets", "pr-handoffs.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := readInFlightTool(t)
+	if len(got.InFlight) != 1 || len(got.InFlight[0].Handoffs) != 1 || got.InFlight[0].Handoffs[0].Conversation != "c1" {
+		t.Errorf("in flight = %+v", got.InFlight)
+	}
+	said := false
+	for _, n := range got.Partial {
+		said = said || (n.Source == "wakil" && strings.Contains(n.Message, "pr-handoffs.json"))
+	}
+	if !said {
+		t.Errorf("partial = %+v, want a note naming pr-handoffs.json", got.Partial)
+	}
+}
+
+// A ticket whose only sign of life is a live handed conversation is in flight, in state "agent";
+// so is a PR with no ticket key handed to an agent.
+func TestInFlightHandoffOnlyTicketIsInFlight(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "main", "")
+	now := time.Now()
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-160", handedTo("c1"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wakilcore.AddTicketHandoff("initech", wakilcore.PRHandoffKey("github.com/initech/api", 215), handedTo("c2"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	got, raw := readInFlightTool(t)
+	if len(got.InFlight) != 2 {
+		t.Fatalf("in flight = %+v", got.InFlight)
+	}
+	row := got.InFlight[0]
+	if row.Key != "INI-160" || row.State != "agent" || row.Title != "Retry the token refresh" || row.Project != "api" ||
+		len(row.Handoffs) != 1 || row.Handoffs[0].Conversation != "c1" {
+		t.Errorf("ticket row = %+v", row)
+	}
+	pr := got.InFlight[1]
+	if pr.Key != "" || pr.PR != 215 || pr.Repo != "github.com/initech/api" || pr.State != "agent" || len(pr.Handoffs) != 1 ||
+		pr.Handoffs[0].Conversation != "c2" {
+		t.Errorf("PR row = %+v", pr)
+	}
+	if got.Count != 0 {
+		t.Errorf("a hand-off counts %d, want 0", got.Count)
+	}
+	r := raw["inFlight"].([]any)[0].(map[string]any)
+	if _, ok := r["handoffs"].([]any)[0].(map[string]any)["conversation"]; !ok {
+		t.Errorf("row = %v", r)
+	}
+}
+
+func TestDraftAndHandoffWritesRefusedOutsideTheWindow(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	t.Setenv("WAKIL_IN_WINDOW", "")
+	cs := connect(t)
+	writes := map[string]map[string]any{
+		"ticket_draft_write":   {"thread": "T_1", "text": "Fixed", "by": "agent", "conversation": "c1"},
+		"ticket_handoff_write": {"op": "add", "key": "INI-142", "handoff": map[string]any{"conversation": "c1", "harness": "claude-code", "provider": "anthropic"}},
+	}
+	for tool, args := range writes {
+		if msg := callErr(t, cs, tool, args); !strings.Contains(msg, "Wakil window") {
+			t.Errorf("%s refused with %q, want it to name the Wakil window", tool, msg)
+		}
+	}
+	if m, _ := wakilcore.ReadTicketDrafts("initech"); len(m) != 0 {
+		t.Errorf("a refused draft was written: %+v", m)
+	}
+	if r, _ := wakilcore.ReadTicketRecord("initech", "INI-142"); len(r.Handoffs) != 0 {
+		t.Errorf("a refused hand-off was written: %+v", r.Handoffs)
+	}
+	call(t, cs, "ticket_drafts", map[string]any{})
+	call(t, cs, "ticket_handoff_defaults", map[string]any{})
+}
+
+func TestDraftToolsWriteReadAndRemove(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	cs := connect(t)
+	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "text": "Will fix", "by": "operator"})
+	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "text": "Fixed in 4f1c", "by": "agent", "conversation": "c1",
+		"root": "/r/api", "branch": "ini-142-login"})
+	var got struct {
+		Drafts map[string]wakilcore.TicketDraft `json:"drafts"`
+	}
+	if err := json.Unmarshal(call(t, cs, "ticket_drafts", map[string]any{}), &got); err != nil {
+		t.Fatal(err)
+	}
+	d := got.Drafts["T_1"]
+	if d.Text != "Fixed in 4f1c" || d.By != "agent" || d.Replaced != "Will fix" || d.Conversation != "c1" || d.Branch != "ini-142-login" {
+		t.Errorf("draft = %+v", d)
+	}
+	// An agent's removal reaches the file with its by, and is refused: the operator's text is kept.
+	if msg := callErr(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "by": "agent", "conversation": "c1"}); !strings.Contains(msg, "Rule 2") {
+		t.Errorf("an agent's removal refused with %q", msg)
+	}
+	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "by": "operator"})
+	b := call(t, cs, "ticket_drafts", map[string]any{})
+	if !strings.Contains(string(b), `"drafts":{}`) {
+		t.Errorf("after removing = %s", b)
+	}
+}
+
+func TestHandoffToolsAddEndAndDefaults(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	cs := connect(t)
+	b := call(t, cs, "ticket_handoff_defaults", map[string]any{})
+	if !strings.Contains(string(b), `"found":false`) {
+		t.Errorf("defaults before any = %s", b)
+	}
+	b = call(t, cs, "ticket_handoff_write", map[string]any{"op": "add", "key": "INI-142", "mayPush": true,
+		"handoff": map[string]any{"conversation": "c1", "title": "INI-142 · keep the org", "thread": "T_1", "harness": "claude-code",
+			"provider": "anthropic", "place": map[string]any{"organization": "initech", "project": "api", "environment": "local"}}})
+	var added struct {
+		Handoff wakilcore.TicketHandoff `json:"handoff"`
+	}
+	if err := json.Unmarshal(b, &added); err != nil {
+		t.Fatal(err)
+	}
+	if added.Handoff.ID != "h1" || !added.Handoff.MayPush || added.Handoff.Place.Project != "api" {
+		t.Errorf("added = %+v", added.Handoff)
+	}
+	var def struct {
+		Defaults wakilcore.HandoffDefaults `json:"defaults"`
+		Found    bool                      `json:"found"`
+	}
+	if err := json.Unmarshal(call(t, cs, "ticket_handoff_defaults", map[string]any{}), &def); err != nil {
+		t.Fatal(err)
+	}
+	if !def.Found || def.Defaults.Harness != "claude-code" || def.Defaults.Provider != "anthropic" || !def.Defaults.MayPush {
+		t.Errorf("defaults = %+v", def)
+	}
+	call(t, cs, "ticket_handoff_write", map[string]any{"op": "end", "conversations": []string{}, "keepLive": true})
+	if r, _ := wakilcore.ReadTicketRecord("initech", "INI-142"); len(r.Handoffs) != 1 || r.Handoffs[0].Ended == nil {
+		t.Errorf("after ending the stale = %+v", r.Handoffs)
+	}
+	if msg := callErr(t, cs, "ticket_handoff_write", map[string]any{"op": "move"}); !strings.Contains(msg, "move") {
+		t.Errorf("unknown op refused with %q", msg)
+	}
+}
+
+// May push reads from the stored hand-off, anywhere; a carry gives a resumed conversation the
+// hand-off and its May push, and only from the window.
+func TestHandoffMayPushAndCarryTools(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	cs := connect(t)
+	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"}); !strings.Contains(string(b), `"mayPush":false`) {
+		t.Errorf("before any hand-off = %s", b)
+	}
+	call(t, cs, "ticket_handoff_write", map[string]any{"op": "add", "key": "INI-142", "mayPush": true,
+		"handoff": map[string]any{"conversation": "c1", "thread": "T_1", "harness": "claude-code", "provider": "anthropic"}})
+	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"}); !strings.Contains(string(b), `"mayPush":true`) {
+		t.Errorf("handed with May push = %s", b)
+	}
+	b := call(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c1", "to": "c2"})
+	var carried struct {
+		Key     string                   `json:"key"`
+		Handoff *wakilcore.TicketHandoff `json:"handoff"`
+	}
+	if err := json.Unmarshal(b, &carried); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"carried":true`) || carried.Key != "INI-142" || carried.Handoff == nil || carried.Handoff.Conversation != "c2" || carried.Handoff.Thread != "T_1" {
+		t.Errorf("carried = %s", b)
+	}
+	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c2"}); !strings.Contains(string(b), `"mayPush":true`) {
+		t.Errorf("carried May push = %s", b)
+	}
+	if b := call(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c-never", "to": "c3"}); strings.Contains(string(b), `"handoff"`) || !strings.Contains(string(b), `"carried":false`) {
+		t.Errorf("a carry from a conversation never handed = %s", b)
+	}
+	t.Setenv("WAKIL_IN_WINDOW", "")
+	cs = connect(t)
+	if msg := callErr(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c1", "to": "c4"}); !strings.Contains(msg, "Wakil window") {
+		t.Errorf("a carry outside the window = %q", msg)
+	}
+	call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"})
 }

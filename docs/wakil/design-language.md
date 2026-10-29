@@ -237,6 +237,12 @@ Text is cool white (`#e8ecf6`) stepped down by opacity, never by a different hue
 The background-agent chips (§1, 2026-10-17) use these hues in these meanings — amber
 waiting, green completed, red failed — and luminance violet for an agent at work.
 
+**Blue means "opens a web page"** (added 2026-10-29, ticket noticing walk). A control whose click
+leaves the view for a web page — Wakil's browser pane, or the system browser on ⌥-click — reads
+`<words> ↗` in the void's blue `#4fb9e8`: the ticket key, a check's `details ↗`, Open on GitHub,
+the blame hover's Open on <host>, Settings' provider pages. Blue is used for nothing else in
+Wakil's own voice; a program's blue in the terminal is quoted output (the carve-out below).
+
 **The terminal pane's carve-out, added 2026-09-18 by 2c-iii.** Everything
 above governs Wakil's OWN voice — its chrome, its labels, its status hues.
 A shell's stdout is not Wakil's voice; it is quoted material, and until
@@ -398,6 +404,12 @@ expands a row in place (an open row toggles closed from its label), and the thre
 row. The bottom edge is one flow: the thread, then status and notes, then the composer bar
 beside the account indicator.*
 
+*Amended 2026-10-29 (ticket noticing walk): at rest the thread no longer sits over a pane. While
+the conversation has a thread the canvas ends above its four resting rows (a fixed reserve, so
+nothing moves as rows arrive); a row opened or hovered still rises over the canvas at full opacity.
+The operator found a done conversation's rows drawn over a maximized editor's Ticket column, both
+unreadable.*
+
 ## 10. Layout model
 
 Approved 2026-09-03. Resolves the tension between layout D (tabs + columns) and the void
@@ -447,7 +459,7 @@ is the same switch, undone by deleting it. `Palette.dc.html` is the artboard.
   The header names the step; Esc pops one step, then closes. Production is red wherever it
   is a choice.
 - **Search is words, not syntax:** every word must hit the title, subtitle or kind label,
-  in any order (`catalog api`, `catalog db`). The only special character is `>`.
+  in any order (`catalog api`, `catalog db`). The only special characters are `>` and `#`.
 - **After a run** the plane closes and focus goes to the pane acted on. A failure stays
   open with the whole error and the input intact. The operator's own environment switch is
   not confirmed: the gate prices the agent's switch, not this one.

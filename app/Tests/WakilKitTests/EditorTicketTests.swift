@@ -6,19 +6,38 @@ import Testing
 /// `ticket_branch` until `release()`, latched; `hangBranch` sleeps until cancelled.
 actor FakeTicket: ToolCaller {
     var replies: [String: JSONValue] = [:]       // tool -> structuredContent
+    var branchReplies: [String: JSONValue] = [:] // "<root>:<branch>" -> ticket_branch's structuredContent
+    var branchErrors: [String: String] = [:]     // "<root>:<branch>" -> ticket_branch's isError text
     var errors: [String: String] = [:]           // tool -> isError text
     var calls: [(name: String, args: JSONValue)] = []
     var slowBranch = false
     var hangBranch = false
     var slowReply = false
+    var slowDrafts = false
+    var slowInFlight = false
+    /// The organisation's drafts.json as `ticket_draft_write` keeps it, by thread, unless a reply is set.
+    var drafts: [String: JSONValue] = [:]
     private var released = false
     private var parked: [CheckedContinuation<Void, Never>] = []
 
     func set(_ tool: String, _ content: JSONValue) { replies[tool] = content }
+    /// `ticket_branch`'s answer for one root and branch, over `set`'s.
+    func setBranch(root: String, branch: String, _ content: JSONValue) { branchReplies["\(root):\(branch)"] = content }
+    func failBranch(root: String, branch: String, _ text: String) { branchErrors["\(root):\(branch)"] = text }
     func fail(_ tool: String, _ text: String?) { errors[tool] = text }
     func setSlowBranch(_ on: Bool) { slowBranch = on; released = false }
     func setHangBranch(_ on: Bool) { hangBranch = on }
     func setSlowReply(_ on: Bool) { slowReply = on; released = false }
+    func setSlowDrafts(_ on: Bool) { slowDrafts = on; released = false }
+    func setSlowInFlight(_ on: Bool) { slowInFlight = on; released = false }
+    /// Puts a draft in the file, as another window or a quit-and-relaunch left it.
+    func seedDraft(_ thread: String, text: String, by: String, conversation: String = "", replaced: String = "",
+                   at: String = "2026-10-28T10:00:00Z") {
+        drafts[thread] = .object(["text": .string(text), "by": .string(by), "conversation": .string(conversation),
+                                  "root": .string(""), "branch": .string(""), "at": .string(at),
+                                  "replaced": .string(replaced)])
+    }
+    func clearDrafts() { drafts = [:] }
     func release() { released = true; parked.forEach { $0.resume() }; parked = [] }
     private func park(_ c: CheckedContinuation<Void, Never>) { if released { c.resume() } else { parked.append(c) } }
     func count(_ tool: String) -> Int { calls.filter { $0.name == tool }.count }
@@ -30,27 +49,53 @@ actor FakeTicket: ToolCaller {
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
         calls.append((name, arguments))
         if name == "ticket_branch", hangBranch { try await Task.sleep(for: .seconds(60)) }
-        if (name == "ticket_branch" && slowBranch) || (name == "review_reply" && slowReply) {
+        if (name == "ticket_branch" && slowBranch) || (name == "review_reply" && slowReply)
+            || (name == "ticket_drafts" && slowDrafts) || (name == "ticket_in_flight" && slowInFlight) {
             await withCheckedContinuation { c in Task { self.park(c) } }
         }
-        if let e = errors[name] {
+        var at = ""
+        if name == "ticket_branch", case .object(let a) = arguments, case .string(let root)? = a["root"],
+           case .string(let branch)? = a["branch"] { at = "\(root):\(branch)" }
+        if let e = branchErrors[at] ?? errors[name] {
             return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(e)])])])
         }
-        return .object(["structuredContent": replies[name] ?? .object([:])])
+        if replies[name] == nil, name == "ticket_draft_write" { writeDraft(arguments) }
+        if replies[name] == nil, name == "ticket_drafts" || name == "ticket_draft_write" {
+            return .object(["structuredContent": .object(["drafts": .object(drafts)])])
+        }
+        return .object(["structuredContent": branchReplies[at] ?? replies[name] ?? .object([:])])
+    }
+
+    /// `WriteTicketDraft`'s rule (internal/wakilcore/ticketdrafts.go): no text removes; an agent's draft
+    /// over the operator's keeps the operator's text in `replaced`, an operator's clears it.
+    private func writeDraft(_ arguments: JSONValue) {
+        guard case .object(let a) = arguments, case .string(let thread)? = a["thread"] else { return }
+        func text(_ o: [String: JSONValue]?, _ k: String) -> String { if case .string(let s)? = o?[k] { s } else { "" } }
+        let body = text(a, "text"), by = text(a, "by")
+        guard !body.isEmpty else { drafts[thread] = nil; return }
+        var replaced = ""
+        if by == "agent", case .object(let old)? = drafts[thread] {
+            replaced = text(old, "by") == "operator" ? text(old, "text") : text(old, "replaced")
+        }
+        drafts[thread] = .object(["text": .string(body), "by": .string(by), "conversation": .string(text(a, "conversation")),
+                                  "root": .string(text(a, "root")), "branch": .string(text(a, "branch")),
+                                  "at": .string(ISO8601DateFormatter().string(from: Date())), "replaced": .string(replaced)])
     }
 }
 
 /// `ticket_branch`'s answer for `ini-142-login` on `/p/api`: INI-142 marked, PR #212 with two open
 /// threads, one outdated and one resolved.
-func ticketBranchJSON(root: String = "/p/api", branch: String = "ini-142-login") -> JSONValue {
+func ticketBranchJSON(root: String = "/p/api", branch: String = "ini-142-login", repo: String = "github.com/initech/api",
+                      pr: Int = 212, threads: String = "T") -> JSONValue {
+    let prefix = threads
     func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = false, resolved: Bool = false) -> JSONValue {
-        .object(["id": .string(id), "path": .string(path), "line": .integer(Int64(line)),
+        .object(["id": .string(prefix + id.dropFirst()), "path": .string(path), "line": .integer(Int64(line)),
                  "outdated": .bool(outdated), "resolved": .bool(resolved),
                  "comments": .array([.object(["author": .string("reviewer"), "body": .string("Nit: the error should name the host"),
                                               "createdAt": .string("2026-10-26T09:00:00Z")])])])
     }
     return .object([
-        "root": .string(root), "repo": .string("github.com/initech/api"), "branch": .string(branch),
+        "root": .string(root), "repo": .string(repo), "branch": .string(branch),
         "viewer": .string("me"), "longLived": .bool(false),
         "tickets": .array([.object(["key": .string("INI-142"), "title": .string("Sign-in keeps the last organization"),
                                     "status": .string("In Progress"), "assignee": .string("me"), "url": .string(""),
@@ -60,7 +105,7 @@ func ticketBranchJSON(root: String = "/p/api", branch: String = "ini-142-login")
                                                        "decisions": .array([]), "notDone": .array([]), "waitingOn": .array([]),
                                                        "verified": .array([]), "rulings": .array([])])])]),
         "looked": .array([]), "linked": .bool(false),
-        "prs": .array([.object(["number": .integer(212), "title": .string("Sign-in"), "body": .string(""), "url": .string(""),
+        "prs": .array([.object(["number": .integer(Int64(pr)), "title": .string("Sign-in"), "body": .string(""), "url": .string(""),
                                 "state": .string("open"), "head": .string(branch), "base": .string("main"),
                                 "headSHA": .string("abc123"), "author": .string("me"), "checks": .array([]),
                                 "threads": .array([thread("T2", "src/auth/token.go", 41), thread("T1", "src/auth/session.go", 88),
@@ -140,13 +185,20 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketNext(TicketBranchState(root: "/p/api", tickets: [TicketRefState(key: "INI-1", marked: true)])) == nil)
     }
 
-    @Test func recordCountNamesOnlyKindsThatHoldALine() {
+    @Test func recordGroupsNameOnlyKindsThatHoldALineWithTheirCountAndMeaningfulHue() {
         let r = TicketRecordState(key: "INI-142", decisions: [line("a"), line("b")], notDone: [line("d")],
                                   verified: [line("f")])
-        #expect(ticketRecordCount(r) == "2 decisions · 1 not done · 1 verified")
-        #expect(ticketRecordCount(TicketRecordState(key: "INI-142", waitingOn: [line("a"), line("b")], rulings: [line("c")]))
-                == "2 waiting on · 1 ruling")
-        #expect(ticketRecordCount(TicketRecordState(key: "INI-142")) == nil)
+        let groups = ticketRecordGroups(r)
+        #expect(groups.map(\.heading) == ["Decisions", "Not done", "Verified"])
+        #expect(groups.map(\.count) == [2, 1, 1])
+        #expect(groups.map(\.hue) == [nil, .amber, .green])
+        let other = ticketRecordGroups(TicketRecordState(key: "INI-142", waitingOn: [line("a"), line("b")], rulings: [line("c")]))
+        #expect(other.map(\.kind) == ["waitingOn", "rulings"])
+        #expect(other.map(\.hue) == [.amber, nil])
+        #expect(ticketRecordGroups(TicketRecordState(key: "INI-142")).isEmpty)
+        // The kind + Add is adding a line of shows its heading before it holds one.
+        #expect(ticketRecordGroups(TicketRecordState(key: "INI-142"), including: "rulings").map(\.heading) == ["Rulings"])
+        #expect(ticketRecordGroups(r, including: "rulings").map(\.count) == [2, 1, 1, 0])
     }
 
     @Test func openThreadsSkipOutdatedAndResolvedInFileThenLineOrder() {
@@ -226,7 +278,8 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
                 == "#9  a → main      merged")
     }
 
-    @Test func threadRowTruncatesAndCountsReplies() {
+    /// Walk 2026-10-29: the first comment whole, its whitespace one space — the column cuts no text.
+    @Test func threadRowSaysTheCommentWholeAndCountsReplies() {
         let long = ReviewThreadState(id: "T1", path: "src/auth/session.go", line: 88, comments: [
             ReviewCommentState(author: "reviewer", body: "Should this read the org from the token instead of the session?",
                                createdAt: ""),
@@ -235,8 +288,7 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         ])
         let row = ticketThreadRow(long)
         #expect(row.place == "src/auth/session.go:88")
-        #expect(row.words == "Should this read the org from the token…")
-        #expect(row.words.count <= 41)
+        #expect(row.words == "Should this read the org from the token instead of the session?")
         #expect(row.replies == "2 replies")
         let short = ReviewThreadState(id: "T2", path: "src/auth/token.go", line: 41, comments: [
             ReviewCommentState(author: "reviewer", body: "Nit: the error should name the host", createdAt: ""),
@@ -269,6 +321,29 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         let s = try ticketDecode(InFlightState.self, o, tool: "t")
         #expect(s.waitingOnYou.first?.state == "#212 · 2 threads")
         #expect(s.inFlight.first?.state == "checks failing")
+    }
+
+    @Test func inFlightRowCarriesItsNumbers() throws {
+        // Piece 3's numbers decode beside piece 2's words; a row from before them decodes as empty.
+        let row: JSONValue = .object([
+            "key": .string(""), "title": .string("Speed up the build"), "state": .string("#215 · 2 threads"),
+            "root": .string(""), "branch": .string("build-speed"), "pr": .integer(215), "project": .string(""),
+            "repo": .string("github.com/initech/billing"), "url": .string("https://github.com/initech/billing/pull/215"),
+            "threads": .array([.string("T_1"), .string("T_2")]), "failing": .array([.string("unit (Linux)")]),
+            "review": .bool(true), "activity": .string("2026-10-26T11:00:00Z"),
+            "handoffs": .array([.object(["id": .string("h1"), "conversation": .string("c1"), "thread": .string("T_1")])]),
+            "count": .integer(4),
+        ])
+        let old: JSONValue = .object(["key": .string("INI-142"), "state": .string("local branch")])
+        let o: [String: JSONValue] = ["waitingOnYou": .array([row]), "inFlight": .array([old]), "partial": .array([]),
+                                      "count": .integer(4)]
+        let s = try ticketDecode(InFlightState.self, o, tool: "t")
+        #expect(s.count == 4)
+        let r = try #require(s.waitingOnYou.first)
+        #expect(r.threads == ["T_1", "T_2"] && r.failing == ["unit (Linux)"] && r.review && r.count == 4)
+        #expect(r.repo == "github.com/initech/billing" && r.url.hasSuffix("/pull/215") && r.root.isEmpty && r.project.isEmpty)
+        #expect(r.activity == "2026-10-26T11:00:00Z" && r.handoffs == [HandoffRefState(id: "h1", conversation: "c1", thread: "T_1")])
+        #expect(s.inFlight.first == InFlightRowState(key: "INI-142", state: "local branch"))
     }
 
     @Test func partialLinesAreWhole() {
@@ -365,7 +440,8 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         await fake.set("ticket_branch", ticketBranchJSON())
         await fake.setSlowBranch(true)
         let store = EditorTicketStore(ticket: fake)
-        await store.setDraft(thread: "T2", text: "Fixed in the next push")
+        try await store.setDraft(thread: "T2", text: "Fixed in the next push", by: "operator", conversation: nil,
+                                 root: nil, branch: nil)
         let read = Task { try await store.read(root: "/p/api") }
         while await fake.count("ticket_branch") == 0 { await Task.yield() }
         await store.reset()
@@ -374,6 +450,76 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(await store.branch(root: "/p/api") == nil)
         #expect(await store.allDrafts().isEmpty)
         #expect(!(await store.reading(root: "/p/api")))
+    }
+
+    // MARK: A ticket's pull requests across repositories and branches (walk 2026-10-29)
+
+    /// The other branches carrying a shown ticket — any root, any repository — are read, each failure
+    /// kept whole by its branch; the branch already shown is not read again; their threads are found.
+    @Test(.timeLimit(.minutes(1))) func aTicketsOtherBranchesAreRead() async throws {
+        let fake = FakeTicket()
+        await fake.set("ticket_in_flight", .object([
+            "waitingOnYou": .array([]), "partial": .array([]), "count": .integer(0),
+            "inFlight": .array([
+                .object(["key": .string("INI-142"), "root": .string("/p/api"), "branch": .string("ini-142-login"), "pr": .integer(212)]),
+                .object(["key": .string("INI-142"), "root": .string("/p/web"), "branch": .string("ini-142-web"), "pr": .integer(7)]),
+                .object(["key": .string("INI-142"), "root": .string("/p/api"), "branch": .string("ini-142-hotfix")]),
+                .object(["key": .string("INI-150"), "root": .string("/p/web"), "branch": .string("ini-150-other")]),
+            ]),
+        ]))
+        await fake.setBranch(root: "/p/web", branch: "ini-142-web",
+                             ticketBranchJSON(root: "/p/web", branch: "ini-142-web", repo: "github.com/initech/web", pr: 7, threads: "W"))
+        await fake.failBranch(root: "/p/api", branch: "ini-142-hotfix", "GitHub said no")
+        let store = EditorTicketStore(ticket: fake)
+        _ = try await store.inFlight()
+        await store.readTicketBranches(key: "INI-142", except: TicketShownAt(root: "/p/api", branch: "ini-142-login"))
+        let also = await store.ticketBranchReads()["INI-142"] ?? []
+        #expect(also.map(\.branch) == ["ini-142-web"])
+        #expect(also.first?.prs.map(\.number) == [7])
+        #expect(await store.ticketBranchFailures()["INI-142"] == ["ini-142-hotfix: GitHub said no"])
+        let read = await fake.calls.filter { $0.name == "ticket_branch" }.compactMap { c -> String? in
+            guard case .object(let a) = c.args, case .string(let b)? = a["branch"] else { return nil }
+            return b
+        }
+        #expect(read.sorted() == ["ini-142-hotfix", "ini-142-web"])
+        #expect(await store.branch(holding: "W2")?.branch == "ini-142-web")
+    }
+
+    /// Walk 2026-10-29: refreshing a picked ticket reads its record again too — an agent's Next shows
+    /// without reopening the ticket.
+    @Test(.timeLimit(.minutes(1))) func refreshingAPickedTicketReadsItsRecordAgain() async throws {
+        let fake = FakeTicket()
+        func record(_ next: String) -> JSONValue {
+            .object(["key": .string("INI-142"), "next": .object(["id": .string("next"), "text": .string(next), "by": .string("agent")])])
+        }
+        await fake.set("ticket_branch", ticketBranchJSON())
+        await fake.set("ticket_record", record("Send the reply"))
+        let store = EditorTicketStore(ticket: fake)
+        await store.readShown(key: "INI-142", root: "/p/api", branch: "ini-142-login")
+        _ = try await store.readRecord(key: "INI-142")
+        #expect(await store.shownRecords()["INI-142"]?.next?.text == "Send the reply")
+        await fake.set("ticket_record", record("Push the commit"))
+        await store.refreshShown(key: "INI-142")
+        #expect(await store.shownRecords()["INI-142"]?.next?.text == "Push the commit")
+    }
+
+    /// The Pull requests section's groups: one per repository, the shown branch's first, each PR once.
+    @Test func aTicketsPullRequestsGroupByRepository() throws {
+        func b(_ json: JSONValue) throws -> TicketBranchState {
+            guard case .object(let o) = json else { throw TicketReadError(description: "not an object") }
+            return try ticketDecode(TicketBranchState.self, o, tool: "t")
+        }
+        let api = try b(ticketBranchJSON())
+        let hotfix = try b(ticketBranchJSON(branch: "ini-142-hotfix", pr: 213, threads: "H"))
+        let web = try b(ticketBranchJSON(root: "/p/web", branch: "ini-142-web", repo: "github.com/initech/web", pr: 7, threads: "W"))
+        let again = try b(ticketBranchJSON(root: "/p/api-2", branch: "ini-142-login"))
+        let groups = ticketPRGroups(primary: api, others: [web, hotfix, again])
+        #expect(groups.map(\.name) == ["api", "web"])
+        #expect(groups.map { $0.prs.map(\.number) } == [[212, 213], [7]])
+        let merged = ticketMergedBranch(primary: api, others: [web, hotfix, again])
+        #expect(merged.prs.map(\.number) == [212, 213, 7])
+        #expect(merged.viewer == "me")
+        #expect(ticketPRGroups(primary: api, others: []).map(\.name) == ["api"])
     }
 
     // MARK: Cover fixes
@@ -448,4 +594,203 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketWaitingLine([], threads: 3) == nil)
         #expect(ticketBranchThreads([pr, pr]).map(\.id) == ["T1", "T2"])
     }
+
+    // MARK: Ticket noticing, Task 4 — drafts survive a quit and say who wrote them
+
+    /// A relaunch is a new store: its drafts are read back from the organisation's file, author and
+    /// conversation with them; Go's empty strings read as absent.
+    @Test func draftsSurviveANewStore() async throws {
+        let fake = FakeTicket()
+        await fake.seedDraft("T2", text: "Named the host in the error", by: "agent", conversation: "c1")
+        let store = EditorTicketStore(ticket: fake)
+        try await store.loadDrafts()
+        #expect(await store.draft(thread: "T2") == "Named the host in the error")
+        #expect(await store.allDrafts() == ["T2": "Named the host in the error"])
+        let d = try #require(await store.draftRecord(thread: "T2"))
+        #expect(d.by == "agent")
+        #expect(d.conversation == "c1")
+        #expect(d.root == nil && d.branch == nil && d.replaced == nil)
+        #expect(d.at == "2026-10-28T10:00:00Z")
+        #expect(await store.allDraftRecords().keys.sorted() == ["T2"])
+    }
+
+    /// An org switch during a slow load: the old organisation's drafts never land; the next load
+    /// reads the new organisation's.
+    @Test(.timeLimit(.minutes(1))) func orgSwitchLoadsTheNewOrgsDrafts() async throws {
+        let fake = FakeTicket()
+        await fake.seedDraft("T2", text: "initech's draft", by: "operator")
+        await fake.setSlowDrafts(true)
+        let store = EditorTicketStore(ticket: fake)
+        let load = Task { try await store.loadDrafts() }
+        while await fake.count("ticket_drafts") == 0 { await Task.yield() }
+        await store.reset()
+        await fake.clearDrafts()
+        await fake.seedDraft("T9", text: "umbrella's draft", by: "operator")
+        await fake.release()
+        try? await load.value
+        #expect(await store.allDrafts()["T2"] == nil)
+        try await store.loadDrafts()
+        #expect(await store.allDrafts() == ["T9": "umbrella's draft"])
+    }
+
+    /// Only an agent's draft carries a caption; only a replaced one says so, with Restore yours.
+    @Test func captionForAgentDraftOnly() {
+        let now = ISO8601DateFormatter().date(from: "2026-10-28T10:01:00Z")!
+        let agent = TicketDraftState(text: "x", by: "agent", at: "2026-10-28T10:00:00Z", conversation: "c1")
+        let mine = TicketDraftState(text: "x", by: "operator", at: "2026-10-28T10:00:00Z")
+        #expect(ticketDraftCaption(agent, now: now) == "Drafted by agent · 1 min ago")
+        #expect(ticketDraftCaption(mine, now: now) == nil)
+        #expect(ticketDraftReplacedLine(agent) == nil)
+        var replaced = agent
+        replaced.replaced = "my words"
+        #expect(ticketDraftReplacedLine(replaced) == "Agent replaced your draft · Restore yours")
+    }
+}
+
+/// No wakil-ticket client: nothing to load, so no load and no drafts-failure line. A window with a
+/// client whose load fails still says so (`aFailedDraftsLoadIsShownWhole`).
+@Test func noTicketClientLoadsNoDraftsAndSaysNothing() async throws {
+    let store = EditorTicketStore(ticket: nil)
+    try await store.loadDrafts()
+    #expect(await store.draftsFailure() == nil)
+    #expect(await store.allDrafts().isEmpty)
+
+    let fake = FakeTicket()
+    await fake.fail("ticket_drafts", "drafts are not readable: unexpected end of JSON input")
+    let withClient = EditorTicketStore(ticket: fake)
+    await #expect { try await withClient.loadDrafts() } throws: { _ in true }
+    #expect(await withClient.draftsFailure() == "Reply drafts could not be read: drafts are not readable: unexpected end of JSON input")
+}
+
+/// A ticket that needs the operator is listed once, under Waiting on you (walk, 2026-10-28).
+/// Walk 2026-10-29: a PR card names its branch — `head → base` — so two PRs of one ticket read apart.
+@Test func aPRCardNamesItsBranches() {
+    func pr(_ head: String, _ base: String) -> PullRequestState {
+        PullRequestState(number: 2, title: "Second", head: head, base: base)
+    }
+    #expect(ticketPRBranches(pr("AQ247-141-second", "main")) == "AQ247-141-second → main")
+    #expect(ticketPRBranches(pr("", "main")) == "→ main")
+    #expect(ticketPRBranches(pr("AQ247-141-second", "")) == "AQ247-141-second")
+    #expect(ticketPRBranches(pr("", "")) == nil)
+}
+
+/// The per-ticket lists' edge cases (walk 2026-10-29), so a ticket is never listed twice again.
+@Suite struct TicketViewListsEdgeCaseTests {
+    private func lists(_ waiting: [InFlightRowState], _ inFlight: [InFlightRowState],
+                       handoffs: [String: TicketHandOffLive] = [:], drafts: [String: TicketDraftState] = [:])
+        -> (waiting: [TicketNeedsRow], inFlight: [TicketNeedsRow]) {
+        ticketViewLists(InFlightState(waitingOnYou: waiting, inFlight: inFlight), handoffs: handoffs, drafts: drafts)
+    }
+
+    /// Whatever the rows, no ticket is listed twice, in one list or across both.
+    private func listedOnce(_ l: (waiting: [TicketNeedsRow], inFlight: [TicketNeedsRow])) -> Bool {
+        let ids = (l.waiting + l.inFlight).map(\.id)
+        return Set(ids).count == ids.count
+    }
+
+    @Test func nothingInFlightListsNothing() {
+        let l = lists([], [])
+        #expect(l.waiting.isEmpty && l.inFlight.isEmpty)
+    }
+
+    /// Two PRs of one ticket both wait on the operator: one row, the second a real "+1 more".
+    @Test func twoWaitingPRsOfOneTicketAreOneRow() {
+        let a = InFlightRowState(key: "INI-142", root: "/r/api", branch: "a", pr: 1, failing: ["unit"])
+        let b = InFlightRowState(key: "INI-142", root: "/r/api", branch: "b", pr: 2, threads: ["T1"])
+        let l = lists([a, b], [a, b])
+        #expect(l.waiting.map(\.id) == ["INI-142"] && l.inFlight.isEmpty)
+        #expect(l.waiting.first?.rows.count == 2)
+        #expect(l.waiting.first?.urgent.words == "#2 · 1 comment · +1 more")
+        #expect(listedOnce(l))
+    }
+
+    /// One PR number in two repositories of one ticket: two rows of the ticket, never merged as one PR.
+    @Test func oneNumberInTwoRepositoriesIsTwoRowsOfOneTicket() {
+        let api = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142", pr: 1, repo: "github.com/initech/api")
+        let web = InFlightRowState(key: "INI-142", root: "/r/web", branch: "ini-142", pr: 1, repo: "github.com/initech/web")
+        let l = lists([], [api, web])
+        #expect(l.inFlight.map(\.id) == ["INI-142"])
+        #expect(l.inFlight.first?.rows.count == 2)
+        #expect(listedOnce(l))
+    }
+
+    /// A keyless PR is its own row, by repository and number; two keyless PRs with one number in two
+    /// repositories are two rows; one Go lists in both lists is one, with no "+1 more" for itself.
+    @Test func keylessPRsAreRowsByRepositoryAndNumber() {
+        let api = InFlightRowState(key: "", root: "/r/api", branch: "speed", pr: 7, repo: "github.com/initech/api", failing: ["lint"])
+        let web = InFlightRowState(key: "", root: "/r/web", branch: "speed", pr: 7, repo: "github.com/initech/web")
+        let l = lists([api], [api, web])
+        #expect(l.waiting.map(\.id) == ["github.com/initech/api#7"])
+        #expect(l.waiting.first?.urgent.words == "#7 · lint failing")
+        #expect(l.inFlight.map(\.id) == ["github.com/initech/web#7"])
+        #expect(listedOnce(l))
+    }
+
+    /// A ticket with only a local branch, no PR, is in flight and says so.
+    @Test func aLocalBranchOnlyTicketIsInFlight() {
+        let local = InFlightRowState(key: "INI-160", root: "/r/api", branch: "ini-160")
+        let l = lists([], [local])
+        #expect(l.inFlight.map(\.id) == ["INI-160"])
+        #expect(l.inFlight.first?.urgent.words == "local branch")
+    }
+
+    /// A ticket Go lists only under In flight moves to Waiting on you when its handed agent waits,
+    /// and is not drawn under In flight as well.
+    @Test func aWaitingAgentMovesItsTicketToWaiting() {
+        let row = InFlightRowState(key: "INI-170", root: "/r/api", branch: "ini-170", pr: 4,
+                                   handoffs: [HandoffRefState(id: "h1", conversation: "c1")])
+        let l = lists([], [row], handoffs: ["c1": .waiting])
+        #expect(l.waiting.map(\.id) == ["INI-170"] && l.inFlight.isEmpty)
+        #expect(l.waiting.first?.urgent.words == "agent waiting")
+        // Its agent working is in flight, not waiting on the operator.
+        let working = lists([], [row], handoffs: ["c1": .working])
+        #expect(working.inFlight.map(\.id) == ["INI-170"] && working.waiting.isEmpty)
+    }
+
+    /// An agent's state, carried by every row of its ticket, is said once.
+    @Test func anAgentOnTwoRowsIsSaidOnce() {
+        let ref = HandoffRefState(id: "h1", conversation: "c1")
+        let a = InFlightRowState(key: "INI-142", root: "/r/api", branch: "a", pr: 1, handoffs: [ref])
+        let b = InFlightRowState(key: "INI-142", root: "/r/web", branch: "b", pr: 2, repo: "github.com/initech/web", handoffs: [ref])
+        let l = lists([], [a, b], handoffs: ["c1": .failed])
+        #expect(l.waiting.first?.urgent.words == "agent failed")
+    }
+
+    /// A drafted thread reads as its draft, not again as a comment, and a row Go lists twice does not
+    /// count its draft twice.
+    @Test func aDraftCountsOnceAsADraft() {
+        let row = InFlightRowState(key: "INI-142", root: "/r/api", branch: "a", pr: 1, threads: ["T1"])
+        let l = lists([row], [row], drafts: ["T1": TicketDraftState(text: "Fixed", by: "operator")])
+        #expect(l.waiting.first?.urgent.words == "1 draft to send")
+    }
+
+    /// Waiting on you is most urgent first, then newest; In flight likewise.
+    @Test func eachListIsMostUrgentThenNewestFirst() {
+        let older = InFlightRowState(key: "INI-1", root: "/r/api", branch: "x", pr: 1, failing: ["unit"], activity: "2026-10-27T09:00:00Z")
+        let newer = InFlightRowState(key: "INI-2", root: "/r/api", branch: "y", pr: 2, failing: ["unit"], activity: "2026-10-28T09:00:00Z")
+        let comment = InFlightRowState(key: "INI-3", root: "/r/api", branch: "z", pr: 3, threads: ["T9"], activity: "2026-10-20T09:00:00Z")
+        let quietOld = InFlightRowState(key: "INI-4", root: "/r/api", branch: "p", pr: 4, activity: "2026-10-01T09:00:00Z")
+        let quietNew = InFlightRowState(key: "INI-5", root: "/r/api", branch: "q", pr: 5, activity: "2026-10-02T09:00:00Z")
+        let l = lists([older, newer, comment], [older, newer, comment, quietOld, quietNew])
+        #expect(l.waiting.map(\.id) == ["INI-3", "INI-2", "INI-1"])
+        #expect(l.inFlight.map(\.id) == ["INI-5", "INI-4"])
+        #expect(listedOnce(l))
+    }
+}
+
+/// Walk 2026-10-29: the Ticket view's lists are tickets, not branches or PRs — one row per ticket, as
+/// the Landing's: Waiting on you when its most urgent state needs the operator, else In flight.
+@Test func theTicketViewListsEachTicketOnce() {
+    let failing = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-login", pr: 1, failing: ["unit"])
+    let second = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-hotfix", pr: 2)
+    let otherRepo = InFlightRowState(key: "INI-142", root: "/r/web", branch: "ini-142-web", pr: 1, repo: "github.com/initech/web")
+    let quiet = InFlightRowState(key: "INI-150", root: "/r/api", branch: "ini-150-search", pr: 3)
+    let s = InFlightState(waitingOnYou: [failing], inFlight: [failing, second, otherRepo, quiet])
+    let lists = ticketViewLists(s, handoffs: [:], drafts: [:])
+    #expect(lists.waiting.map(\.id) == ["INI-142"])
+    // The failing row Go lists twice counts once: no "· +1 more" for itself.
+    #expect(lists.waiting.first?.urgent.words == "#1 · unit failing")
+    #expect(lists.waiting.first?.rows.count == 3)
+    #expect(lists.inFlight.map(\.id) == ["INI-150"])
+    #expect(lists.inFlight.first?.urgent.words == "#3 · open")
 }

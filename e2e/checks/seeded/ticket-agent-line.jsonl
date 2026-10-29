@@ -26,7 +26,7 @@
 {"expect":{"pane":"editor-2","field":"ticket.reading","equals":"false"}}
 {"expect":{"tree":"contains","text":"Login works against the stub"}}
 {"expect":{"tree":"contains","text":"ran it"}}
-{"expect":{"tree":"contains","text":"1 verified"}}
+{"expect":{"tree":"contains","text":"Verified 1"}}
 {"expect":{"tree":"contains","text":"Tokens live in the Keychain only"}}
 {"do":{"click":"rail.terminal-1"}}
 {"do":{"keys":"plutil -extract verified.0.by raw -o - ~/.wakil/orgs/e2e-fixture/tickets/INI-142.json"}}

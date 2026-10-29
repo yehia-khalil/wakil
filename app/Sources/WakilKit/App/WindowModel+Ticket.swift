@@ -1,13 +1,25 @@
 import Foundation
 
-/// The Ticket view's reads the window starts (spec, *When it reads*). No timer: a root's branch
-/// changing (or first seen) while an editor pane is open, and Wakil becoming the active app with
-/// the Ticket view showing and its read over 60 s old. ↻, a push and Send or Resolve read through
+/// The Ticket view's reads the window starts (spec, *When it reads*): a root's branch changing (or
+/// first seen) while an editor pane is open, and Wakil becoming the active app with the Ticket view
+/// showing and its read over 60 s old; the 2-minute read is `WindowModel+TicketNoticing`'s. ↻, a push and Send or Resolve read through
 /// their own actions. Reads are Wakil's cache, not operator state: they go to the store, which the
 /// panes' readable state follows; the default branch reads In flight too.
 extension WindowModel {
     private var editorPaneIds: [String] {
         layoutSnapshot.panes.filter { PaneKinds.is($0.kind, EditorPaneKind.self) }.map(\.id)
+    }
+
+    /// A rail row pressed: the pane focused, and an editor row with the needs-you tick shows its
+    /// Ticket view (the count's home) as it was left — a ticket picked from In flight still shown,
+    /// the column scrolled where it was (spec, Rule 6). `editor_tree`, not `ticket_show` with no key,
+    /// which is ← Back to this branch and dropped the pick (walk 2026-10-29).
+    public func railRowPressed(pane: String) async {
+        _ = await focusPane(id: pane)
+        guard layoutSnapshot.panes.contains(where: { $0.id == pane && PaneKinds.is($0.kind, EditorPaneKind.self) }),
+              ticketNeedsCount(ticketNeeds) > 0 else { return }
+        await dispatchFromSurface("editor_tree", .object([
+            "pane": .string(pane), "view": .string(EditorColumnView.ticket.rawValue), "shown": .bool(true)]))
     }
 
     /// Reads every root whose branch is not the one it was at the last status read, while an editor
@@ -24,9 +36,20 @@ extension WindowModel {
     }
 
     /// Wakil became the active app: each root an editor pane shows on its Ticket view is read again
-    /// when its last read is over 60 s old.
+    /// when its last read is over 60 s old, and so is each ticket picked into one (walk 2026-10-29).
     func ticketActivated() async {
         guard let ticket else { return }
+        let now = Date()
+        for root in await ticketViewRoots() where ticketStale(lastRead: await ticket.lastRead(root: root), now: now) {
+            ticketRead(root)
+        }
+        for key in await ticketShownKeys() where await ticket.shownStale(key: key) {
+            Task { await ticket.refreshShown(key: key) }
+        }
+    }
+
+    /// The roots the editor panes showing their Ticket view on the branch's own ticket follow, once each.
+    func ticketViewRoots() async -> [String] {
         let roots = gitRootPaths
         var wanted: [String] = []
         for pane in editorPaneIds {
@@ -35,10 +58,20 @@ extension WindowModel {
                   let root = ticketFollowedRoot(front: editorFrontRoot(s), roots: roots), !wanted.contains(root) else { continue }
             wanted.append(root)
         }
-        let now = Date()
-        for root in wanted where ticketStale(lastRead: await ticket.lastRead(root: root), now: now) {
-            ticketRead(root)
+        return wanted
+    }
+
+    /// The tickets the editor panes' Ticket views show picked from In flight or the Landing — a key,
+    /// or a keyless row on a root — once each: what ↻ reads again beside the branch's own.
+    func ticketShownKeys() async -> [String] {
+        var keys: [String] = []
+        for pane in editorPaneIds {
+            guard let c = await editorSnapshot(pane: pane).column, c.shown, c.view == EditorColumnView.ticket,
+                  let key = c.ticketShown ?? c.ticketShownAt.flatMap({ $0.root.isEmpty ? nil : $0.id }),
+                  !key.isEmpty, !keys.contains(key) else { continue }
+            keys.append(key)
         }
+        return keys
     }
 
     /// Reads the head texts each editor pane's front file needs to place its review boxes
@@ -58,9 +91,18 @@ extension WindowModel {
         }
     }
 
+    /// Reads the organisation's reply drafts from its file (`ticket_drafts`), so a draft written
+    /// before a quit, or by a handed agent in the background, is in its box. The window being ready
+    /// and an org switch both end in `refreshContext`, which calls this; the store drops a load from
+    /// before a switch. Started, not awaited.
+    func ticketLoadDrafts() {
+        guard let ticket else { return }
+        Task { try? await ticket.loadDrafts() }
+    }
+
     /// One read of `root`, joined to one in flight; the default branch reads In flight too. A
     /// failure is kept in the store, whole, where the view reads it (Rule 8).
-    private func ticketRead(_ root: String) {
+    func ticketRead(_ root: String) {
         guard let ticket else { return }
         Task {
             guard let state = try? await ticket.read(root: root) else { return }

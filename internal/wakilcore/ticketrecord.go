@@ -65,6 +65,8 @@ type TicketRecord struct {
 	WaitingOn []TicketLine      `json:"waitingOn"`
 	Verified  []TicketLine      `json:"verified"`
 	Rulings   []TicketLine      `json:"rulings"`
+	// Handoffs are written by Wakil only, when the operator hands the ticket to an agent.
+	Handoffs []TicketHandoff `json:"handoffs"`
 }
 
 // TicketEdit is one change to the record. Line carries the text fields only; By and
@@ -144,6 +146,9 @@ func (r *TicketRecord) normalize() {
 	if r.PRs == nil {
 		r.PRs = []TicketPRRef{}
 	}
+	if r.Handoffs == nil {
+		r.Handoffs = []TicketHandoff{}
+	}
 	for _, l := range []*[]TicketLine{&r.Decisions, &r.NotDone, &r.WaitingOn, &r.Verified, &r.Rulings} {
 		if *l == nil {
 			*l = []TicketLine{}
@@ -186,7 +191,13 @@ func appendTicketLog(logPath string, entry map[string]any) error {
 
 func writeTicketRecord(path string, r TicketRecord) error {
 	r.normalize()
-	b, err := json.MarshalIndent(r, "", "  ")
+	return writeTicketJSON(path, r)
+}
+
+// writeTicketJSON publishes v at path by temp-and-rename, so a reader never meets half a file.
+// Every file under tickets/ is written this way, holding its own lock.
+func writeTicketJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -227,7 +238,16 @@ func ticketSection(r *TicketRecord, section string) *[]TicketLine {
 // nextTicketID is the section letter plus one more than the highest number ever used in
 // the section, counting the log, so a removed line's id is never handed out again.
 func nextTicketID(r *TicketRecord, logPath, section string) string {
-	letter := ticketSectionLetter[section]
+	var ids []string
+	for _, l := range *ticketSection(r, section) {
+		ids = append(ids, l.ID)
+	}
+	return nextLoggedID(ticketSectionLetter[section], ids, logPath, section)
+}
+
+// nextLoggedID is letter plus one more than the highest number among ids and the log's entries
+// for section.
+func nextLoggedID(letter string, ids []string, logPath, section string) string {
 	max := 0
 	note := func(id string) {
 		if strings.HasPrefix(id, letter) {
@@ -236,8 +256,8 @@ func nextTicketID(r *TicketRecord, logPath, section string) string {
 			}
 		}
 	}
-	for _, l := range *ticketSection(r, section) {
-		note(l.ID)
+	for _, id := range ids {
+		note(id)
 	}
 	if f, err := os.Open(logPath); err == nil {
 		defer f.Close()

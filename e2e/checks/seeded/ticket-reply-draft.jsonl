@@ -15,9 +15,9 @@
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].openThreads","equals":"2"}}
 {"expect":{"pane":"editor-1","field":"ticket.drafts[0]","present":false}}
 {"dispatch":{"action":"review_reply_draft","params":{"thread":"T_1","text":"Named it in the next push"}}}
-{"expect":{"pane":"editor-1","field":"ticket.drafts[0]","equals":"T_1"}}
+{"expect":{"pane":"editor-1","field":"ticket.drafts[0].thread","equals":"T_1"}}
 {"dispatch":{"action":"review_reply_draft","params":{"thread":"T_2","text":"Thanks"}}}
-{"expect":{"pane":"editor-1","field":"ticket.drafts[1]","equals":"T_2"}}
+{"expect":{"pane":"editor-1","field":"ticket.drafts[1].thread","equals":"T_2"}}
 {"dispatch":{"action":"review_reply_draft","params":{"thread":"T_2","text":null}}}
 {"expect":{"pane":"editor-1","field":"ticket.drafts[1]","present":false}}
 {"dispatch":{"action":"review_reply_draft","params":{"thread":"T_1","text":""}}}

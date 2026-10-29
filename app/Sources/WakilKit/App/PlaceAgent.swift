@@ -23,6 +23,15 @@ public final class PlaceAgent {
     /// or environment moves an entry with no live session to the new name
     /// (`WindowModel.carryAgents`), so its conversation is not lost with the old one.
     public internal(set) var place: Place
+    /// Ticket noticing: the hand-off this conversation was started by (or carried to it by a
+    /// resume into a new conversation), nil for any other. It marks the conversation handed, so
+    /// the gate tightens its git writes (`handedAgentPrice`); its `mayPush` is what the Start (or
+    /// the carried record) said, and the gate reads the stored hand-off's beside it
+    /// (`WindowModel.handedPricing`), never this alone.
+    public internal(set) var handoff: PlaceAgentHandoff?
+    /// Why the hand-off could not be recorded, carried or read, whole (Rule 8): on its chip and in
+    /// its thread. Nil when nothing went wrong.
+    public internal(set) var handoffFailure: String?
     /// The live session's harness, or nil before the first turn.
     var harness: AgentHarness?
     /// 3a-iii-b: the composed instructions this session last received — at launch, or in a turn
@@ -136,7 +145,7 @@ public final class PlaceAgent {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
     }
     /// The first message's title: `newConversationTitle` until the first `send` sets it, once,
-    /// from the typed text.
+    /// from the typed text — or a hand-off's `<KEY> · <first line>`, set before its brief is sent.
     public internal(set) var messageTitle = newConversationTitle
     /// The typed text of the first `send` (not the identifier note or instructions update).
     public internal(set) var firstMessage: String?
@@ -204,7 +213,8 @@ public final class PlaceAgent {
     func noteSend(_ text: String) {
         if firstMessage == nil {
             firstMessage = text
-            messageTitle = conversationTitle(text)
+            // A hand-off set its title before its brief went (`startHandOff`): the brief keeps it.
+            if messageTitle == newConversationTitle { messageTitle = conversationTitle(text) }
         }
         lastActivity = Date()
     }

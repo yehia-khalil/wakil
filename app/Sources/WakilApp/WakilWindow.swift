@@ -313,6 +313,12 @@ struct WakilWindow: View {
                     // last rows moved to the bottom-anchored stack below, above
                     // the bar (rule 8: an error is never clipped).
                     .padding(.bottom, 48)   // 2d-ii: the bar's height plus its gap — a pane ends above it
+                    // Walk 2026-10-29: while the conversation has a thread, a pane ends above the
+                    // thread's resting rows too — at rest it sat over the bottom-left of whatever pane
+                    // was there (a maximized editor's Ticket column), the two unreadable through each
+                    // other. A fixed reserve, not the thread's height, so nothing moves as rows arrive
+                    // or open; an opened row still rises over the canvas, at full opacity (§9).
+                    .padding(.bottom, session.model.thoughts.isEmpty ? 0 : ThoughtThread.restingReserve)
 
                     // 2d-ii: ONE bottom-anchored flow, so nothing on the bottom edge
                     // can overprint anything else however tall the bar grows (rule 8:
@@ -488,12 +494,20 @@ struct WakilWindow: View {
         })
         // 3a-ii-b (final review I4): every draft that replaced a commit box's text — ✨, the agent or
         // voice — is one ⌘Z away, registered here once for the window.
-        // 3a-iii-a: the background fetch runs only while the app is frontmost.
+        // 3a-iii-a: the background fetch runs only while the app is frontmost; so does the 2-minute
+        // ticket read.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             session?.model.setAppActive(true)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             session?.model.setAppActive(false)
+        }
+        // Ticket noticing: the 2-minute read stops while the screen is locked.
+        .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.screenIsLocked"))) { _ in
+            session?.model.setScreenLocked(true)
+        }
+        .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.screenIsUnlocked"))) { _ in
+            session?.model.setScreenLocked(false)
         }
         .onChange(of: session?.model.changesLastDraft) { _, landed in
             guard let landed, let model = session?.model else { return }
@@ -662,7 +676,11 @@ struct WakilWindow: View {
         // put a surface on top would be the org plane's treatment borrowed
         // for a case that does not need it.
         if !model.sessionStarted {
-            Landing(model: model)
+            Landing(model: model, openTicketsPalette: {
+                // ⌘P in open mode with `#` typed: every ticket in flight.
+                openPalette(.open)
+                palette?.type("#")
+            })
                 .padding(.top, 34)
                 .transition(.opacity)
                 // **The settings pane draws OVER the Landing**, because

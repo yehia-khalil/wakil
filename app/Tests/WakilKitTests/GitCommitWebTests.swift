@@ -63,7 +63,7 @@ import Testing
         #expect(!(editorBlameHover(b) ?? "").contains("wakil.blame.web"))
         b.web = GitCommitWebPage(host: "GitLab", url: "https://gitlab.com/g/app/-/commit/\(sha)")
         #expect((editorBlameHover(b) ?? "").hasSuffix(
-            "[Open Changes](command:wakil.blame.open) · [Copy Commit ID](command:wakil.blame.copy) · [Open on GitLab](command:wakil.blame.web)"))
+            "[Open Changes](command:wakil.blame.open) · [Copy Commit ID](command:wakil.blame.copy) · [Open on GitLab ↗](command:wakil.blame.web)"))
     }
 
     @Test func editorBlameSetsThePageForPushedLinesAndReadsTheOriginOncePerRoot() async throws {

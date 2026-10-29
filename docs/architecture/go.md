@@ -157,9 +157,12 @@ and checks, the stack one step each way, and each unread source whole in `partia
 `ticket_in_flight` (the organization's tickets in flight and Waiting on you, each with its state in
 words), `ticket_record`, `ticket_record_write`, `ticket_link`, `review_reply`, `review_resolve` and
 `review_thread` (a thread described from GitHub by its id, so a reply's or resolve's words on the plane
-are GitHub's answer).
+are GitHub's answer). Ticket noticing adds five: `ticket_drafts` and `ticket_draft_write` (the
+organization's reply drafts, `ticketdrafts.go`), `ticket_handoff_write` (`add`, `end`, `carry`),
+`ticket_handoff_may_push` (a conversation's May push, off unless exactly one hand-off names it and says on)
+and `ticket_handoff_defaults` (`tickethandoff.go`). `ticket_in_flight` also carries `needs` and `count`.
 
-**The four writes refuse unless `WAKIL_IN_WINDOW` is exactly `1`** (`InWakilWindow`), as
+**The writes refuse unless `WAKIL_IN_WINDOW` is exactly `1`** (`InWakilWindow`), as
 `wakil-http`'s `send` does. A read's GitHub and Jira calls share one 15 s budget (Swift cancels at 20 s); one source failing
 leaves the others shown.
 

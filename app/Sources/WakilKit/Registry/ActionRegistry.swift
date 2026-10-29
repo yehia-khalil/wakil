@@ -167,6 +167,18 @@ public actor ActionRegistry {
         callerRefusal.set(lookup)
     }
 
+    /// The hand-off of a caller's conversation, when it is handed (ticket noticing, Task 9), with
+    /// May push as the gate prices it now: read before the gate for an agent's `.mutate` that a
+    /// handed agent pays more for (`handedAgentPrice`), which then replaces the action's agent
+    /// price. Nil — or no lookup, as in `--dispatch` and in tests with no window — is a caller not
+    /// handed.
+    ///
+    /// Installed by `WindowModel`, nonisolated for `setProductionLookup`'s reason.
+    public nonisolated func setHandedLookup(_ f: @escaping @Sendable (DispatchCaller) async -> PlaceAgentHandoff?) {
+        handedLookup.set(f)
+    }
+
+    private nonisolated let handedLookup = CallerLookupBox<PlaceAgentHandoff>()
     private nonisolated let callerRefusal = CallerRefusalBox()
     private nonisolated let productionLookup = CallerLookupBox<EnvironmentProduction>()
     private nonisolated let scopeLookup = CallerLookupBox<LayoutScope>()
@@ -325,6 +337,11 @@ public actor ActionRegistry {
             }
             price = (priced, priced)
             agentPrice = nil
+        }
+        // A handed agent's push, sync, publish, merge and rebase cost more; asked only for those.
+        if origin == .agent, action.kind == .mutate, handedAgentPrice(name, mayPush: false) != nil,
+           let handed = await handedLookup.current()?(caller) {
+            agentPrice = handedAgentPrice(name, mayPush: handed.mayPush) ?? agentPrice
         }
         let decision = writeGate(
             environment: caller.place.environment,
@@ -555,6 +572,19 @@ public actor ActionRegistry {
         recorded["url"] = .string(url)
         try appendJournalEntry(
             action: action, params: .object(recorded), origin: origin,
+            caller: caller, outcome: outcome,
+            secretParams: actions[action]?.secretParams)
+    }
+
+    /// A handler's own second line after its dispatch's, for what the dispatch line cannot hold: what
+    /// was asked is the dispatch's params, what was done is this (`ticket_hand_off`'s `started`
+    /// line: the whole text Wakil sent, the operator's brief with what Wakil appended). The
+    /// action's secret parameters are redacted here as in the dispatch line.
+    public func journalFollowUp(
+        action: String, params: JSONValue, origin: ActionOrigin, caller: DispatchCaller, outcome: String
+    ) throws {
+        try appendJournalEntry(
+            action: action, params: params, origin: origin,
             caller: caller, outcome: outcome,
             secretParams: actions[action]?.secretParams)
     }

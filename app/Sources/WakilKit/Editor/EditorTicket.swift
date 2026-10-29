@@ -57,29 +57,31 @@ public struct TicketSeenState: Sendable, Equatable, Codable {
     }
 }
 
-/// A ticket's record (spec, *The ticket record*): `next` and the five lists. Its `branches` and `prs`
-/// are Wakil's cache of reads and are not mirrored here.
+/// A ticket's record (spec, *The ticket record*): `next` and the five lists, and the hand-offs Wakil
+/// wrote (`handoffs`, ticket noticing). Its `branches` and `prs` are Wakil's cache of reads and are
+/// not mirrored here.
 public struct TicketRecordState: Sendable, Equatable, Codable {
     public var key: String
     public var seen: TicketSeenState
     public var next: TicketLineState?
     public var decisions, notDone, waitingOn, verified, rulings: [TicketLineState]
+    public var handoffs: [TicketHandOffEntryState]
 
     public init(key: String, seen: TicketSeenState = TicketSeenState(), next: TicketLineState? = nil,
                 decisions: [TicketLineState] = [], notDone: [TicketLineState] = [], waitingOn: [TicketLineState] = [],
-                verified: [TicketLineState] = [], rulings: [TicketLineState] = []) {
+                verified: [TicketLineState] = [], rulings: [TicketLineState] = [], handoffs: [TicketHandOffEntryState] = []) {
         self.key = key; self.seen = seen; self.next = next; self.decisions = decisions; self.notDone = notDone
-        self.waitingOn = waitingOn; self.verified = verified; self.rulings = rulings
+        self.waitingOn = waitingOn; self.verified = verified; self.rulings = rulings; self.handoffs = handoffs
     }
 
-    private enum CodingKeys: String, CodingKey { case key, seen, next, decisions, notDone, waitingOn, verified, rulings }
+    private enum CodingKeys: String, CodingKey { case key, seen, next, decisions, notDone, waitingOn, verified, rulings, handoffs }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(key: c.text(.key), seen: ((try? c.decodeIfPresent(TicketSeenState.self, forKey: .seen)) ?? nil) ?? TicketSeenState(),
                   next: (try? c.decodeIfPresent(TicketLineState.self, forKey: .next)) ?? nil,
                   decisions: c.list(.decisions), notDone: c.list(.notDone), waitingOn: c.list(.waitingOn),
-                  verified: c.list(.verified), rulings: c.list(.rulings))
+                  verified: c.list(.verified), rulings: c.list(.rulings), handoffs: c.list(.handoffs))
     }
 }
 
@@ -247,26 +249,134 @@ public struct TicketBranchState: Sendable, Equatable, Codable {
     }
 }
 
-/// One row of In flight or Waiting on you. `state` is the row's one state in words, composed by Go.
-public struct InFlightRowState: Sendable, Equatable, Codable {
-    public var key, title, status, state, root, branch: String
-    public var pr: Int
-    public init(key: String, title: String = "", status: String = "", state: String = "", root: String = "",
-                branch: String = "", pr: Int = 0) {
-        self.key = key; self.title = title; self.status = status; self.state = state; self.root = root
-        self.branch = branch; self.pr = pr
+/// One open hand-off of a row's ticket.
+public struct HandoffRefState: Sendable, Equatable, Codable {
+    public var id, conversation, thread: String
+    public init(id: String = "", conversation: String = "", thread: String = "") {
+        self.id = id; self.conversation = conversation; self.thread = thread
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, conversation, thread }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: c.text(.id), conversation: c.text(.conversation), thread: c.text(.thread))
     }
 }
 
+/// One row of In flight or Waiting on you. `state` is the row's one state in words, composed by Go.
+/// A Waiting on you row is one PR, with the numbers behind its words: `threads` (the waiting thread
+/// ids), `failing` (failing check names), `review`, `activity` (RFC 3339) and `count` (its items).
+/// `key` is empty for a PR with no ticket; `root` and `project` are empty for a repository no project
+/// holds, which `url` opens on GitHub.
+public struct InFlightRowState: Sendable, Equatable, Codable {
+    public var key, title, status, state, root, branch, project, repo, url: String
+    public var pr: Int
+    public var threads, failing: [String]
+    public var review: Bool
+    public var activity: String
+    public var handoffs: [HandoffRefState]
+    public var count: Int
+    public init(key: String, title: String = "", status: String = "", state: String = "", root: String = "",
+                branch: String = "", pr: Int = 0, project: String = "", repo: String = "", url: String = "",
+                threads: [String] = [], failing: [String] = [], review: Bool = false, activity: String = "",
+                handoffs: [HandoffRefState] = [], count: Int = 0) {
+        self.key = key; self.title = title; self.status = status; self.state = state; self.root = root
+        self.branch = branch; self.pr = pr; self.project = project; self.repo = repo; self.url = url
+        self.threads = threads; self.failing = failing; self.review = review; self.activity = activity
+        self.handoffs = handoffs; self.count = count
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key, title, status, state, root, branch, project, repo, url, pr, threads, failing, review, activity, handoffs, count
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(key: c.text(.key), title: c.text(.title), status: c.text(.status), state: c.text(.state),
+                  root: c.text(.root), branch: c.text(.branch), pr: c.number(.pr), project: c.text(.project),
+                  repo: c.text(.repo), url: c.text(.url), threads: c.list(.threads), failing: c.list(.failing),
+                  review: c.flag(.review), activity: c.text(.activity), handoffs: c.list(.handoffs), count: c.number(.count))
+    }
+}
+
+/// `count` is Waiting on you's items: the sum of its rows' counts.
 public struct InFlightState: Sendable, Equatable, Codable {
     public var waitingOnYou, inFlight: [InFlightRowState]
     public var partial: [SourceNoteState]
-    public init(waitingOnYou: [InFlightRowState] = [], inFlight: [InFlightRowState] = [], partial: [SourceNoteState] = []) {
-        self.waitingOnYou = waitingOnYou; self.inFlight = inFlight; self.partial = partial
+    public var count: Int
+    public init(waitingOnYou: [InFlightRowState] = [], inFlight: [InFlightRowState] = [], partial: [SourceNoteState] = [],
+                count: Int = 0) {
+        self.waitingOnYou = waitingOnYou; self.inFlight = inFlight; self.partial = partial; self.count = count
+    }
+
+    private enum CodingKeys: String, CodingKey { case waitingOnYou, inFlight, partial, count }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(waitingOnYou: c.list(.waitingOnYou), inFlight: c.list(.inFlight), partial: c.list(.partial),
+                  count: c.number(.count))
+    }
+}
+
+/// One review thread's reply draft, as the organisation's `tickets/drafts.json` keeps it
+/// (`wakilcore.TicketDraft`). `by` is `operator` or `agent`; `replaced` is the operator's text an
+/// agent's draft replaced, kept for **Restore yours**. Go's empty strings read as nil.
+public struct TicketDraftState: Sendable, Equatable, Codable {
+    public var text, by, at: String
+    public var conversation, root, branch, replaced: String?
+
+    public init(text: String, by: String, at: String = "", conversation: String? = nil, root: String? = nil,
+                branch: String? = nil, replaced: String? = nil) {
+        self.text = text; self.by = by; self.at = at
+        self.conversation = conversation; self.root = root; self.branch = branch; self.replaced = replaced
+    }
+
+    private enum CodingKeys: String, CodingKey { case text, by, at, conversation, root, branch, replaced }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func some(_ k: CodingKeys) -> String? { let v = c.text(k); return v.isEmpty ? nil : v }
+        self.init(text: c.text(.text), by: c.text(.by), at: c.text(.at), conversation: some(.conversation),
+                  root: some(.root), branch: some(.branch), replaced: some(.replaced))
+    }
+}
+
+/// `ticket_drafts` and `ticket_draft_write` answer every draft of the organisation, by thread.
+struct TicketDraftsState: Decodable {
+    var drafts: [String: TicketDraftState]
+    private enum CodingKeys: String, CodingKey { case drafts }
+    init(from decoder: any Decoder) throws {
+        drafts = (try? decoder.container(keyedBy: CodingKeys.self).decodeIfPresent([String: TicketDraftState].self, forKey: .drafts)) ?? [:]
     }
 }
 
 // MARK: - Pure decisions
+
+/// Who wrote a draft, from who dispatched the write: an agent's is `agent`; the operator's and the
+/// window's own channel (`.debug`, the e2e driver) are `operator` — a draft has no third author.
+public func ticketDraftBy(_ origin: ActionOrigin) -> String { origin == .agent ? "agent" : "operator" }
+
+/// An agent's draft's caption in its box: `Drafted by agent · 1 min ago`; nil for the operator's.
+public func ticketDraftCaption(_ d: TicketDraftState, now: Date) -> String? {
+    guard d.by == "agent" else { return nil }
+    let when = ticketDraftAge(d.at, now: now)
+    return when.isEmpty ? "Drafted by agent" : "Drafted by agent · \(when)"
+}
+
+/// The line over an agent's draft that replaced the operator's; its last words are **Restore yours**.
+public func ticketDraftReplacedLine(_ d: TicketDraftState) -> String? {
+    d.replaced == nil ? nil : "Agent replaced your draft · Restore yours"
+}
+
+/// How long ago a draft was written, short: `just now`, `1 min ago`, `5 min ago`, else as
+/// `editorRelativeAge` says it; empty when `at` is not a time.
+func ticketDraftAge(_ at: String, now: Date) -> String {
+    guard let date = ISO8601DateFormatter().date(from: at) else { return "" }
+    let s = max(0, Int(now.timeIntervalSince(date)))
+    if s >= 60, s < 3600 { return "\(s / 60) min ago" }
+    return editorRelativeAge(at, now: now)
+}
 
 /// Who wrote a record line, from who dispatched the write: never from the caller's params.
 public func ticketBy(_ origin: ActionOrigin) -> String {
@@ -327,16 +437,27 @@ public func ticketNext(_ b: TicketBranchState) -> (text: String, key: String?)? 
     return (newest.line.text, newest.key)
 }
 
-/// The record's count beside its label: each kind that holds a line, in the record's order —
-/// `2 decisions · 1 not done` — and nil for an empty record, which says so in words instead.
-public func ticketRecordCount(_ r: TicketRecordState) -> String? {
-    let kinds: [(Int, String, String)] = [
-        (r.decisions.count, "decision", "decisions"), (r.notDone.count, "not done", "not done"),
-        (r.waitingOn.count, "waiting on", "waiting on"), (r.verified.count, "verified", "verified"),
-        (r.rulings.count, "ruling", "rulings"),
+/// One kind of the record as its group heading draws it (the calmer column, 2026-10-28): the
+/// record's key for the kind, its plural name and how many lines it holds, and a hue only where the
+/// kind means something — Not done and Waiting on wait (§5's amber), Verified is done (green).
+public struct TicketRecordGroup: Equatable, Sendable {
+    public let kind: String
+    public let heading: String
+    public let count: Int
+    public let hue: TicketHue?
+}
+
+/// The record's groups in the record's order: each kind that holds a line, plus `including` (the kind
+/// + Add is adding a line of) though it holds none yet. Empty, the record says so in words instead.
+public func ticketRecordGroups(_ r: TicketRecordState, including: String? = nil) -> [TicketRecordGroup] {
+    let kinds: [TicketRecordGroup] = [
+        .init(kind: "decisions", heading: "Decisions", count: r.decisions.count, hue: nil),
+        .init(kind: "notDone", heading: "Not done", count: r.notDone.count, hue: .amber),
+        .init(kind: "waitingOn", heading: "Waiting on", count: r.waitingOn.count, hue: .amber),
+        .init(kind: "verified", heading: "Verified", count: r.verified.count, hue: .green),
+        .init(kind: "rulings", heading: "Rulings", count: r.rulings.count, hue: nil),
     ]
-    let parts = kinds.filter { $0.0 > 0 }.map { "\($0.0) \($0.0 == 1 ? $0.1 : $0.2)" }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    return kinds.filter { $0.count > 0 || $0.kind == including }
 }
 
 /// The branch's open threads — unresolved and not outdated — in file order, then line order. A
@@ -375,7 +496,40 @@ public func reviewPosition(_ threads: [ReviewThreadState], id: String) -> String
 /// Which of the spec's cases the Ticket view shows (*What the operator gets* 1 and 5).
 /// `loading` is a read in flight; `unread` is no read and none running — a root the window did not
 /// read (not a repository), or a first read cancelled — which ↻ reads.
-public enum TicketViewCase: Equatable { case ticket, several, noTicket(branch: String), longLived, loading, unread, error(String) }
+public enum TicketViewCase: Equatable {
+    case ticket, several, noTicket(branch: String), longLived, loading, unread, error(String)
+    /// A pull request on a repository no project of the organisation holds: there is no root to
+    /// read it in, so the view says so and opens it on GitHub (`url`).
+    case outside(url: String)
+}
+
+/// What the outside case says.
+public let ticketOutsideLine = "Not open in any project of this organisation"
+
+/// The case for a pane's column: a row no project holds is `outside`; a keyless row picked from In
+/// flight or the Landing is its own branch's read — reading, failed, or its case (no ticket, as Go
+/// found none); else the followed root's (`ticketViewCase(_:shown:failure:reading:)`).
+public func ticketViewCase(_ state: EditorTicketViewState, column: EditorColumnState, root: String?) -> TicketViewCase {
+    if let key = column.ticketShown, !key.isEmpty {
+        let rows = state.inFlight.map { ($0.waitingOnYou + $0.inFlight).filter { $0.key == key } } ?? []
+        if let first = rows.first, rows.allSatisfy({ $0.root.isEmpty }) { return .outside(url: first.url) }
+        return .ticket
+    }
+    if let at = column.ticketShownAt {
+        if at.root.isEmpty {
+            let row = state.inFlight.flatMap { s in
+                (s.waitingOnYou + s.inFlight).first { $0.root.isEmpty && $0.pr == at.pr && (at.repo.isEmpty || $0.repo == at.repo) }
+            }
+            return .outside(url: row?.url ?? (at.repo.isEmpty ? "" : "https://\(at.repo)/pull/\(at.pr)"))
+        }
+        if let b = state.shownBranches[at.id] { return ticketViewCase(b, shown: nil) }
+        if let f = state.shownBranchFailures[at.id], !f.isEmpty { return .error(f) }
+        return .loading
+    }
+    let b = root.flatMap { state.branches[$0] }
+    return ticketViewCase(b, shown: nil, failure: root.flatMap { state.failures[$0] },
+                          reading: root.map { state.reading.contains($0) } ?? false)
+}
 
 /// The case for a root's read. A key picked from In flight (`shown`) overrides the branch. One
 /// ticket is the branch's own only when it is marked: a ticket only the stack carries is never the
@@ -414,6 +568,17 @@ public func ticketLookedLine(_ looked: [String]) -> String? {
 
 /// A pull request's line: `#212  ini-142-login → main      open · checks 7/9 · 1 failing`.
 /// Checks show only when it has some: passed of all, then the failing.
+/// A PR card's branches (walk 2026-10-29): `head → base`, so two PRs of one ticket read apart; either
+/// alone when the other is unknown; nil with neither.
+public func ticketPRBranches(_ pr: PullRequestState) -> String? {
+    switch (pr.head.isEmpty, pr.base.isEmpty) {
+    case (false, false): "\(pr.head) → \(pr.base)"
+    case (true, false): "→ \(pr.base)"
+    case (false, true): pr.head
+    case (true, true): nil
+    }
+}
+
 public func ticketPRLine(_ pr: PullRequestState) -> String {
     var state = pr.state.isEmpty ? "open" : pr.state.lowercased()
     if !pr.checks.isEmpty {
@@ -434,24 +599,39 @@ public func ticketColumnThreads(_ pr: PullRequestState) -> [ReviewThreadState] {
     pr.threads.filter { !$0.resolved }.sorted { ($0.path, $0.line, $0.id) < ($1.path, $1.line, $1.id) }
 }
 
-/// The longest first words of a thread's row.
-public let ticketThreadWordsLimit = 40
-
-/// A thread's row: where it is, the first comment's first words (at most 40 characters, cut at a
-/// word and ended with "…"), and its replies counted — or `outdated` for a thread GitHub calls so.
-public func ticketThreadRow(_ t: ReviewThreadState) -> (place: String, words: String, replies: String?) {
+/// A thread's row: where it is, the first comment whole, its whitespace one space (walk 2026-10-29:
+/// the column cuts no text), and its replies counted — or `outdated` for a thread GitHub calls so.
+///
+/// `elsewhere` names the project of the organisation the thread's branch is in, when that is not the
+/// project on screen: the row opens nothing there (one place is on screen, Invariant 5) and says
+/// `in project umbrella`.
+public func ticketThreadRow(_ t: ReviewThreadState, elsewhere: String? = nil)
+    -> (place: String, words: String, replies: String?, elsewhere: String?) {
     let place = t.line > 0 ? "\(t.path):\(t.line)" : t.path
-    let body = (t.comments.first?.body ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    var words = body
-    if body.count > ticketThreadWordsLimit {
-        let head = String(body.prefix(ticketThreadWordsLimit + 1))
-        let cut = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? String(body.prefix(ticketThreadWordsLimit))
-        words = cut + "…"
-    }
+    let words = (t.comments.first?.body ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
     let n = max(0, t.comments.count - 1)
     let replies: String? = t.outdated ? "outdated" : n == 0 ? nil : n == 1 ? "1 reply" : "\(n) replies"
-    return (place, words, replies)
+    return (place, words, replies, elsewhere.map { "in project \($0)" })
 }
+
+/// The project an In flight row's branch is in, when it is not the screen's (its root is none of
+/// `roots`): its project's name, else its root's last part; nil for the screen's own or a row no
+/// project holds.
+public func ticketElsewhere(_ row: InFlightRowState?, roots: [String]) -> String? {
+    guard let row, !row.root.isEmpty, !roots.contains(row.root) else { return nil }
+    return row.project.isEmpty ? (row.root as NSString).lastPathComponent : row.project
+}
+
+/// What stands where a row's key goes: the key, else its PR and repository's last part
+/// (`#215 · api`) — a keyless row is never drawn with an empty key.
+public func ticketRowName(key: String, repo: String, pr: Int) -> String {
+    if !key.isEmpty { return key }
+    let name = repo.split(separator: "/").last.map(String.init) ?? repo
+    return name.isEmpty ? "#\(pr)" : "#\(pr) · \(name)"
+}
+
+/// `ticketRowName` for an In flight or Waiting on you row.
+public func ticketInFlightRowLabel(_ r: InFlightRowState) -> String { ticketRowName(key: r.key, repo: r.repo, pr: r.pr) }
 
 // MARK: - The column's pills (design A, "cards with state")
 
@@ -603,14 +783,34 @@ public struct EditorTicketViewState: Sendable, Equatable {
     /// The branch of a ticket picked from In flight, by key, and why one could not be read.
     public var shownBranches: [String: TicketBranchState]
     public var shownBranchFailures: [String: String]
+    /// A shown ticket's other branches — any root or repository — by key, and why one could not be
+    /// read, whole (walk 2026-10-29: the Pull requests section is the ticket's).
+    public var ticketBranches: [String: [TicketBranchState]]
+    public var ticketBranchFailures: [String: [String]]
+    /// Why the organisation's reply drafts could not be read, whole; nil after a load that came back.
+    public var draftsFailure: String?
+    /// The Hand to agent popover, while it is open (ticket noticing, Task 10).
+    public var handoff: TicketHandOffState?
+    /// The live handed conversations' states, by conversation id, for the record's hand-off entries:
+    /// the window's (`WindowModel.ticketHandOffLive`), set where the view is drawn.
+    public var handOffLive: [String: TicketHandOffLive]
+    /// The live handed conversations with what they were handed (`WindowModel.ticketLiveHandOffs`),
+    /// set where the view is drawn: the header's **With agent** reads them.
+    public var liveHandOffs: [TicketLiveHandOff]
 
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
                 failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],
                 recordFailures: [String: String] = [:], shownBranches: [String: TicketBranchState] = [:],
-                shownBranchFailures: [String: String] = [:]) {
+                shownBranchFailures: [String: String] = [:], ticketBranches: [String: [TicketBranchState]] = [:],
+                ticketBranchFailures: [String: [String]] = [:], draftsFailure: String? = nil,
+                handoff: TicketHandOffState? = nil, handOffLive: [String: TicketHandOffLive] = [:],
+                liveHandOffs: [TicketLiveHandOff] = []) {
         self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
         self.inFlight = inFlight; self.records = records; self.recordFailures = recordFailures
         self.shownBranches = shownBranches; self.shownBranchFailures = shownBranchFailures
+        self.ticketBranches = ticketBranches; self.ticketBranchFailures = ticketBranchFailures
+        self.draftsFailure = draftsFailure; self.handoff = handoff; self.handOffLive = handOffLive
+        self.liveHandOffs = liveHandOffs
     }
     public static let empty = EditorTicketViewState()
 
@@ -634,6 +834,15 @@ public func ticketShownRecord(_ state: EditorTicketViewState, key: String, ref: 
     if let f = state.recordFailures[key], !f.isEmpty { return .failure(f) }
     if let r = ref?.record { return .record(r) }
     return .none
+}
+
+/// The Ticket view's two lists on a long-lived branch (walk 2026-10-29): tickets, not branches or PRs —
+/// one row per ticket, as the Landing's (`ticketNeedsRows`, with every PR and branch of it) — under
+/// **Waiting on you** when its most urgent state needs the operator, else under **In flight**.
+public func ticketViewLists(_ s: InFlightState, handoffs: [String: TicketHandOffLive],
+                            drafts: [String: TicketDraftState]) -> (waiting: [TicketNeedsRow], inFlight: [TicketNeedsRow]) {
+    let rows = ticketNeedsRows(s, handoffs: handoffs, drafts: drafts)
+    return (rows.filter(\.urgent.needsYou), rows.filter { !$0.urgent.needsYou })
 }
 
 /// An In flight or Waiting on you row's name, for its accessibility identifier: `<key>:<root>:<branch>`,
@@ -670,4 +879,38 @@ public struct TicketFieldCommits: Sendable, Equatable {
         sent = now
         return now
     }
+}
+
+/// One repository's pull requests in a ticket's Pull requests section (walk 2026-10-29): the
+/// repository's key and its name as drawn (`api` of `github.com/initech/api`).
+public struct TicketPRGroup: Sendable, Equatable {
+    public let repo: String
+    public let name: String
+    public let prs: [PullRequestState]
+}
+
+/// A ticket's pull requests by repository: the shown branch's repository first, then each other in the
+/// order its branches come; a PR two branches or roots both read (one repository, one number) once.
+public func ticketPRGroups(primary: TicketBranchState?, others: [TicketBranchState]) -> [TicketPRGroup] {
+    var order: [String] = []
+    var prs: [String: [PullRequestState]] = [:]
+    for b in [primary].compactMap { $0 } + others {
+        if prs[b.repo] == nil { order.append(b.repo); prs[b.repo] = [] }
+        for pr in b.prs where !(prs[b.repo] ?? []).contains(where: { $0.number == pr.number }) {
+            prs[b.repo, default: []].append(pr)
+        }
+    }
+    return order.compactMap { repo in
+        guard let list = prs[repo], !list.isEmpty || repo == primary?.repo else { return nil }
+        let name = repo.split(separator: "/").last.map(String.init) ?? repo
+        return TicketPRGroup(repo: repo, name: name.isEmpty ? repo : name, prs: list)
+    }
+}
+
+/// The shown branch with every pull request of the ticket in it (`ticketPRGroups`' order): what the
+/// section's waiting-on line and threads count over.
+public func ticketMergedBranch(primary: TicketBranchState, others: [TicketBranchState]) -> TicketBranchState {
+    var merged = primary
+    merged.prs = ticketPRGroups(primary: primary, others: others).flatMap(\.prs)
+    return merged
 }

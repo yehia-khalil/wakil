@@ -360,9 +360,10 @@ func registerEditorChangesWrites(
                 let out = try await write(root, action: name) { git in
                     try await call(git, tool, ["root": .string(root)], action: name, timeout: gitRemoteReplyTimeout)
                 }
-                // A push starts CI and can open or move a PR: the Ticket view reads the root again.
+                // A push starts CI and can open or move a PR: the Ticket view reads the root again,
+                // then In flight.
                 if ["editor_changes_push", "editor_changes_sync", "editor_changes_publish"].contains(name) {
-                    await ticket?.invalidate(root: root)
+                    await ticket?.wrote(root: root)
                 }
                 return out
             },

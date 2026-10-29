@@ -83,8 +83,8 @@ func githubStubAnswer(query string, vars map[string]any, headSHA string) any {
 		return map[string]any{"data": map[string]any{"viewer": map[string]any{"login": "peter"}}}
 	case strings.Contains(query, "authored: search"):
 		return map[string]any{"data": map[string]any{
-			"authored":  map[string]any{"nodes": []any{githubStubPR(headSHA)}},
-			"requested": map[string]any{"nodes": []any{}},
+			"authored":  map[string]any{"nodes": []any{githubStubPR(headSHA), githubStubKeylessPR()}},
+			"requested": map[string]any{"nodes": []any{githubStubBillingPR()}},
 		}}
 	case strings.Contains(query, "... on PullRequestReviewThread"):
 		for _, t := range githubStubThreads() {
@@ -142,7 +142,7 @@ func githubStubPR(headSHA string) map[string]any {
 	return map[string]any{
 		"id": "PR_212", "number": 212, "title": "INI-142 Log in with a token", "body": "Ticket: INI-142",
 		"url": "https://github.com/initech/api/pull/212", "state": "OPEN", "mergeStateStatus": "CLEAN",
-		"isCrossRepository": false, "headRefName": TicketBranchOwn, "baseRefName": "main", "headRefOid": headSHA,
+		"updatedAt": "2026-10-25T08:00:00Z", "isCrossRepository": false, "headRefName": TicketBranchOwn, "baseRefName": "main", "headRefOid": headSHA,
 		"author":         map[string]any{"login": "peter"},
 		"reviewRequests": map[string]any{"nodes": []any{map[string]any{"requestedReviewer": map[string]any{"login": "reviewer"}}}},
 		"commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{
@@ -154,5 +154,35 @@ func githubStubPR(headSHA string) map[string]any {
 			}}}}}}},
 		"reviewThreads": map[string]any{"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}, "nodes": threads},
 		"baseRef":       map[string]any{"associatedPullRequests": map[string]any{"nodes": []any{}}},
+	}
+}
+
+// githubStubKeylessPR is PR #215 on initech/api, by peter, whose branch, title and body carry no
+// ticket key: one check failing, so it waits on the operator as a row named by its PR.
+func githubStubKeylessPR() map[string]any {
+	return map[string]any{
+		"id": "PR_215", "number": 215, "title": "Speed up the build", "body": "",
+		"url": "https://github.com/initech/api/pull/215", "state": "OPEN", "mergeStateStatus": "CLEAN",
+		"updatedAt": "2026-10-26T08:00:00Z", "isCrossRepository": false, "headRefName": "build-speed", "baseRefName": "main",
+		"headRefOid": "def456", "author": map[string]any{"login": "peter"},
+		"reviewRequests": map[string]any{"nodes": []any{}},
+		"commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{
+			"id": "SCR_215", "contexts": map[string]any{"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}, "nodes": []any{
+				map[string]any{"__typename": "CheckRun", "name": "unit (Linux)", "status": "COMPLETED", "conclusion": "FAILURE",
+					"detailsUrl": "https://github.com/initech/api/actions/runs/3"},
+			}}}}}}},
+		"reviewThreads": map[string]any{"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}, "nodes": []any{}},
+	}
+}
+
+// githubStubBillingPR is PR #214 on initech/billing, a repository no seeded project holds, by
+// another author, asking for peter's review.
+func githubStubBillingPR() map[string]any {
+	return map[string]any{
+		"id": "PR_214", "number": 214, "title": "Bill per seat", "body": "",
+		"url": "https://github.com/initech/billing/pull/214", "state": "OPEN", "mergeStateStatus": "CLEAN",
+		"updatedAt": "2026-10-24T08:00:00Z", "isCrossRepository": false, "headRefName": "bill-per-seat", "baseRefName": "main",
+		"headRefOid": "fed789", "author": map[string]any{"login": "milton"},
+		"reviewRequests": map[string]any{"nodes": []any{map[string]any{"requestedReviewer": map[string]any{"login": "peter"}}}},
 	}
 }

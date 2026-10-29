@@ -2,6 +2,7 @@
 <html><head><meta charset="utf-8">
 <style>html,body,#d{margin:0;height:100%;background:#0b0d14}
 #dd{position:absolute;inset:0;display:none;background:#0b0d14}
+.monaco-hover a[data-href="command:wakil.blame.web"]{color:#4fb9e8}
 .wakil-mark-added{border-left:3px solid #8be0c8;margin-left:4px}
 .wakil-mark-changed{border-left:3px solid #e8b45a;margin-left:4px}
 .wakil-mark-deletedBelow,.wakil-mark-deletedAbove{position:relative}
@@ -60,6 +61,8 @@
 .wakil-review button.wakil-review-kbd{font:10px Menlo,monospace;line-height:14px;padding:0 4px;border-radius:3px;border-color:rgba(232,236,246,.2);color:rgba(232,236,246,.6)}
 .wakil-review button:focus-visible{outline:1px solid #7c5cff;outline-offset:1px}
 .wakil-review button[disabled]{cursor:default;color:rgba(232,236,246,.38);border-color:rgba(232,236,246,.08);background:none}
+/* Who wrote a draft: an agent's is captioned over its field, dim, as a head's time is. */
+.wakil-review-draft-by{margin:0 0 3px 23px;color:rgba(232,236,246,.45);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wakil-review textarea{display:block;box-sizing:border-box;width:calc(100% - 23px);min-height:54px;margin:2px 0 7px 23px;padding:6px 8px;resize:vertical;background:#0b0d14;color:#e8ecf6;caret-color:#9e82ff;border:1px solid rgba(232,236,246,.12);border-radius:5px;font:12.5px/1.45 -apple-system,BlinkMacSystemFont,sans-serif;outline:none}
 .wakil-review textarea::placeholder{color:rgba(232,236,246,.38)}
 .wakil-review textarea:focus{border-color:rgba(124,92,255,.6)}
@@ -167,7 +170,15 @@
     const dme = diff.getModifiedEditor();
     let diffKey = null;        // what the diff editor shows; null while the code editor is visible or mid-swap
     let diffScroll = null;     // re-applied once a shown diff is computed (its view zones move it)
+    let diffReveal = null;     // a line brought into view once the shown diff is computed (a review thread's)
     diff.onDidUpdateDiff(function () {
+      if (diffReveal !== null) {
+        const ln = diffReveal;
+        diffReveal = null; diffScroll = null;
+        dme.revealLineInCenterIfOutsideViewport(ln);
+        reportDiff();
+        return;
+      }
       if (diffScroll === null) return;
       const top = diffScroll;
       dme.setScrollTop(top);
@@ -232,7 +243,11 @@
       dme.setPosition({ lineNumber: ln, column: Math.min(Math.max(at ? at.column : 1, 1), m.getLineMaxColumn(ln)) });
       dme.setScrollTop(scroll);
       diffScroll = scroll;
+      // A tab opened at a line (a review thread's, in its PR-head tab) lands with that line in view.
+      if (!same && !scroll && ln > 1) diffReveal = ln;
       diffKey = key;
+      // Ticket view: a PR-head tab's review boxes, drawn on the diff's file side.
+      dme.changeViewZones(function (acc) { drawReviewBoxes(acc, key, dme); });
       onChangedDiff.set(key.indexOf('diff:changed:') === 0);
       onStagedDiff.set(key.indexOf('diff:staged:') === 0);
       reportDiff();
@@ -481,6 +496,14 @@
       }
     };
     window.wakilReveal = function (key, line, column, sel) {
+      if (diffKey && key === diffKey) {
+        // The shown diff's cursor moved by the store: a review thread opened at its line in a head tab.
+        const m = diff.getModel().modified, ln = Math.min(Math.max(line, 1), m.getLineCount());
+        dme.setPosition({ lineNumber: ln, column: Math.min(Math.max(column, 1), m.getLineMaxColumn(ln)) });
+        if (diffScroll !== null) diffReveal = ln; else dme.revealLineInCenterIfOutsideViewport(ln);
+        focusStepBox();
+        return;
+      }
       if (key !== current) return;
       if (sel) ed.setSelection(new monaco.Range(sel[0], sel[1], sel[2], sel[3])); else ed.setPosition({ lineNumber: line, column: column });
       ed.revealLineInCenterIfOutsideViewport(line);
@@ -639,7 +662,15 @@
     // control only posts {type:'review'}; what it did comes back from the store as new boxes.
     // ⌥↓ / ⌥↑ step threads only from a box: in the text they stay Monaco's Move Line Down / Up.
     const reviews = {};        // key -> boxes
-    let reviewRows = [];       // the shown key's: [{ key, thread, line, box, zone, zoneId, widget, node, field, ro }]
+    let reviewRows = [];       // the shown key's: [{ key, thread, line, box, zone, zoneId, widget, node, field, ro, host }]
+    // Boxes are drawn in the code editor for a file tab, and on the diff's file side (`dme`) for a
+    // PR-head tab — a picked ticket's thread at its PR's head commit, read-only.
+    function reviewHost() { return diffKey ? dme : ed; }
+    function reviewShown() { return diffKey || current; }
+    function reviewModel(key) {
+      if (diffKey && key === diffKey) { const m = diff.getModel(); return m ? m.modified : null; }
+      return models[key];
+    }
     const reviewOpen = {};     // thread -> true: Reply pressed, the draft field shown
     const reviewLive = {};     // thread -> the draft field's text as typed, until the store has it
     const reviewUnfolded = {}; // thread -> true: its replies shown
@@ -654,6 +685,14 @@
     // second ⌥↓ is never Monaco's Move Line Down; a press in the text, or 10 s, ends the wait.
     let reviewStepping = false, reviewFocusThread = null, reviewFocusKey = null, reviewWaitTimer = null;
     function inReview(el) { return !!(el && el.closest && el.closest('.wakil-review')); }
+    // BEGIN reviewRestoreText
+    // Restore yours over a field with typing not yet kept: that typing is the operator's too (Rule
+    // 2), so both are kept, the restored text first. Null: nothing unkept, a plain restore.
+    function reviewRestoreText(replaced, draft, live) {
+      if (live === undefined || live === (draft || '') || !live.trim()) return null;
+      return replaced + '\n\n' + live;
+    }
+    // END reviewRestoreText
     function reviewPost(key, thread, op, extra) {
       const m = { type: 'review', key: key, thread: thread, op: op };
       Object.keys(extra || {}).forEach(function (k) { m[k] = extra[k]; });
@@ -665,8 +704,12 @@
       if (text !== undefined) el.textContent = text;
       return el;
     }
-    function dropReviewBoxes(acc, leaving) {
+    // `acc` is `accHost`'s (the code editor's unless named): rows on the other editor are removed
+    // through their own.
+    function dropReviewBoxes(acc, leaving, accHost) {
+      const on = accHost || ed;
       reviewDrawing = true;
+      const elsewhere = [];
       reviewRows.forEach(function (r) {
         // Leaving the file with a field typed in and not yet blurred: the store keeps it (Rule 2).
         const live = reviewLive[r.thread];
@@ -674,16 +717,16 @@
           reviewPost(r.key, r.thread, 'draft', { text: live });
         }
         if (r.ro) r.ro.disconnect();
-        acc.removeZone(r.zoneId);
-        ed.removeOverlayWidget(r.widget);
+        if (r.host === on) acc.removeZone(r.zoneId); else elsewhere.push(r);
+        r.host.removeOverlayWidget(r.widget);
       });
       reviewRows = [];
+      elsewhere.forEach(function (r) { r.host.changeViewZones(function (c) { c.removeZone(r.zoneId); }); });
       reviewDrawing = false;
     }
     function placeReviewBoxes() {
-      const l = ed.getLayoutInfo();
       reviewRows.forEach(function (r) {
-        const n = r.node;
+        const n = r.node, l = r.host.getLayoutInfo();
         n.style.left = l.contentLeft + 'px';
         n.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
         // A pane too narrow for the full labels takes the short ones, as the conflict row does.
@@ -695,19 +738,21 @@
       });
     }
     ed.onDidLayoutChange(placeReviewBoxes);
+    dme.onDidLayoutChange(placeReviewBoxes);
     function redrawReviews(key) {
-      if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawReviewBoxes(acc, key); });
+      if (diffKey && key === diffKey) dme.changeViewZones(function (acc) { drawReviewBoxes(acc, key, dme); });
+      else if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawReviewBoxes(acc, key); });
     }
     // Ends the wait. `refocus`: no box took the keyboard (the step did not run, its box never drew),
     // so the text gets it back — unless something on the page already holds it.
     function endReviewWait(refocus) {
       reviewStepping = false; reviewFocusThread = null; reviewFocusKey = null;
       if (reviewWaitTimer !== null) { clearTimeout(reviewWaitTimer); reviewWaitTimer = null; }
-      if (!refocus || diffKey || !current) return;
+      if (!refocus || !reviewShown()) return;
       // Only while the operator is still on this page: a click in the Ticket column or another pane
       // took the native focus away, and the text must not pull it back.
       const a = document.activeElement;
-      if (document.hasFocus() && (!a || a === document.body || !document.contains(a))) ed.focus();
+      if (document.hasFocus() && (!a || a === document.body || !document.contains(a))) reviewHost().focus();
     }
     // The page losing the focus ends a step's wait where the operator went: nothing is refocused.
     window.addEventListener('blur', function () { if (reviewWaiting()) endReviewWait(false); });
@@ -740,9 +785,11 @@
         r.node.focus({ preventScroll: true });
         return;
       }
-      if (reviewFocusKey !== null && reviewFocusKey === current && reviews[current] !== undefined) reviewWaitFor(1000);
+      const shown = reviewShown();
+      if (reviewFocusKey !== null && reviewFocusKey === shown && reviews[shown] !== undefined) reviewWaitFor(1000);
     }
     ed.onMouseDown(function () { endReviewWait(false); });
+    dme.onMouseDown(function () { endReviewWait(false); });
     // A label with its full and short forms (dataset.full / dataset.short), the full one read aloud.
     function reviewLabel(tag, full, short) {
       const el = reviewEl(tag, '', full);
@@ -789,7 +836,7 @@
         }
         // Every other key stays in the box: Monaco's own keys do not fire here.
         e.stopPropagation();
-        if (e.key === 'Escape') { e.preventDefault(); ed.focus(); }
+        if (e.key === 'Escape') { e.preventDefault(); reviewHost().focus(); }
       });
       ['keyup', 'keypress'].forEach(function (t) { node.addEventListener(t, function (e) { e.stopPropagation(); }); });
       const card = reviewEl('div', 'wakil-review-card');
@@ -844,6 +891,32 @@
       const drafting = reviewOpen[b.thread] || b.draft != null || reviewLive[b.thread] !== undefined;
       let field = null;
       if (drafting) {
+        // Who wrote the draft the field holds: an agent's is captioned, while the field still shows it.
+        const live = reviewLive[b.thread];
+        if (b.draftCaption && (live === undefined || live === b.draft)) {
+          card.appendChild(reviewEl('div', 'wakil-review-draft-by', b.draftCaption));
+        }
+        // An agent's draft replaced the operator's: Restore yours puts theirs back, one click, no question.
+        if (b.replaced && !b.sending) {
+          const back = reviewEl('div', 'wakil-review-actions');
+          back.appendChild(reviewEl('span', '', 'Agent replaced your draft ·'));
+          back.appendChild(reviewButton(node, 'Restore yours', 'Restore', function (el) {
+            el.disabled = true;
+            delete reviewAsking[b.thread];
+            reviewFocusField = b.thread;
+            const both = reviewRestoreText(b.replaced, b.draft, reviewLive[b.thread]);
+            if (both === null) {
+              delete reviewLive[b.thread];
+              reviewPost(key, b.thread, 'restore');
+            } else {
+              // Kept as the operator's draft, which clears replaced: nothing they typed is lost.
+              reviewLive[b.thread] = both;
+              reviewPost(key, b.thread, 'draft', { text: both });
+            }
+          }));
+          back.style.marginBottom = '4px';
+          card.appendChild(back);
+        }
         field = document.createElement('textarea');
         field.value = reviewLive[b.thread] !== undefined ? reviewLive[b.thread] : (b.draft || '');
         field.setAttribute('aria-label', 'Reply to ' + b.author);
@@ -907,6 +980,18 @@
         reply.className = 'wakil-review-primary';
         row.appendChild(reply);
       }
+      // Reply · Hand to agent · Resolve: the hand-off popover opens prefilled from this thread; it
+      // starts nothing until the operator's Start. While a live hand-off works on the thread it is
+      // **Agent on it**, which opens that conversation, as its chip does.
+      if (b.handed) {
+        row.appendChild(reviewButton(node, 'Agent on it', 'Agent on it', function () {
+          reviewPost(key, b.thread, 'agent');
+        }));
+      } else {
+        row.appendChild(reviewButton(node, 'Hand to agent', 'Agent', function () {
+          reviewPost(key, b.thread, 'handoff');
+        }));
+      }
       row.appendChild(reviewButton(node, 'Resolve', 'Resolve', function (el) {
         el.disabled = true;
         reviewPost(key, b.thread, 'resolve');
@@ -917,7 +1002,7 @@
     // The waiting threads' lines on the key's model: a faint amber wash and a gutter dot. On the
     // model, as the conflict tints are, so they come back with it.
     function decorateReviews(key) {
-      const m = models[key];
+      const m = reviewModel(key);
       if (!m) return;
       const lines = m.getLineCount();
       const list = (reviews[key] || []).filter(function (b) { return b.waiting && !b.resolved && b.line <= lines; })
@@ -927,16 +1012,20 @@
         });
       reviewDecos[key] = m.deltaDecorations(reviewDecos[key] || [], list);
     }
-    function drawReviewBoxes(acc, key) {
+    // `host` is the editor `acc` belongs to: the code editor for a file tab, `dme` for a PR-head tab.
+    function drawReviewBoxes(acc, key, host) {
+      host = host || ed;
       // The field or box that has the keyboard keeps it, and its caret, across a redraw.
       const a = document.activeElement;
       const keep = inReview(a) ? { thread: a.closest('.wakil-review').dataset.thread, field: a.tagName === 'TEXTAREA',
                                    start: a.selectionStart, end: a.selectionEnd } : null;
-      dropReviewBoxes(acc, false);
+      dropReviewBoxes(acc, false, host);
       decorateReviews(key);
-      const boxes = reviews[key];
-      if (!boxes || key !== current || diffKey || !models[key]) return;
-      const lines = models[key].getLineCount(), l = ed.getLayoutInfo();
+      const shownHere = host === dme ? (!!diffKey && key === diffKey) : (key === current && !diffKey);
+      if (!shownHere) return;
+      const boxes = reviews[key], model = reviewModel(key);
+      if (!boxes || !model) return;
+      const lines = model.getLineCount(), l = host.getLayoutInfo();
       boxes.forEach(function (b, i) {
         if (b.line > lines) return;   // placed against text the page has since moved on from
         const node = reviewNode(key, b);
@@ -945,18 +1034,18 @@
         node.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
         const widget = { getId: function () { return 'wakil.review.' + i; }, getDomNode: function () { return node; },
                          getPosition: function () { return null; } };
-        ed.addOverlayWidget(widget);
+        host.addOverlayWidget(widget);
         const zone = { afterLineNumber: b.line, heightInPx: Math.max(node.offsetHeight, 20),
                        domNode: document.createElement('div'),
                        onDomNodeTop: function (top) { node.style.top = top + 'px'; } };
         const r = { key: key, thread: b.thread, line: b.line, box: b, zone: zone, zoneId: acc.addZone(zone),
-                    widget: widget, node: node, field: node.querySelector('textarea'), ro: null };
+                    widget: widget, node: node, field: node.querySelector('textarea'), ro: null, host: host };
         // The zone is as tall as the box: replies unfolded, a draft field grown, a narrower pane.
         r.ro = new ResizeObserver(function () {
           const h = Math.max(node.offsetHeight, 20);
           if (h === zone.heightInPx || reviewRows.indexOf(r) < 0) return;
           zone.heightInPx = h;
-          ed.changeViewZones(function (c) { c.layoutZone(r.zoneId); });
+          host.changeViewZones(function (c) { c.layoutZone(r.zoneId); });
         });
         r.ro.observe(node);
         reviewRows.push(r);
@@ -988,6 +1077,9 @@
         // A Send that ended with the store holding no draft was posted: the field closes.
         const was = reviewWas[b.thread];
         if (was && was.sending && !b.sending && b.draft == null) { delete reviewLive[b.thread]; delete reviewOpen[b.thread]; }
+        // A new draft from the store (an agent's, a Restore yours) over a field with nothing unsaved
+        // typed in it: the field shows the new one. Unsaved typing is the operator's and stays.
+        if (was && b.draft !== was.draft && reviewLive[b.thread] === (was.draft || '')) delete reviewLive[b.thread];
         reviewWas[b.thread] = b;
       });
       reviews[key] = boxes;
