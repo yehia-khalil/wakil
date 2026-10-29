@@ -496,12 +496,14 @@ Tests: `IdentifierTests`, `IdentifierResolverTests`, `IdentifierSourcesTests`,
 - `KeyCommands.swift` — `KeyCommand` (id, title, `KeyGroup`, `KeyPlace`, default chord; the static
   table), `FixedKey` (listed, never dispatched), `KeyCommand.matching` (Settings' search).
 - `Keymap.swift` — `Keymap`: defaults plus `"keys"` overrides; `resolve(chord, paneKind:)` (pane kind
-  first, then anywhere), `assign` (a taken chord moves; refuses Decision 50), `KeymapRefusal`.
+  first, then anywhere), `assign` (a taken chord moves, and restoring a default is assigning it; refuses Decision 50),
+  `takesBeforePage` (the `beforePage` commands' chords, offered to the menu before a focused web
+  page), `KeymapRefusal`.
   Pure values, no I/O. The wiring is `App/WindowModel+Keyboard.swift` (`keyPressed`,
   `runKeyCommand`) and `Registry/KeyboardActions.swift` (`ctx_keyboard`; operator-only `ctx_set_key`
   and `ctx_set_keys`).
 
-Uses: nothing but `Core`.
+Uses: no other folder. `KeyChord` imports AppKit: `init(event:)` reads an `NSEvent`.
 Tests: `KeyChordTests`, `KeymapTests`, `KeyboardActionTests`.
 
 ### Layout/ — where the panes are
