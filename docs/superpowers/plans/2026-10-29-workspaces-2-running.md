@@ -26,13 +26,16 @@ everywhere and defaults to the active project.
 Field keys of `from` and `notes`: `needs`, `copy`, `clone`, `services`, `setup`, `build`, `ready`,
 `teardown`, `alsoWriteEnvFile`, `in`, `ports.<VAR>`, `env.<VAR>`, `processes.<name>`.
 
-`RunPlan`: `{repo, dir, env{VAR: value}, secrets{VAR: "wakil:<org>:<ref>"}, envFile?{path, keys[]},
-files[{path, content, gitExclude}], steps[PlanStep], build?, ready?{url|output, timeoutSeconds},
-teardown[PlanStep]}`; `PlanStep` is `{phase, name, command, dir, longRunning, once, target}` with
-`phase` one of `need` (start `target`'s plan first: a repo or a shared service), `copy`, `clone`,
-`service`, `setup`, `process`, `build`, `teardown`; `once` is `workspace` (services, needs),
-`checkout` (copy, clone, setup) or empty. Commands are not expanded: the terminal's environment is
-`env` plus each `secrets` value read from the Keychain at run time; `ready.url` is expanded.
+`RunPlan`: `{repo, recipe, dir, env{VAR: value}, secrets{VAR: "wakil:<org>:<ref>"}, envFile?{path,
+keys[]}, files[{path, content, gitExclude}], steps[PlanStep], build?, ready?{url|output,
+timeoutSeconds}, teardown[PlanStep], warnings[]}`; `PlanStep` is `{phase, name, command, dir,
+longRunning, once, target, targetKind, paths, from}` with `phase` one of `need` (start `target`
+first; `targetKind` `repo` or `service`, whose plan is `recipe_plan {repo: target}`), `copy` and
+`clone` (`paths` from `from`, Main's folder, into `dir`; clone is copy-on-write), `service`,
+`setup`, `process`, `build`, `teardown`; `once` is `workspace` (needs, services), `checkout` (copy,
+clone, setup) or empty. Commands are not expanded: the terminal's environment is `env` plus each
+`secrets` value read from the Keychain at run time; `ready.url` is expanded. `warnings` carries the
+compose cannot-run-twice sentence. An effective `build` of `""` means none.
 
 ## Phase 1 — The recipe in `project.json`
 
