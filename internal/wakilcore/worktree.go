@@ -348,6 +348,12 @@ func (w *GitWriter) TakeFromMain(ctx context.Context, o TakeFromMainOptions) (Ta
 	if b.Current != o.Branch {
 		return TakeFromMainResult{}, UserError("Your folder " + w.Root + " is not on " + o.Branch)
 	}
+	if o.Base == "" {
+		o.Base = w.DefaultBranch(ctx)
+	}
+	if o.Base == "" || o.Base == o.Branch {
+		return TakeFromMainResult{}, UserError("Your folder " + w.Root + " has no other branch to go back to than " + o.Branch)
+	}
 	steady := context.WithoutCancel(ctx)
 	snap, err := w.SnapshotCreate(steady, o.Ref)
 	if err != nil {
@@ -397,4 +403,30 @@ func (w *GitWriter) TakeFromMain(ctx context.Context, o TakeFromMainOptions) (Ta
 	w.DeleteRef(steady, o.Ref)
 	r.Carried = true
 	return r, nil
+}
+
+// DefaultBranch names the branch the repository's remote calls its default (origin/HEAD), else a
+// local main or master; "" when none is.
+func (w *GitWriter) DefaultBranch(ctx context.Context) string {
+	if out, err := w.git(ctx, nil, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name, ok := strings.CutPrefix(strings.TrimSpace(string(out)), "origin/"); ok && name != "" {
+			return name
+		}
+	}
+	for _, name := range []string{"main", "master"} {
+		if w.localBranchExists(ctx, name) {
+			return name
+		}
+	}
+	return ""
+}
+
+// Detach lets go of a checkout's branch without touching its files (git switch --detach), so
+// another checkout can take it: a switch to a branch an idle conversation's checkout held.
+func (w *GitWriter) Detach(ctx context.Context) error {
+	if err := w.inProgress(ctx); err != nil {
+		return err
+	}
+	_, err := w.git(ctx, nil, "switch", "--detach", "-q")
+	return err
 }

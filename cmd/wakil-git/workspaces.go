@@ -46,7 +46,7 @@ type takeFromMainArg struct {
 	Project string `json:"project" jsonschema:"the project's registry key"`
 	Slug    string `json:"slug" jsonschema:"the workspace's folder name"`
 	Branch  string `json:"branch" jsonschema:"the branch Main's folder is on, taken into the checkout"`
-	Base    string `json:"base" jsonschema:"the branch Main's folder goes back to"`
+	Base    string `json:"base,omitempty" jsonschema:"the branch Main's folder goes back to; omit for the remote's default branch"`
 }
 type takeFromMainResult struct {
 	Path string `json:"path"`
@@ -197,6 +197,18 @@ func addWorkspaceTools(s *mcp.Server) {
 				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
 			}
 			w.DeleteRef(context.WithoutCancel(ctx), a.Ref)
+			return nil, emptyResult{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_detach", Description: "Writes. Lets go of a checkout's branch without touching its files (git switch --detach), so another checkout can take the branch."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a rootArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.Detach(ctx); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
 			return nil, emptyResult{}, nil
 		})
 

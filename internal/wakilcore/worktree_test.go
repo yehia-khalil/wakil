@@ -269,3 +269,33 @@ func TestBranchHeldIsShownWhole(t *testing.T) {
 		t.Fatalf("%q %v", msg, ok)
 	}
 }
+
+func TestTakeFromMainWithNoBaseGoesBackToTheDefaultBranch(t *testing.T) {
+	repo, home, w := worktreeFixture(t)
+	gitIn(t, repo, "switch", "-q", "feature")
+	if _, err := w.TakeFromMain(context.Background(), TakeFromMainOptions{Branch: "feature", Path: filepath.Join(home, "x"), Ref: "refs/wakil/carry/ws/core"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, repo, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+		t.Fatalf("on %q", got)
+	}
+}
+
+func TestDetachFreesTheBranchAndKeepsTheFiles(t *testing.T) {
+	_, home, w := worktreeFixture(t)
+	ctx := context.Background()
+	path := filepath.Join(home, "x")
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: path, Branch: "feature"}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(path, "a.txt"), []byte("kept\n"), 0o644)
+	if err := writerFor(t, path, GitIdentity{}).Detach(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(path, "a.txt")); string(b) != "kept\n" {
+		t.Fatalf("a.txt %q", b)
+	}
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "y"), Branch: "feature"}); err != nil {
+		t.Fatal(err)
+	}
+}
