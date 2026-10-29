@@ -441,7 +441,9 @@ func recipeProblems(where string, r Recipe, override bool, p Project, repos map[
 	return out
 }
 
-func isRegexpPattern(s string) bool { return len(s) >= 2 && strings.HasPrefix(s, "/") && strings.HasSuffix(s, "/") }
+func isRegexpPattern(s string) bool {
+	return len(s) >= 2 && strings.HasPrefix(s, "/") && strings.HasSuffix(s, "/")
+}
 
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
