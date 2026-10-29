@@ -4,13 +4,14 @@ Issues live on `yehia-khalil/wakil`. Use the `gh` CLI; it infers the repo inside
 
 ## Issues are a bug inbox
 
-**Since 2026-09-26, an issue is a defect report and nothing else.** Specs and plans are
-files under `docs/superpowers/`; see `docs/agents/workflow.md`. No maps, no grilling or
-research tickets, no child tickets, no issue-as-spec.
+**An issue is a defect report and nothing else.** Specs and plans are files (see
+`docs/agents/workflow.md`). No maps, no grilling or research tickets, no child tickets,
+no issue-as-spec.
 
 [#179](https://github.com/yehia-khalil/rafiq/issues/179) (2c-iv) and
 [#89](https://github.com/yehia-khalil/rafiq/issues/89) (2e) are the last two
-issues-as-spec and stay open, binding. Nothing after them.
+issues-as-spec and stay open, binding (both carry dated probe corrections in their
+comments). Nothing after them.
 
 ## Operations
 
@@ -29,8 +30,7 @@ Three. See `docs/agents/triage-labels.md`.
 ## Project board
 
 [**Wakil**](https://github.com/users/yehia-khalil/projects/6) (`--owner yehia-khalil`,
-number `6`) is a view over the open issues. With issues reduced to a bug inbox it is a
-short list, and `Status` is still derived rather than asserted:
+number `6`) is a view over the open issues. `Status` is derived, never asserted:
 
 1. closed → `Done`
 2. has an assignee → `In flight`
@@ -39,13 +39,12 @@ short list, and `Status` is still derived rather than asserted:
 5. otherwise → `Ready`
 
 `scripts/project-sync.sh` re-derives it and adds any open issue the board is missing;
-`--dry-run` prints without writing. **It runs long — 400s+ historically — so background
-it and never block on it.** Never hand-set `Status`: the next sync overwrites it.
-
-Needs the `project` gh scope (`gh auth refresh -s project`).
+`--dry-run` prints without writing. **It runs long (400s+), so background it and never
+block on it.** Never hand-set `Status`: the next sync overwrites it. Needs the `project`
+gh scope (`gh auth refresh -s project`).
 
 ## Pull requests
 
-**PRs as a request surface: no.** GitHub shares one number space across issues and PRs,
+**PRs are not a request surface.** GitHub shares one number space across issues and PRs,
 so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to
 `gh issue view 42`.

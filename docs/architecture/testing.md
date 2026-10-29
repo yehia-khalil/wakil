@@ -78,6 +78,7 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 | `make build` | Builds every Go binary in `BINS` into `bin/` |
 | `make test` | `docs-check`, then `go test ./...` |
 | `make docs-check` | Fails if `docs/wakil/north-star.md` exceeds 4,000 words |
+| `make merge-check` | Fails if any plan, spec or `docs/wakil/*-acceptance.md` remains; run on the PR that targets `main`, not part of `make test` |
 | `make test-live` | Engine-backed Go tests against Docker MySQL and Mongo |
 | `make vet` | `go vet ./...` |
 | `make fmt` | Fails if any Go file is not gofmt-clean |

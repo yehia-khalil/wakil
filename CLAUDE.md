@@ -22,7 +22,7 @@ Two files per sub-phase: a spec and a plan, both under `docs/superpowers/`. Feat
 **End every turn that finished a unit of work by naming the next step and its tool.**
 
 **Do not invoke** `/wayfinder`, `/to-spec`, `/to-tickets`, `/implement` or
-`/mattpocock-skills:code-review` — retired 2026-09-26. See `docs/agents/workflow.md`.
+`/mattpocock-skills:code-review` — retired. See `docs/agents/workflow.md`.
 
 ### Interaction rules
 
@@ -38,7 +38,7 @@ tracker** — specs and plans are files. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Three: `bug`, `needs-triage`, `wontfix`. See `docs/agents/triage-labels.md`.
+`bug`, `needs-triage`, `wontfix`. See `docs/agents/triage-labels.md`.
 
 ### The e2e auditor
 
