@@ -95,6 +95,8 @@ struct SettingsPane: View {
     /// environment a Try's throwaway workspace records.
     var runningDispatch: (String, JSONValue) async -> (result: JSONValue?, error: String?) = { _, _ in (nil, "no window") }
     var runningEnvironment: String = ""
+    /// Workspaces, piece 2: Detect's drafting conversation and Try's fix, per project.
+    var runningDrafting: (SettingsProject) -> RunningDrafting = { _ in .none }
     /// Workspaces (decision 10): a project's Branches text.
     var saveProjectBranchInstructions: (String, String) async -> String? = { _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
@@ -1099,7 +1101,8 @@ struct SettingsPane: View {
             if let project = tree.projects.first(where: { $0.name == name }) {
                 // Workspaces, piece 2: how the project's repos run. Keyed to the project, so one
                 // project's drafts and Try never carry into another's.
-                RunningSettingsForm(project: project, environment: runningEnvironment, dispatch: runningDispatch)
+                RunningSettingsForm(project: project, environment: runningEnvironment, dispatch: runningDispatch,
+                                    drafting: runningDrafting(project))
                     .id(project.path)
             } else {
                 gone(name)

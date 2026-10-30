@@ -710,6 +710,18 @@ extension WakilWindow {
                     saveProjectPMKey: { path, key in await model.saveProjectPMKey(projectPath: path, key) },
                     runningDispatch: { action, params in await model.runningDispatch(action, params) },
                     runningEnvironment: model.environment,
+                    runningDrafting: { project in
+                        RunningDrafting(
+                            draft: { model.recipeDraft(projectPath: project.path, repo: $0) },
+                            start: { repo, root, detected, kind in
+                                await model.startRecipeDraft(project: project, repo: repo, root: root, detected: detected, kind: kind)
+                            },
+                            fix: { repo, root, recipe, report in
+                                await model.proposeRecipeFix(project: project, repo: repo, root: root, recipe: recipe, report: report)
+                            },
+                            settle: { model.settleRecipeDraft(projectPath: project.path, repo: $0) },
+                            stop: { await model.stopRecipeDraft(projectPath: project.path, repo: $0) })
+                    },
                     saveProjectBranchInstructions: { path, branches in
                         await model.saveProjectAgentInstructions(projectPath: path, branches: branches)
                     },

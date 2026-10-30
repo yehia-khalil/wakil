@@ -12,6 +12,8 @@ struct RunningSettingsForm: View {
     let environment: String
     /// Dispatches one action as the operator: its result, or the refusal whole.
     let dispatch: (String, JSONValue) async -> (result: JSONValue?, error: String?)
+    /// Detect's drafting conversation and Try's fix (decision 13): the window's.
+    var drafting: RunningDrafting = .none
 
     @State private var settings: RunningSettings?
     @State private var loadError: String?
@@ -147,6 +149,7 @@ struct RunningSettingsForm: View {
                     }
                 }
                 if let t = tryState, t.repo == row.repo { tryBox(t) }
+                if let d = drafting.draft(row.repo) { draftBox(s, d) }
                 if !row.doesNotRun && row.recipeName != nil {
                     FormHint("Shared fields come from the recipe; change one here to keep it for this repo only.")
                     ForEach(RecipeField.allCases, id: \.self) { f in fieldBox(s, row.repo, f) }
@@ -269,7 +272,7 @@ struct RunningSettingsForm: View {
 
     // MARK: proposals and Try
 
-    private func proposalBox(_ p: Proposal) -> some View {
+    private func proposalBox(_ p: Proposal, id: String = "settings.running.proposal", settle: @escaping () -> Void = {}) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(p.title)
                 .font(.system(size: SettingsScale.body, weight: .medium))
@@ -282,21 +285,51 @@ struct RunningSettingsForm: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
-                FormButton(title: "Save", tone: SettingsPalette.accent, filled: true, identifier: "settings.running.proposal.save") {
+                FormButton(title: "Save", tone: SettingsPalette.accent, filled: true, identifier: "\(id).save") {
                     let saving = p.saving
-                    proposal = nil
+                    if id == "settings.running.proposal" { proposal = nil }
+                    settle()
                     save(saving)
                 }
-                FormButton(title: "Discard", tone: SettingsPalette.coolWhite, identifier: "settings.running.proposal.discard") {
-                    proposal = nil
+                FormButton(title: "Discard", tone: SettingsPalette.coolWhite, identifier: "\(id).discard") {
+                    if id == "settings.running.proposal" { proposal = nil }
+                    settle()
                 }
             }
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 6).fill(SettingsPalette.accent.opacity(0.06)))
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("settings.running.proposal")
+        .accessibilityIdentifier(id)
         .padding(.top, 8)
+    }
+
+    /// The drafting conversation's state (Rule 5, with Stop: Rule 4; a failure whole: Rule 8) and
+    /// its proposal, unsaved until Save (Rule 9).
+    @ViewBuilder
+    private func draftBox(_ s: RunningSettings, _ d: RecipeDraft) -> some View {
+        if let line = d.line {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if d.inFlight { ProgressView().controlSize(.small) }
+                Text(line)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(d.inFlight ? SettingsPalette.coolWhite.opacity(0.7) : SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("settings.running.draftLine")
+                if d.inFlight {
+                    FormButton(title: "Stop", tone: SettingsPalette.caution, identifier: "settings.running.draftStop") {
+                        Task { await drafting.stop(d.key.repo) }
+                    }
+                }
+            }
+        }
+        if let p = d.proposal {
+            proposalBox(Proposal(
+                title: d.isFix ? "Fix proposed by ‘\(d.title)’ — \(d.key.repo)" : "Drafted in ‘\(d.title)’ — \(d.key.repo)",
+                lines: p.lines, saving: s.savingDraft(p, of: d.key.repo)),
+                id: "settings.running.draft", settle: { drafting.settle(d.key.repo) })
+        }
     }
 
     private func tryBox(_ t: TryState) -> some View {
@@ -411,6 +444,11 @@ struct RunningSettingsForm: View {
             if let error { refusal = error; return }
             guard let r, let d = try? decodeDetected(r) else { refusal = "Detect answered nothing readable."; return }
             proposal = Proposal(title: "Detect — \(repo)", lines: d.lines, saving: d.saving(existing: settings?.recipes ?? [:]))
+            // Detect could not work out the rest: a conversation in Main drafts it from the docs (step 2).
+            if d.needsDrafting {
+                let root = rootPath(repo)
+                Task { await drafting.start(repo, root, r, d.kind) }
+            }
         }
     }
 
@@ -435,9 +473,14 @@ struct RunningSettingsForm: View {
         }
     }
 
+    private func rootPath(_ repo: String) -> String {
+        project.roots.first { ($0.path as NSString).lastPathComponent == repo }?.path ?? settings?.repo(repo)?.path ?? ""
+    }
+
     private func startTry(_ row: RunningRepo) {
         endTry()
-        let root = project.roots.first { ($0.path as NSString).lastPathComponent == row.repo }?.path ?? row.path
+        let root = rootPath(row.repo)
+        let tried = row.effective?.recipe ?? Recipe()
         tryState = TryState(repo: row.repo, running: true, steps: [])
         tryTask = Task {
             let (r, error) = await dispatch("running_try", .object([
@@ -456,6 +499,12 @@ struct RunningSettingsForm: View {
                 }
             }
             tryState = state
+            // A failed Try asks the drafting conversation for a fix (step 3); a cancelled or
+            // refused one does not.
+            if state.passed == false, state.error == nil, !Task.isCancelled,
+               let report = r.flatMap({ try? decodeTry($0) }) {
+                await drafting.fix(row.repo, root, tried, report)
+            }
         }
     }
 
@@ -477,4 +526,15 @@ private func decodeDetected(_ v: JSONValue) throws -> RunningDetected {
 
 private func decodeTry(_ v: JSONValue) throws -> RunTryResult {
     try JSONDecoder().decode(RunTryResult.self, from: JSONEncoder().encode(v))
+}
+
+/// The window's drafting conversations, as the Running settings reach them (decision 13).
+struct RunningDrafting {
+    var draft: (String) -> RecipeDraft? = { _ in nil }
+    var start: (_ repo: String, _ root: String, _ detected: JSONValue, _ kind: String) async -> Void = { _, _, _, _ in }
+    var fix: (_ repo: String, _ root: String, _ recipe: Recipe, _ report: RunTryResult) async -> Void = { _, _, _, _ in }
+    var settle: (String) -> Void = { _ in }
+    var stop: (String) async -> Void = { _ in }
+
+    static var none: RunningDrafting { RunningDrafting() }
 }
