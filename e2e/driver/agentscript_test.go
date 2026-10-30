@@ -164,6 +164,30 @@ func TestARuleMatchesTheWordsAndReadsTheMapAfterThem(t *testing.T) {
 	}
 }
 
+// The identifier hint is a block the window appends too, before the map: a rule still matches it
+// (2d-i-code-hint's `→ buildlaunch (code`), and only the map is kept from the rules.
+func TestARuleMatchesTheIdentifierHintButNotTheMap(t *testing.T) {
+	path := writeScript(t, `{"rules":[
+	  {"match":"→ buildlaunch (code","reply":"handed"},
+	  {"match":"where is build launch defined","reply":"no note"},
+	  {"match":"start the held agent","reply":"held"}
+	]}`)
+	script, err := LoadAgentScript(path)
+	if err != nil {
+		t.Fatalf("loading the script: %v", err)
+	}
+	prompt := "where is build launch defined\n\n[Wakil: identifiers in scope that match words in this turn — a hint, not a correction]\n" +
+		"- \"build launch\" → buildLaunch (code · api/api)\n\n[Wakil: where you work. This map replaces any earlier one.]\n" +
+		"You are in Main of project api (staging)."
+	if rule, found := script.Rule(prompt); !found || rule.Reply != "handed" {
+		t.Fatalf("the hint's rule answers, got %q", rule.Reply)
+	}
+	mapOnly := "say hi\n\n[Wakil: where you work. This map replaces any earlier one.]\n- ‘start the held agent’ (working)"
+	if rule, found := script.Rule(mapOnly); found {
+		t.Fatalf("a title in the map triggered %q", rule.Reply)
+	}
+}
+
 // A frame with no `type` is one StreamJSON decodes as nothing, so a check
 // waiting on what it carries would wait on a frame that never arrived.
 func TestAnEmittedFrameWithNoTypeIsRefused(t *testing.T) {

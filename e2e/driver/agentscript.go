@@ -89,17 +89,16 @@ func (r AgentRule) Render(value string) string {
 // asserting on it fails against a window that sends none.
 const MapPlaceholder = "{map}"
 
-// wakilBlock opens a block the window appends to the operator's words in a turn; wakilMapHeader
-// is the workspace map's (`workspaceMapHeader` in WakilKit).
-const (
-	wakilBlock     = "\n\n[Wakil: "
-	wakilMapHeader = "[Wakil: where you work."
-)
+// wakilMapHeader opens the workspace map the window appends to a turn (`workspaceMapHeader` in
+// WakilKit), after the operator's words and any identifier hint.
+const wakilMapHeader = "[Wakil: where you work."
 
-// PromptWords is a turn's text without the blocks the window appends after the operator's words:
-// what a rule matches, so a map naming another conversation's title cannot trigger its rule.
+// PromptWords is a turn's text without the workspace map: what a rule matches, so a map naming
+// another conversation's title cannot trigger its rule. **Only the map is cut.** The identifier
+// hint is a block the window appends too, and rules match it (2d-i-code-hint's
+// `→ buildlaunch (code`); cutting at every `[Wakil: ` block left those rules unreachable.
 func PromptWords(prompt string) string {
-	if i := strings.Index(prompt, wakilBlock); i >= 0 {
+	if i := strings.Index(prompt, "\n\n"+wakilMapHeader); i >= 0 {
 		return prompt[:i]
 	}
 	return prompt
