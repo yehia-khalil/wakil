@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,26 +13,32 @@ import (
 
 // startFakeStagedApp starts a sleeping process whose argv looks exactly like a
 // staged fixture's — the whole of what `pgrep -f` matches on — under root.
+//
+// **Under this test binary's own bundle name, not StagedBundleName.** The
+// stray scan reads the whole machine, so with the shared name a second `go
+// test` of this package (another worktree, two runs at once) or a real e2e
+// run put its instances in this test's counts, and the clean-machine test
+// failed whenever two ran together. The scan is pointed at the same name for
+// the length of the test; nothing else on the machine runs it.
 func startFakeStagedApp(t *testing.T, root string) (string, *exec.Cmd) {
 	t.Helper()
-	bundle := filepath.Join(root, StagedBundleName)
+	previous := strayBundleName
+	strayBundleName = fmt.Sprintf("WakilE2E-test%d.app", os.Getpid())
+	t.Cleanup(func() { strayBundleName = previous })
+	bundle := filepath.Join(root, strayBundleName)
 	macos := filepath.Join(bundle, "Contents", "MacOS")
 	if err := os.MkdirAll(macos, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(macos, "Wakil")
-	// **`sleep 5`, and the number is the whole of the hazard control.**
-	// This process is INDISTINGUISHABLE from a real stray — that is what it
-	// is for — so while it lives, any `make e2e` on this machine refuses to
-	// launch. `t.Cleanup` reaps it in well under a second normally; the
-	// exposure is an INTERRUPTED run, where Cleanup never fires and the
-	// decoy survives for as long as this number.
+	// **`sleep 5` caps how long an INTERRUPTED run leaves a decoy behind**,
+	// where Cleanup never fires. Its bundle name is this binary's own, so a
+	// leftover no longer stops `make e2e`; the cap keeps the table clean.
 	//
 	// Measured 2026-09-26: `/bin/sh` FORKS rather than execs, so killing it
 	// leaves the `sleep` as an orphan — but that orphan's argv is a bare
-	// `sleep`, which `pgrep -f "WakilE2E.app/Contents/MacOS/"` cannot match,
-	// so it is harmless. The SHELL is the decoy, and this caps how long a
-	// crashed run can leave one behind. Five seconds only has to outlive
+	// `sleep`, which the stray scan's pattern cannot match, so it is
+	// harmless. The SHELL is the decoy. Five seconds only has to outlive
 	// `waitForPgrep`, which gives up at five.
 	//
 	// A `trap` would NOT help: `t.Cleanup` calls `Process.Kill()`, which is

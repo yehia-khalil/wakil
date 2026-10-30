@@ -464,6 +464,12 @@ func pgrep(pattern string) ([]int, error) {
 	return pids, nil
 }
 
+// strayBundleName is the bundle name StrayFixtures scans the whole machine
+// for: StagedBundleName. Only the tests change it, to a name no other process
+// on the machine runs, because the scan is machine-wide and a decoy from a
+// second test binary (or a real fixture) would otherwise land in their counts.
+var strayBundleName = StagedBundleName
+
 // StrayFixtures lists OTHER fixture instances — any process running a staged
 // bundle that is not the one about to be launched.
 //
@@ -489,7 +495,7 @@ func pgrep(pattern string) ([]int, error) {
 // instance, because nothing in the run could see it — and it was diagnosed as
 // machine flakiness for most of a day on exactly that account.
 func StrayFixtures(bundle string) ([]int, error) {
-	all, err := pgrep(filepath.Join(StagedBundleName, "Contents", "MacOS") + "/")
+	all, err := pgrep(filepath.Join(strayBundleName, "Contents", "MacOS") + "/")
 	if err != nil {
 		return nil, err
 	}
