@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/workspaces-branches-instructions.jsonl",
   "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
-  "provedAt": "2026-10-30T03:42:56.678477Z",
+  "provedAt": "2026-10-30T06:20:14.212134Z",
   "checkBlob": "f1a51969cf4994538dbb54958444c853a315b552"
 }

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/workspaces-running-settings.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T06:20:14.212134Z",
+  "checkBlob": "7c62e24961f06aad977b380124c768e97f7a2686"
+}
