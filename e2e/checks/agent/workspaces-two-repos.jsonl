@@ -1,0 +1,35 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"wrote the workspace note"}}
+{"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"tree":"contains","text":"workspace copy"}}
+{"do":{"keys":"test -e ../e2e-portal || echo NO-PORTAL-COPY-YET"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"NO-PORTAL-COPY-YET"}}
+{"do":{"type":{"into":"window.composer","text":"write the portal note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"wrote the portal note"}}
+{"expect":{"tree":"contains","text":"Made a copy of e2e-portal in this workspace"}}
+{"expect":{"tree":"absent","text":"Started workspace ‘write the portal note’"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"test -e ../e2e-portal/portal-note.txt && test -e ws-note.txt && echo BOTH-IN-ONE-WORKSPACE"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"BOTH-IN-ONE-WORKSPACE"}}
+{"do":{"keys":"test -e \"$(git -C ../e2e-portal worktree list --porcelain | head -1 | cut -c10-)/portal-note.txt\" || echo MAIN-UNTOUCHED"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"MAIN-UNTOUCHED"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"2 repos"}}
+{"expect":{"tree":"absent","text":"write the portal note"}}

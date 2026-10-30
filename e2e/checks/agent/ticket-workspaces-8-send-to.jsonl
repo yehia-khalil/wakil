@@ -62,4 +62,17 @@
 {"expect":{"tree":"absent","text":"the second word arrived"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.project.e2e-git"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"dispatch":{"action":"ticket_hand_off_open","params":{"key":"INI-142","root":"{fixtureRoot}/e2e-api","branch":"ini-142-login","from":"header"}}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"true"}}
+{"dispatch":{"action":"ticket_hand_off_brief","params":{"brief":"Send-to check, second word."}}}
+{"do":{"click":"ticket.handoff.send"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"tree":"absent","text":"Queued — goes as your message when this turn ends"}}
+{"expect":{"tree":"absent","text":"the second word arrived"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"contains","text":" #2"}}
+{"expect":{"tree":"absent","text":"branched off"}}

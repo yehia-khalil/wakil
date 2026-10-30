@@ -1,0 +1,16 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"dispatch":{"action":"ticket_in_flight","params":{}}}
+{"expect":{"journal":{"contains":"\"action\":\"ticket_in_flight\""}}}
+{"do":{"click":"landing.project.e2e-git"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"TICKETS · IN FLIGHT, NOT STARTED HERE"}}
+{"expect":{"tree":"contains","text":"INI-142"}}
+{"expect":{"frame":"landing.tickets.0","inside":"window"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"landing.tickets.0","inside":"window"}}
+{"do":{"click":"landing.tickets.0"}}
+{"expect":{"journal":{"contains":"\"action\":\"ticket_open\""}}}
+{"expect":{"tree":"contains","text":"STAGING"}}

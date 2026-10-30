@@ -252,6 +252,41 @@
       "match": "write the ticket note",
       "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/ticket-note.txt", "kind": "file" } },
       "reply": "wrote the ticket note"
+    },
+    {
+      "match": "needs check: hand off",
+      "reply": "the needs-check agent started"
+    },
+    {
+      "match": "hold then fail",
+      "hold": "wakil-e2e-release-fail",
+      "call": { "action": "conversation_message", "params": { "to": "c-nowhere", "text": "this turn fails" } },
+      "reply": "a failing turn was not refused"
+    },
+    {
+      "match": "read the api readme",
+      "call": { "action": "editor_open", "echo": true, "params": { "path": "{cwd}/../e2e-api/README.md" } },
+      "reply": "read the readme without a copy"
+    },
+    {
+      "match": "write the second note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/second-note.txt", "kind": "file" } },
+      "reply": "wrote the second note"
+    },
+    {
+      "match": "write the portal note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-portal/portal-note.txt", "kind": "file" } },
+      "reply": "wrote the portal note"
+    },
+    {
+      "match": "write the plain note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/plain-note.txt", "kind": "file" } },
+      "reply": "wrote the plain note"
+    },
+    {
+      "match": "write into the other copy",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../home/.wakil/orgs/e2e-fixture/workspaces/e2e-git/write-the-workspace-note/e2e-api/intruder.txt", "kind": "file" } },
+      "reply": "wrote into the other copy"
     }
   ]
 }

@@ -1,0 +1,32 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"wrote the workspace note"}}
+{"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"in e2e-git · staging"}}
+{"do":{"type":{"into":"window.composer","text":"write into the other copy"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"is in workspace ‘write the workspace note’; this conversation writes only in its own workspace"}}
+{"expect":{"tree":"absent","text":"wrote into the other copy"}}
+{"expect":{"tree":"absent","text":"Started workspace ‘write into the other copy’"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.project.e2e-git"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"test -e ~/.wakil/orgs/e2e-fixture/workspaces/e2e-git/write-the-workspace-note/e2e-api/intruder.txt || echo NOT-WRITTEN"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"NOT-WRITTEN"}}

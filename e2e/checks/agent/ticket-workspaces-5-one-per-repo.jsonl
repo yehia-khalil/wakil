@@ -25,6 +25,7 @@
 {"expect":{"pane":"editor-1","field":"ticket.handoff.repos[0].ticked","equals":"true"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].root","contains":"e2e-portal"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].ticked","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[2].root","present":false}}
 {"do":{"click":"ticket.handoff.agents:one"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.agents","equals":"one"}}
 {"expect":{"tree":"absent","text":"One agent per ticked repo, in one workspace"}}
