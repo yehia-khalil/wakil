@@ -64,6 +64,10 @@ struct Element: Encodable {
     /// `AXTitle` (a `Button("…")`). Orca's tree text prints a button's title or value and never its
     /// description, so this is the only read of a custom row's own name (night run 2026-10-29).
     let label: String
+    /// True when AX reports a non-finite frame, as it does for a control that is in the tree but
+    /// not drawn — a ✕ in a clear colour until the pointer is over its row. It can still be pressed;
+    /// its frame is reported as zeros and a frame check refuses it.
+    let undrawn: Bool
     /// Screen coordinates, top-left origin — the same space `AXPosition`
     /// reports and the same space Orca's snapshot reports its window in.
     let x, y, width, height: Double
@@ -154,7 +158,7 @@ func emit(_ reply: Reply) -> Never {
     // (night run 2026-10-29: ticket-narrow's `{"ok":false}` with no payload). Name it instead.
     let bad = (reply.elements ?? [])
         .filter { ![$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
-        .map(\.identifier)
+        .map { "\($0.identifier) (x \($0.x), y \($0.y), \($0.width)×\($0.height))" }
     let message = bad.isEmpty
         ? "the reply could not be encoded"
         : "\(bad.joined(separator: ", ")) reports a frame that is not a finite number"
@@ -267,6 +271,7 @@ func collect(_ element: AXUIElement, depth: Int, into found: inout [Found]) thro
         !identifier.isEmpty,
         let box = frame(of: element)
     {
+        let drawn = [box.origin.x, box.origin.y, box.size.width, box.size.height].allSatisfy(\.isFinite)
         found.append(
             Found(
                 described: Element(
@@ -276,8 +281,9 @@ func collect(_ element: AXUIElement, depth: Int, into found: inout [Found]) thro
                     label: [kAXDescriptionAttribute, kAXTitleAttribute]
                         .compactMap { stringAttribute(element, $0 as String) }
                         .first { !$0.isEmpty } ?? "",
-                    x: box.origin.x, y: box.origin.y,
-                    width: box.size.width, height: box.size.height),
+                    undrawn: !drawn,
+                    x: drawn ? box.origin.x : 0, y: drawn ? box.origin.y : 0,
+                    width: drawn ? box.size.width : 0, height: drawn ? box.size.height : 0),
                 live: element))
     }
     if let children = copyAttribute(element, kAXChildrenAttribute as String) as? [AXUIElement] {
@@ -781,6 +787,9 @@ if let dragTo {
             "disabled",
             "\(wanted!) is disabled, so dragging it would do nothing and the check would pass "
                 + "on an act that never happened")
+    }
+    for end in [source, target] where end.described.undrawn {
+        fail("not_drawn", "\(end.described.identifier) is in the tree but not drawn, so there is no point to drag")
     }
     // AX frames and CGEvent positions are the same space: global display
     // coordinates, top-left origin.

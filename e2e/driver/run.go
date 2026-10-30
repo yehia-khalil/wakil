@@ -867,7 +867,10 @@ func (r *Runner) assertFrame(expect *Expect) error {
 		if err != nil {
 			return err
 		}
-		o := rectOfElement(other)
+		o, err := drawnRect(other)
+		if err != nil {
+			return err
+		}
 		inside = &o
 	}
 	if expect.Clear != "" {
@@ -875,10 +878,17 @@ func (r *Runner) assertFrame(expect *Expect) error {
 		if err != nil {
 			return err
 		}
-		o := rectOfElement(other)
+		o, err := drawnRect(other)
+		if err != nil {
+			return err
+		}
 		clear = &o
 	}
-	return judgeFrame(expect, rectOfElement(element), inside, clear)
+	box, err := drawnRect(element)
+	if err != nil {
+		return err
+	}
+	return judgeFrame(expect, box, inside, clear)
 }
 
 func (r *Runner) assertPane(expect *Expect) error {
