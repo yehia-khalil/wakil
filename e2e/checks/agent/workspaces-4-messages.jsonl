@@ -21,7 +21,8 @@
 {"expect":{"tree":"contains","text":"To ‘send word to the first conversation’"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"expect":{"tree":"contains","text":"done · read only"}}
+{"expect":{"tree":"contains","text":"done"}}
+{"expect":{"tree":"absent","text":"· read only"}}
 {"dispatch":{"action":"session_switch","params":{"conversation":"send word to the first conversation"}}}
 {"expect":{"tree":"contains","text":"From ‘thread turn one’ · Main"}}
 {"expect":{"tree":"contains","text":"read the thanks from the first conversation"}}
