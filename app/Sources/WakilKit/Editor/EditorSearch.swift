@@ -186,7 +186,12 @@ public func editorFindMatches(_ text: String, query: String, caseSensitive: Bool
             await body()
         }
     }
-    public func cancel() { task?.cancel(); task = nil }
+    /// Kept, not cleared: a cancelled task ends at its sleep without running the body, and
+    /// `settle` can still wait for it to end.
+    public func cancel() { task?.cancel() }
+    /// TEST-ONLY: waits until the last scheduled body has run, or its cancelled task has ended.
+    /// A check that sleeps past `delay` instead reads the main actor's load, not the debounce.
+    func settle() async { await task?.value }
 }
 
 /// The line under the results naming the files over 2 MB search skipped (3b-vii); nil when none.

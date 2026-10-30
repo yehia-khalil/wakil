@@ -333,7 +333,7 @@ private let orgIndependent: Set<String> = [
     "unsavedResolving",
     // 3b-i PR 8: the saved-tabs debounce's length (configuration, shortened by tests) and the
     // count of writes it ran (a test seam). Neither describes an organisation.
-    "editorTabsDelay", "editorTabsWriteCount", "editorAutosaveDelay", "editorAutosaveCount",
+    "editorTabsDelay", "editorTabsSleep", "editorTabsWriteCount", "editorAutosaveDelay", "editorAutosaveCount",
     // 3c-i: the browser's saved-tabs debounce length and its write count, the same shapes.
     "browserTabsDelay", "browserTabsWriteCount", "browserNow", "browserCloseArmTask", "browserCopiedTipTask", "browserCopiedSerial",
     // 3d-i: the pull-request loop's interval (configuration, shortened by tests).

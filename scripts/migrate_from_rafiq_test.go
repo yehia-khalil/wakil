@@ -44,8 +44,13 @@ case "$1 $2" in
 "read dev.rafiq.app") exit 0 ;;
 "read "*) exit 1 ;;
 "export "*) echo '<plist/>' ;;
+"import "*) cat >/dev/null ;;
 esac
 `)
+	// The real import reads its plist from stdin. A stub that exits without
+	// reading lets the script's export | import pipe end first; under load
+	// export then wrote to a closed pipe and pipefail stopped the migration
+	// with SIGPIPE (exit 141).
 	return e
 }
 

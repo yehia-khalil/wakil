@@ -6848,6 +6848,9 @@ public final class WindowModel {
 
     /// How long after the last view report the saved tabs are written. Tests shorten it.
     @ObservationIgnored var editorTabsDelay: Duration = .milliseconds(500)
+    /// How the debounce waits out `editorTabsDelay` (tests replace it, to hold the write until a
+    /// burst is over: on the real clock a loaded run fired it between two reports).
+    @ObservationIgnored var editorTabsSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     /// The pending debounced write per pane.
     @ObservationIgnored private var editorTabsWrites: [String: Task<Void, Never>] = [:]
     /// Debounced saved-tabs writes that ran (a test seam).
@@ -6861,9 +6864,9 @@ public final class WindowModel {
     /// before this change. `refreshLayout` reads it back and writes only when it moved.
     private func scheduleEditorTabsWrite(pane: String) {
         editorTabsWrites[pane]?.cancel()
-        let delay = editorTabsDelay
+        let delay = editorTabsDelay, sleep = editorTabsSleep
         editorTabsWrites[pane] = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            try? await sleep(delay)
             guard !Task.isCancelled, let self else { return }
             self.editorTabsWrites[pane] = nil
             await self.layout.setEditorTabs(id: pane, to: editorSavedTabs(await self.panes.editorSnapshot(paneId: pane)))
@@ -6872,7 +6875,9 @@ public final class WindowModel {
         }
     }
 
-    /// TEST-ONLY: waits for `pane`'s pending saved-tabs write, if any.
+    /// TEST-ONLY: waits for `pane`'s pending saved-tabs write, if any. A write that has already
+    /// begun has left `editorTabsWrites` and is not waited for, so a test holds the sleep
+    /// (`editorTabsSleep`) and settles straight after letting it go.
     func settleEditorTabsWrite(pane: String) async {
         await editorTabsWrites[pane]?.value
     }
