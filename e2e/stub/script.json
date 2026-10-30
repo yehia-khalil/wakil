@@ -1,6 +1,15 @@
 {
   "rules": [
     {
+      "match": "message from another conversation (‘ask the first where it works’",
+      "reply": "woken, map says: {map}"
+    },
+    {
+      "match": "ask the first where it works",
+      "call": { "action": "conversation_message", "echo": true, "params": { "to": "thread turn one", "text": "where are you working?" } },
+      "reply": "asked the first where it works"
+    },
+    {
       "match": "message from another conversation (‘send word to the first conversation’",
       "reply": "read the word from the other conversation"
     },

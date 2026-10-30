@@ -91,3 +91,13 @@ beside `conversation_rename`; parks `.message(from:to:text:)` on `ConversationBr
 ## Phase F — docs
 
 Spec amendment (dated, piece 4); `docs/architecture` lines for the new files; PRODUCT.md is piece 3's.
+
+## Phase on the restack (2026-10-30)
+
+1. **A woken turn carries the map.** Test: `aWokenTurnCarriesTheMapWhenItIsDue`. Code:
+   `workspaceMapNow` / `takeWorkspaceMap` (piece 1's `workspaceMapUpdate` split so no suspension sits
+   between the last check and the take); `wakeForMessages` appends it after the messages and puts it
+   back on a failed send. Check: `agent/workspaces-4-woken-map.jsonl` (two stub rules).
+2. **The home's line says it.** Test: `aLineHoldingMessagesSaysWaitingForYouWithTheCount`. Code:
+   `HomeConversationLine.stateWords`. Checks: `workspaces-4-messages` and `-wait` read the home and
+   switch with `session_switch` (same-organisation chips are gone).

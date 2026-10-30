@@ -195,7 +195,8 @@ struct ConversationMessageTests {
         #expect(a.messagesWaitingForYou == 1)
         let row = try #require(w.model.liveConversationRows().first { $0.id == a.id })
         #expect(row.state == .waiting && row.stateWords == "waiting for you · 1 message")
-        let chip = try #require(w.model.chips.first { $0.conversation == a.id })
+        // Its chip, as another organisation's screen draws it (piece 3: the own organisation's home lists it).
+        let chip = try #require(w.model.chipCandidates.first { $0.conversation == a.id })
         #expect(chip.stateText == " — waiting for you · 1 message")
         // The operator's message to any conversation of the workspace resets it (call 15) …
         #expect(await w.model.send("frontend: carry on"))
@@ -255,6 +256,23 @@ struct ConversationMessageTests {
                 name: "conversation_message", params: .object(["to": .string(a.id), "text": .string("hi")]),
                 origin: .ui, caller: DispatchCaller(place: placeA, session: nil), confirmation: nil)
         }
+        await w.model.shutdown()
+    }
+
+    /// Piece 1's map rides a woken turn as it rides an operator's (spec, "The agent sees real
+    /// paths"): after the messages, when it is due — here the session's first since the write rule
+    /// was wired — and then recorded as sent.
+    @Test func aWokenTurnCarriesTheMapWhenItIsDue() async throws {
+        let w = try await Wired()
+        let (a, b, ha, _) = try await w.two()
+        _ = await w.workspaces([])
+        #expect(a.sentWorkspaceMap == nil)
+        _ = try await w.message(from: b, to: "backend work", "POST /login answers 201 now")
+        #expect(await waitUntil { sends(ha).count == 2 })
+        let woken = try #require(sends(ha).last)
+        #expect(woken.hasPrefix(header + "\n\nPOST /login answers 201 now\n\n" + workspaceMapHeader + "\n"),
+                "the messages first, then the map")
+        #expect(a.sentWorkspaceMap != nil, "recorded, so the next turn does not send it again")
         await w.model.shutdown()
     }
 

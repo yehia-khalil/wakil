@@ -67,6 +67,8 @@ extension WindowModel {
     func wakeForMessages(_ agent: PlaceAgent) async {
         guard !agent.pendingMessages.isEmpty, canBeWokenByMessages(agent) else { return }
         let key = await messageWorkspace(of: agent).key
+        // Piece 1's map, read before the last check: a woken turn carries it as an operator's does.
+        let map = await workspaceMapNow(for: agent)
         // Asked across a suspension: the operator may have sent, or the turn begun, meanwhile.
         guard !agent.pendingMessages.isEmpty, canBeWokenByMessages(agent),
               messageState.budgets.takeWake(in: key, allowance: messageWakesAllowance(for: agent)),
@@ -78,6 +80,9 @@ extension WindowModel {
             outgoing = update + "\n\n" + outgoing
             agent.appendRow(label: "instructions", detail: "Instructions updated — the agent has the new ones from this turn.")
         }
+        // Where it works, after the messages, when the map changed since it was last sent (piece 1).
+        let mapBefore = agent.sentWorkspaceMap
+        if let block = takeWorkspaceMap(map, for: agent) { outgoing += "\n\n" + block }
         // As `send` does, before the suspension: a `.result` landing during it clears what is set.
         agent.turnInFlight = true
         agent.noteSent(spoken: false)
@@ -87,6 +92,7 @@ extension WindowModel {
         } catch {
             agent.turnInFlight = false
             agent.noteResult()
+            agent.sentWorkspaceMap = mapBefore
             agent.pendingMessages = messages + agent.pendingMessages
             agent.appendRow(
                 label: "message",

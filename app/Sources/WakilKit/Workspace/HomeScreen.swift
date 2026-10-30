@@ -120,9 +120,14 @@ public struct HomeConversationLine: Sendable, Equatable, Identifiable {
     public var session: String? = nil
     /// Drawn in Main's block.
     public var inMain = false
+    /// Piece 4: the messages it holds, unread by its turn.
+    public var messagesWaiting = 0
     /// Its state in words, as the comp draws it at the right: *working*, *idle*, *done*, *failed*,
-    /// *waiting on you*. Nothing about holds or *read only* (the home's walk).
-    public var words: String { homeStateWords(state) }
+    /// *waiting on you*, and piece 4's *· 2 messages* after it. Nothing about holds or *read only*.
+    public var words: String {
+        let state = homeStateWords(state)
+        return messagesWaiting > 0 ? "\(state) · \(HomeNeedReason.messages(messagesWaiting).words)" : state
+    }
 }
 
 /// A state as a line says it.
@@ -455,7 +460,8 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
     func line(_ c: LiveConversation) -> HomeConversationLine {
         HomeConversationLine(id: c.id, index: 0, title: c.title, state: c.state,
                              holds: (holding[c.id] ?? []).sorted(), place: c.place,
-                             isProduction: c.isProduction, lastActivity: c.lastActivity, session: c.session)
+                             isProduction: c.isProduction, lastActivity: c.lastActivity, session: c.session,
+                             messagesWaiting: c.messagesWaiting)
     }
     func defaultEnvironment(_ project: String) -> String? {
         input.defaultEnvironments[project] ?? (project == input.project ? input.environment : nil)

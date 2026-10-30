@@ -3,14 +3,13 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"do":{"type":{"into":"window.composer","text":"send word to the first conversation"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"sent word to the first conversation"}}
 {"expect":{"tree":"contains","text":"To ‘thread turn one’"}}
 {"expect":{"tree":"contains","text":"the login endpoint answers 201 now"}}
-{"expect":{"tree":"contains","text":"Value: done"}}
-{"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
+{"dispatch":{"action":"session_switch","params":{"conversation":"thread turn one"}}}
 {"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · Main"}}
 {"expect":{"tree":"contains","text":"read the word from the other conversation"}}
 {"expect":{"tree":"absent","text":"sent word to the first conversation"}}
@@ -20,7 +19,9 @@
 {"dispatch":{"action":"conversation_message","params":{"to":"send word to the first conversation","text":"thanks, noted"}}}
 {"expect":{"journal":{"contains":"\"action\":\"conversation_message\""}}}
 {"expect":{"tree":"contains","text":"To ‘send word to the first conversation’"}}
-{"expect":{"tree":"contains","text":"Value: done"}}
-{"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging#2"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"done · read only"}}
+{"dispatch":{"action":"session_switch","params":{"conversation":"send word to the first conversation"}}}
 {"expect":{"tree":"contains","text":"From ‘thread turn one’ · Main"}}
 {"expect":{"tree":"contains","text":"read the thanks from the first conversation"}}

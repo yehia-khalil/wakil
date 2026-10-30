@@ -133,9 +133,20 @@ extension WindowModel {
     /// whenever the map changed since it was last sent; nil otherwise, with no project (no folders
     /// to map), and in a window the write rule is not wired into (no record: `useWorkspaces`).
     func workspaceMapUpdate(for agent: PlaceAgent) async -> String? {
+        takeWorkspaceMap(await workspaceMapNow(for: agent), for: agent)
+    }
+
+    /// `agent`'s map as it reads now, nothing recorded; nil where no map is sent (no project, or a
+    /// window the write rule is not wired into).
+    func workspaceMapNow(for agent: PlaceAgent) async -> String? {
         guard workspaceRouter != nil, !agent.place.project.isEmpty else { return nil }
-        let map = workspaceMapText(await workspaceMapInput(for: agent))
-        guard map != agent.sentWorkspaceMap else { return nil }
+        return workspaceMapText(await workspaceMapInput(for: agent))
+    }
+
+    /// The block for `map` when it differs from what `agent` was last sent, recorded as sent; nil
+    /// otherwise. No suspension: a woken turn reads the map first, then takes it after its last check.
+    func takeWorkspaceMap(_ map: String?, for agent: PlaceAgent) -> String? {
+        guard let map, map != agent.sentWorkspaceMap else { return nil }
         agent.sentWorkspaceMap = map
         return workspaceMapHeader + "\n" + map
     }

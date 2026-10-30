@@ -336,3 +336,21 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
     #expect(screen.cardOrder == drawn)
     #expect(screen.cardOrder.count == 3 && screen.cardOrder.firstIndex(of: "c") == screen.cardOrder.firstIndex(of: "p")! + 1)
 }
+
+// Piece 4 on the home: a conversation holding messages says so on its line, as its Running row did.
+
+@Test func aLineHoldingMessagesSaysWaitingForYouWithTheCount() {
+    let held = LiveConversation(id: "c1", session: "s-c1", place: staging, title: "backend", state: .waiting,
+                                onScreen: false, lastActivity: Date(timeIntervalSince1970: 1_000_000), messagesWaiting: 2)
+    let screen = homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging", live: [held]))
+    let line = try? #require(screen.lines.first { $0.id == "c1" })
+    #expect(line?.words == "waiting on you · 2 messages")
+    #expect(screen.needs.first?.why == "waiting on you · 2 messages", "the messages ride on the waiting row")
+    let w = Workspace(id: "w1", name: "Retry", slug: "w1", project: "estate", environment: "staging", tickets: [],
+                      parent: nil, branch: "b", checkouts: [], conversations: [], archived: false, created: nil)
+    var inside = held
+    inside.workspace = ("w1", "Retry")
+    let card = homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
+                                    workspaces: [WorkspaceListing(workspace: w, holders: [:], live: [:])], live: [inside]))
+    #expect(card.sections[0].cards[0].needCount == 2, "the comp's ● 2: waiting, and its messages")
+}

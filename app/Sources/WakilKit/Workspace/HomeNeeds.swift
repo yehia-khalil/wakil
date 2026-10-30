@@ -9,6 +9,8 @@ import Foundation
 public enum HomeNeedReason: Sendable, Equatable {
     /// A conversation waits on the operator (a question, a permission, a proposal parked).
     case waiting
+    /// Piece 4: messages from other conversations wait for its next turn; rides on the waiting row.
+    case messages(Int)
     /// A conversation's turn failed, unseen.
     case failed
     /// A PR of its ticket has failing checks.
@@ -24,17 +26,19 @@ public enum HomeNeedReason: Sendable, Equatable {
     public var rank: Int {
         switch self {
         case .waiting: 0
-        case .failed: 1
-        case .checksFailing: 2
-        case .reviewRequested: 3
-        case .comments: 4
-        case .done: 6
+        case .messages: 1
+        case .failed: 2
+        case .checksFailing: 3
+        case .reviewRequested: 4
+        case .comments: 5
+        case .done: 7
         }
     }
 
     public var words: String {
         switch self {
         case .waiting: "waiting on you"
+        case .messages(let n): n == 1 ? "1 message" : "\(n) messages"
         case .failed: "failed"
         case .checksFailing(let n): "checks failing \(n)"
         case .reviewRequested: "review requested"
@@ -46,7 +50,7 @@ public enum HomeNeedReason: Sendable, Equatable {
     /// The reserved hue it is drawn in: amber waits, red failed, green done unseen.
     public var hue: ConversationState {
         switch self {
-        case .waiting, .reviewRequested, .comments: .waiting
+        case .waiting, .messages, .reviewRequested, .comments: .waiting
         case .failed, .checksFailing: .failed
         case .done: .done
         }
@@ -56,7 +60,7 @@ public enum HomeNeedReason: Sendable, Equatable {
     var fromTicket: Bool {
         switch self {
         case .checksFailing, .reviewRequested, .comments: true
-        case .waiting, .failed, .done: false
+        case .waiting, .messages, .failed, .done: false
         }
     }
 }
@@ -143,10 +147,13 @@ func homeConversationReason(_ state: ConversationState) -> HomeNeedReason? {
 func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNeedsRow], latest: Date) -> HomeNeed? {
     var reasons: [HomeNeedReason] = []
     var by: [Int: LiveConversation] = [:]
+    var messages = 0
     for c in mine {
+        messages += c.messagesWaiting
         guard let r = homeConversationReason(c.state) else { continue }
         if by[r.rank] == nil { by[r.rank] = c; reasons.append(r) }
     }
+    if messages > 0 { reasons.append(.messages(messages)) }
     reasons += homeTicketReasons(rows)
     reasons.sort { $0.rank < $1.rank }
     guard let first = reasons.first else { return nil }
@@ -170,7 +177,8 @@ func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNe
 /// A Main conversation's NEEDS YOU row; nil when its state needs nothing.
 func homeMainNeed(_ c: LiveConversation) -> HomeNeed? {
     guard let r = homeConversationReason(c.state) else { return nil }
-    return HomeNeed(id: c.id, project: c.place.project, key: nil, title: c.title, workspace: nil, reasons: [r],
+    return HomeNeed(id: c.id, project: c.place.project, key: nil, title: c.title, workspace: nil,
+                    reasons: c.messagesWaiting > 0 ? [r, .messages(c.messagesWaiting)] : [r],
                     action: r == .waiting ? .review(conversation: c.id, session: c.session) : .open(conversation: c.id, session: c.session),
                     opens: .conversation(c.id, session: c.session), latest: c.lastActivity)
 }
@@ -180,7 +188,9 @@ func homeNeedsOrdered(_ needs: [HomeNeed]) -> [HomeNeed] {
     needs.sorted { ($0.rank, $1.latest, $0.id) < ($1.rank, $0.latest, $1.id) }
 }
 
-/// A card's `● n`: its conversations' reasons, each conversation once, and its tickets' as one.
+/// A card's `● n`: each conversation waiting, failed or done unseen, each holding messages (piece 4),
+/// and its tickets' reasons as one.
 func homeNeedCount(mine: [LiveConversation], rows: [TicketNeedsRow]) -> Int {
-    mine.filter { homeConversationReason($0.state) != nil }.count + (homeTicketReasons(rows).isEmpty ? 0 : 1)
+    mine.filter { homeConversationReason($0.state) != nil }.count + mine.filter { $0.messagesWaiting > 0 }.count
+        + (homeTicketReasons(rows).isEmpty ? 0 : 1)
 }

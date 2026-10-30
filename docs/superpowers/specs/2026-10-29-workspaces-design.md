@@ -1004,3 +1004,14 @@ Calls the build made where the piece above is silent (plan:
   INI-142"*. A child workspace (a branch-off) has its own id, so its own budget (call 15). **Main**
   is named "Main" and its budget is keyed by the place (`main/<org>/<project>/<environment>`), so
   `sameWorkspace` in Main means the same project and environment.
+
+## Amendment 2026-10-30 — piece 4 on pieces 1 and 3
+
+- **A woken turn carries piece 1's map**, as an operator's turn does: after the messages, when the map
+  changed since that session was last sent it (a conversation joining Main changes Main's map). It is
+  read before the wake's last check and recorded as sent only with the turn; a wake that cannot be
+  sent leaves it due.
+- **On the home** (piece 3 replaced the Landing): a conversation holding messages says *waiting for
+  you · N messages* on its home line (`HomeConversationLine.detail`), where the Landing's Running row
+  said it. Its own organisation's chips are gone (piece 3), so *waiting for you · N messages* on a chip
+  is another organisation's only.
