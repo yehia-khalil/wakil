@@ -409,6 +409,10 @@ func (s Step) IsAssertion() bool {
 //
 //   - `tree: contains`, `pane` with `equals` or `contains`, `journal` and
 //     `process: any-matching` all say a thing IS there. They confirm.
+//   - `frame` does too: it fails unless the identifier resolves to exactly
+//     one element, so it passing says the control is drawn. An identifier
+//     never reaches the tree's text (axresolve's header), so for a control
+//     with no text of its own — a rail tick — it is the only positive read.
 //   - `tree: absent` passes when the text is not there, which is also what it
 //     does when the act never happened, when the window never drew, and when
 //     the identifier was a typo. It is the assertion most likely to pass
@@ -430,6 +434,8 @@ func (e *Expect) Confirms() bool {
 	case e.Journal != nil:
 		return true
 	case e.Process != nil && e.Process.AnyMatching != "":
+		return true
+	case e.Frame != "":
 		return true
 	default:
 		return false

@@ -156,3 +156,9 @@ func TestAnyMatchingConfirmsAndNoneMatchingDoesNot(t *testing.T) {
 		t.Fatal("finding nothing is never evidence an act landed")
 	}
 }
+
+func TestAFrameThatResolvesConfirmsAPendingAct(t *testing.T) {
+	if !(&Expect{Frame: "rail.terminal-1", Inside: FrameWindow}).Confirms() {
+		t.Error("a frame that resolved says the control is drawn, which is a positive read")
+	}
+}
