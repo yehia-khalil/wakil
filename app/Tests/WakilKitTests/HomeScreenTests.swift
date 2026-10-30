@@ -82,7 +82,7 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
         live: [conv("c1", "Why is OTP capped at 5?", ago: 10), conv("c2", "Rebase", .working, workspace: a)]))
     let s = screen.sections[0]
     #expect(s.main?.lines.map(\.title) == ["Why is OTP capped at 5?"])
-    #expect(s.main?.lines.first?.detail == "idle · read only")
+    #expect(s.main?.lines.first?.detail == "idle", "Main's header already says asking and reading (walk)")
     #expect(s.cards.first?.lines.map(\.title) == ["Rebase"])
     #expect(screen.lines.map(\.index) == [0, 1], "lines are numbered in drawing order")
     #expect(s.summary == "1 workspace · Main")
@@ -157,6 +157,21 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
     let screen = homeScreen(HomeInput(organization: "o", project: "estate", environment: "staging",
                                       workspaces: [listing(a)], tickets: [ticket("INI-1"), ticket("INI-2", tier: 6)]))
     #expect(screen.ticketsNotStarted.map(\.key) == ["INI-2"])
+}
+
+/// The walk: AQ247-141 stayed under *not started* while "AQ247-141 · Work toward Next." worked in Main.
+@Test func aTicketALiveConversationCarriesIsStarted() {
+    var handed = conv("c2", "Rebase the walk", .working)
+    handed = LiveConversation(id: handed.id, session: handed.session, place: handed.place, title: handed.title,
+                              state: .working, onScreen: false, lastActivity: handed.lastActivity,
+                              handoff: PlaceAgentHandoff(key: nil, pr: 3, thread: nil, root: "/r", branch: "ini-3-walk",
+                                                         mayPush: false))
+    let screen = homeScreen(HomeInput(
+        organization: "initech", project: "estate", environment: "staging",
+        live: [conv("c1", "INI-1 · Work toward Next.", .working), handed, conv("c3", "about MINI-20 notes")],
+        tickets: [ticket("INI-1"), ticket("INI-2"), ticket("INI-3", branch: "ini-3-walk"), ticket("INI-20")]))
+    #expect(screen.ticketsNotStarted.map(\.key) == ["INI-2", "INI-20"],
+            "its key in the title, or the branch a hand-off works on; MINI-20 is not INI-20")
 }
 
 @Test func earlierGroupsPastConversationsByWorkspaceAndCountsThem() {

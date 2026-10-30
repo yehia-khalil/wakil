@@ -91,9 +91,11 @@ public struct HomeConversationLine: Sendable, Equatable, Identifiable {
     /// Its session, when it has one: what a click resumes should the conversation have ended
     /// meanwhile (`WindowModel.openHomeLine`).
     public var session: String? = nil
-    /// `working · holds api, web`; `idle · read only` in Main.
+    /// Drawn in Main's block, whose header already says *your folders · asking and reading*.
+    public var inMain = false
+    /// `working · holds api, web`; `idle · read only` in a card holding nothing; `idle` in Main.
     public var detail: String {
-        if holds.isEmpty { return "\(state.rawValue) · read only" }
+        if holds.isEmpty { return inMain ? state.rawValue : "\(state.rawValue) · read only" }
         return "\(state.rawValue) · holds \(holds.joined(separator: ", "))"
     }
 }
@@ -409,7 +411,7 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             return c
         }
         let mainLines = live.filter { c in c.place.project == p && c.workspace == nil && !open.contains { $0.live[c.id] != nil } }
-            .sorted { $0.lastActivity > $1.lastActivity }.map(line)
+            .sorted { $0.lastActivity > $1.lastActivity }.map(line).map { l in var l = l; l.inMain = true; return l }
         let main = mainLines.isEmpty ? nil : HomeMain(lines: mainLines)
         // The home is the organisation's (amendment 2026-10-30): a project is drawn while something
         // goes on in it; with nothing going on anywhere, every project is, each with Main's Open.
@@ -446,9 +448,11 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         for c in sections[s].cards.indices { number(&sections[s].cards[c]) }
     }
 
-    // Tickets not started here: no workspace carries their key or works on their branch.
+    // Tickets not started here: no workspace carries their key or works on their branch, and no live
+    // conversation does — its key in the title, or a hand-off's key or branch (piece 3 walk).
     let notStarted = input.tickets.filter { row in
         !all.contains { w in !homeTicketRows(of: w, in: [row]).isEmpty }
+            && !live.contains { homeConversationCarries($0, row) }
             && (filter == nil || row.rows.contains { $0.project == filter } || row.rows.allSatisfy { $0.project.isEmpty })
     }
 
@@ -478,3 +482,16 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         earlier: HomeEarlier(archived: archived, past: groups), helpInFull: cardCount <= 3,
         firstRun: firstRun)
 }
+
+/// Whether live conversation `c` carries ticket `row`: the ticket's key in its title as a word, or a
+/// hand-off on the ticket's key or one of its branches.
+func homeConversationCarries(_ c: LiveConversation, _ row: TicketNeedsRow) -> Bool {
+    if let h = c.handoff {
+        if let key = h.key, key == row.key { return true }
+        if !h.branch.isEmpty, row.rows.contains(where: { $0.branch == h.branch }) { return true }
+    }
+    guard let key = row.key, !key.isEmpty else { return false }
+    let words = c.title.uppercased().split { !($0.isLetter || $0.isNumber || $0 == "-") }
+    return words.contains { $0 == Substring(key.uppercased()) }
+}
+

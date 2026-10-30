@@ -152,6 +152,10 @@ public final class PlaceAgent {
     public var canvasRoot: String? { workspace.map { workspaceCanvasRoot($0) } ?? lineageRoot }
     /// A view with no agent (workspaces, piece 3): opened for its panes, nothing typed yet, no session.
     public var isViewSlot: Bool { harness == nil && sessionId == nil && firstMessage == nil }
+    /// Whether it has had a turn — a message of the operator's or a hand-off's, or a thread it
+    /// resumed. The home lists only these (piece 3 walk: a session started with no turn drew an
+    /// idle "New conversation" in Main).
+    public var hasTurn: Bool { firstMessage != nil || !thoughts.isEmpty }
     /// The conversation id minted for this place's work, before or with its first session.
     public internal(set) var assignedSessionId: String? {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }

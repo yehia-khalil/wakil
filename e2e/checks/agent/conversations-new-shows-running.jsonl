@@ -5,6 +5,7 @@
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"your folders · asking and reading"}}
 {"expect":{"tree":"contains","text":"Value: idle"}}
+{"expect":{"tree":"absent","text":"· read only"}}
 {"expect":{"tree":"absent","text":"first reply in the thread"}}
 {"expect":{"focus":"window.composer"}}
 {"do":{"resize":{"width":1000,"height":888}}}

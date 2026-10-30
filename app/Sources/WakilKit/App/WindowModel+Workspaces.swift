@@ -267,7 +267,7 @@ extension WindowModel {
 
     /// The home screen (spec, piece 3), from what the window knows now. `projects` and `past` are
     /// the Landing's own reads (`listProjects`, `landingSessions`); a conversation slot with no turn
-    /// is a view, not a conversation, so it draws no line.
+    /// is a view, not a conversation, so it draws no line — nor does one with a session and no turn yet.
     public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?) async -> HomeScreen {
         let listings = await workspaceListings()
         readHomeMergedBranches(listings.map(\.workspace))
@@ -276,7 +276,7 @@ extension WindowModel {
         let input = HomeInput(
             organization: organization, project: current, environment: environment, projects: projects,
             workspaces: listings,
-            live: liveConversationRows().filter { conversations[$0.id]?.isViewSlot != true },
+            live: liveConversationRows().filter { conversations[$0.id]?.hasTurn == true },
             tickets: ticketNeedsRows,
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,

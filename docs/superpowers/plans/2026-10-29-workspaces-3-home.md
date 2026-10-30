@@ -142,4 +142,7 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
   `TestSetEnvironmentEmptyLeavesNoneChosen`.
 - [x] G3 The composer's row (`ComposerRow`): the field shrinks first, Start in and the hint wrap under it.
   G4 The home's status line has its own space. Check: the start-in check at 700 pt.
+- [x] G5 The home lists a conversation once it has a turn (`PlaceAgent.hasTurn`); Main's lines drop
+  *read only*; a ticket a live conversation carries leaves *not started* (`homeConversationCarries`).
+  Tests: `WindowModelWorkspaceViewsTests`, `HomeScreenTests`. Check: `agent/conversations-new-shows-running.jsonl`.
 

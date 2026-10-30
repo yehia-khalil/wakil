@@ -666,6 +666,12 @@ Approved by the operator's walk on 2026-10-30; the calls below are the build's.
   on a line under it, each wrapping whole. **On the home the status line has its own space**: the page
   ends above it, and it stands 4 pt clear of the bar.
 - Checks: `seeded/workspaces-home-start-in.jsonl`; WakilKit `HomeStartInTests`.
+- **What the home lists.** A conversation is on the home once it has had a turn (a message, a hand-off's
+  brief, or a resumed thread) — a session started with none drew an idle *New conversation* in Main.
+  Main's lines drop *· read only* (its header says *asking and reading*). A ticket leaves *Tickets not
+  started here* once a live conversation carries it: its key in the title as a word, or a hand-off on
+  its key or branch. Repeated *Hand to agent* presses each start a conversation of the same title; the
+  home lists each (the walk's two "AQ247-141 · Work toward Next." rows were two hand-offs, not a fork).
 
 ## Calls made for the operator
 

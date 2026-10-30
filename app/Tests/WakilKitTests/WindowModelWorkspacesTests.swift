@@ -406,6 +406,26 @@ struct WindowModelWorkspaceViewsTests {
         await model.shutdown()
     }
 
+    /// The walk's idle "New conversation" in Main: a conversation with a session but no turn is not
+    /// on the home until it has one.
+    @Test func aConversationWithNoTurnIsNotOnTheHomeUntilItHasOne() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: []))
+        #expect(await model.send("a turn"))
+        await model.newConversation()
+        model.markSessionStarted()
+        let slot = try #require(model.currentAgent)
+        slot.sessionId = "started-with-no-turn"
+        #expect(!slot.isViewSlot)
+
+        let screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
+        #expect(screen.lines.map(\.title) == ["a turn"], "the one with no turn draws no line")
+        await model.shutdown()
+    }
+
     @Test func aWorkspaceWithNoLiveConversationOpensOnItsOwnView() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)
