@@ -9680,6 +9680,35 @@ public final class WindowModel {
         await showLanding(in: target.place)
     }
 
+    /// Workspaces, piece 1 (decision 22, call 9): the terminals step 0 carried into workspace `w`'s
+    /// view `view` stay in Main's view — the canvas `place`'s Landing draws over, which the next
+    /// conversation started there takes — each shell, history and frame as it was; a new terminal
+    /// in the copy takes each one's place in the view, at its path in the copy (else the view's
+    /// first copy).
+    func leaveTerminalsInMain(_ ids: [String], of place: Place, view: LayoutScope, into w: Workspace) async {
+        guard !ids.isEmpty else { return }
+        let reserved = reservedConversations[place] ?? UUID().uuidString
+        reservedConversations[place] = reserved
+        let main = LayoutScope(organization: place.organization, project: place.project,
+                               environment: place.environment, lineageRoot: reserved)
+        // Its saved arrangement first, so a later read off disk does not put the terminals away.
+        await loadOffScreen(main)
+        loadedLayoutScopes.insert(main)
+        let shown = await ScopeRouting.$home.withValue(view) { await layout.snapshot() }
+        for id in ids {
+            let was = shown.panes.first { $0.id == id }?.terminalPath
+            let path = was.flatMap { workspacePath($0, in: w) } ?? activeShellContext.rootPath
+            let left = await ScopeRouting.$home.withValue(view) {
+                await layout.leave(id: id, for: main, replacedWith: path, title: terminalPaneTitle(forPath: path))
+            }
+            guard let fresh = left else { continue }
+            await panes.moveContents(paneId: id, from: view, to: main)
+            await terminals.rehome(from: view, to: main, only: [id])
+            _ = await dispatchLayout("term_open", .object(["pane": .string(fresh.id), "path": .string(path)]))
+        }
+        await refreshLayout()
+    }
+
     /// The Landing path (`newConversation`, and a close that leaves its place none live): `place`
     /// shows its Landing, over the canvas of the id it reserves for its next conversation.
     private func showLanding(in place: Place) async {

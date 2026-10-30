@@ -64,6 +64,15 @@ public struct SnapGraph: Sendable, Equatable, Codable {
         stored = stored.filter { $0.paneId != paneId && $0.otherPaneId != paneId }
     }
 
+    /// Every link `old` holds, held by `new` instead (workspaces, piece 1: a terminal step 0 leaves
+    /// in Main's view is replaced where it stood by a new one in the copy).
+    public mutating func rename(_ old: String, to new: String) {
+        stored = Set(stored.map { link in
+            SnapLink(paneId: link.paneId == old ? new : link.paneId, edge: link.edge,
+                     otherPaneId: link.otherPaneId == old ? new : link.otherPaneId)
+        })
+    }
+
     /// Every pane coordinated with `paneId` along `edge`, in sorted order.
     public func neighbours(of paneId: String, along edge: SnapEdge) -> [String] {
         var result: [String] = []

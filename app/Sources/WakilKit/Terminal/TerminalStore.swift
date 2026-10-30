@@ -502,9 +502,11 @@ public actor TerminalStore {
     /// wholesale (`PaneStore.switchScope(to:adoptingFrom:)`): a shell opened on the Landing
     /// keeps answering the operator's keys, and publishing into its pane, once the first turn
     /// files that canvas under a conversation.
-    public func rehome(from outgoing: LayoutScope, to incoming: LayoutScope) {
+    /// `only`: just these panes' shells (workspaces, piece 1: the terminals step 0 leaves in Main's view).
+    public func rehome(from outgoing: LayoutScope, to incoming: LayoutScope, only: Set<String>? = nil) {
         func moved(_ key: TerminalKey) -> TerminalKey? {
-            key.scope == outgoing ? TerminalKey(scope: incoming, paneId: key.paneId) : nil
+            guard key.scope == outgoing, only?.contains(key.paneId) ?? true else { return nil }
+            return TerminalKey(scope: incoming, paneId: key.paneId)
         }
         for key in sessions.keys { if let to = moved(key) { sessions[to] = sessions.removeValue(forKey: key) } }
         for key in rcDirectories.keys {

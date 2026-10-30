@@ -128,6 +128,42 @@ struct WindowModelWorkspacesTests {
         await model.shutdown()
     }
 
+    /// Decision 22: terminals stay in Main's view — the canvas the place's Landing draws over, shell
+    /// and frame as they were — and the new view opens its own in the copy, where each one stood.
+    @Test func step0LeavesTerminalsInMainsViewAndOpensTheViewsOwnInTheCopy() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("fix the guard"))
+        let agent = try #require(model.currentAgent)
+        let before = try #require(agent.layoutScope)
+        let shell = await ScopeRouting.$home.withValue(before) {
+            await w.layout.open(kind: "terminal", title: "core", terminalPath: "/p/core/sub")
+        }
+        _ = try await w.registry.dispatch(
+            name: "pane_open", params: .object(["kind": .string("db")]), origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        await model.refreshLayout()
+
+        await model.workspaceViewFollows(agent.id, from: nil, to: ws)
+
+        let after = try #require(agent.layoutScope)
+        let view = await snapshot(w.layout, in: after)
+        #expect(!view.panes.contains { $0.id == shell.id }, "the shell stayed in Main")
+        let own = try #require(view.panes.first { $0.kind == "terminal" })
+        #expect(own.terminalPath == "/h/ws/api/fix-otp/core/sub")
+        #expect(own.frame == shell.frame)
+        #expect(view.panes.contains { $0.kind == "db" }, "data panes still come along")
+
+        await model.newConversation()
+        let main = model.layoutSnapshot
+        let kept = try #require(main.panes.first { $0.id == shell.id }, "Main's view holds it")
+        #expect(kept.terminalPath == "/p/core/sub")
+        #expect(kept.frame == shell.frame)
+        await model.shutdown()
+    }
+
     /// The first write moves the view mid-dispatch: the rest of that dispatch was homed on the
     /// canvas it left (`ScopeRouting.home`), so `editor_create`'s tab opened on a canvas no screen
     /// shows any more (e2e workspaces-first-change, 2026-10-30). The carried canvas takes them.

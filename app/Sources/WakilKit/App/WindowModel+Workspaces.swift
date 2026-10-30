@@ -62,20 +62,24 @@ extension WindowModel {
 
     /// Where a conversation's view goes when it moves (decision 22). From Main (step 0), the canvas
     /// it was in becomes the new workspace's view — on screen, both stores move it, as a new
-    /// conversation adopts the seed — and its editor tabs on files in Main's folders reopen in
-    /// the copy. From a workspace (a branch-off, a Move), it goes to the other workspace's view.
+    /// conversation adopts the seed — its editor tabs on files in Main's folders reopen in the
+    /// copy, and its terminals stay in Main's view, a new one in the copy in each one's place.
+    /// From a workspace (a branch-off, a Move), it goes to the other workspace's view.
     func workspaceViewFollows(_ conversation: String, from: Workspace?, to: Workspace) async {
         guard let agent = conversations[conversation] else { return }
         let before = agent.layoutScope
         agent.workspace = to
         guard let after = agent.layoutScope, after != before else { return }
         guard currentAgent === agent else { return }
+        let terminals = layoutSnapshot.panes.filter { PaneKinds.is($0.kind, TerminalPaneKind.self) }.map(\.id)
         await activateLayout(adoptingFrom: from == nil ? before : nil)
         if from == nil, let before {
             await repointEditorTabs(in: after, into: to)
             // The write that moved it is still homed on the canvas it left: it lands in this one.
             await panes.scopeCarried(from: before, to: after)
             await layout.scopeCarried(from: before, to: after)
+            // Terminals stay in Main's view; the new view opens its own in the copy (decision 22).
+            await leaveTerminalsInMain(terminals, of: agent.place, view: after, into: to)
         }
     }
 

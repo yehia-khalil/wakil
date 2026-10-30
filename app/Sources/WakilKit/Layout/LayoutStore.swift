@@ -951,6 +951,35 @@ public actor LayoutStore {
         refitMaximized(scope)
     }
 
+    /// Workspaces, piece 1 (decision 22): pane `id` of the current scope leaves for `to`, exactly as it
+    /// is, and a new pane of the same kind takes its place here — same frame, links, focus and
+    /// maximized state, a new id, `terminalPath` as given. Answers the new pane; nil when there is
+    /// no pane `id`.
+    public func leave(id: String, for to: LayoutScope, replacedWith terminalPath: String?, title: String) -> Pane? {
+        var current = snapshot()
+        guard let index = current.panes.firstIndex(where: { $0.id == id }) else { return nil }
+        let leaving = current.panes[index]
+        let newId = "\(leaving.kind)-\(nextPaneNumber)"
+        nextPaneNumber += 1
+        var replacement = Pane(id: newId, kind: leaving.kind, title: title, frame: leaving.frame, terminalPath: terminalPath)
+        replacement.density = leaving.density
+        current.panes[index] = replacement
+        current.graph.rename(id, to: newId)
+        if current.focusedId == id { current.focusedId = newId }
+        if current.maximizedId == id { current.maximizedId = newId }
+        if let frame = current.preMaximizeFrames.removeValue(forKey: id) { current.preMaximizeFrames[newId] = frame }
+        byScope[scope] = current
+        if let i = focusOrder[scope]?.firstIndex(of: id) { focusOrder[scope]?[i] = newId }
+
+        var there = byScope[to] ?? LayoutSnapshot()
+        var kept = leaving
+        if current.maximizedId == newId, let frame = current.preMaximizeFrames[newId] { kept.frame = frame }
+        there.panes.removeAll { $0.id == id }
+        there.panes.append(kept)
+        byScope[to] = there
+        return replacement
+    }
+
     /// Puts `pane` into the current scope's arrangement exactly as it is:
     /// same id, same frame.
     ///

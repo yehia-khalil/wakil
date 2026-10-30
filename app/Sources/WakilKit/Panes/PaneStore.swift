@@ -88,6 +88,12 @@ public actor PaneStore {
         carried[to] = nil
         if from != to { carried[from] = to }
     }
+    /// Workspaces, piece 1 (decision 22): pane `paneId`'s contents move from `from` to `to`, as they
+    /// are — a terminal step 0 leaves in Main's view keeps its history there.
+    public func moveContents(paneId: String, from: LayoutScope, to: LayoutScope) {
+        guard from != to, let slot = byScope[from]?.removeValue(forKey: paneId) else { return }
+        byScope[to, default: [:]][paneId] = slot
+    }
     /// The scope on screen, whatever scope the caller is routed to: the window asks it to tell
     /// whether a swap is owed.
     public var screenScope: LayoutScope { screen }
