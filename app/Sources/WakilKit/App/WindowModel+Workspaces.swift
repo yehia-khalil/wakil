@@ -250,6 +250,7 @@ extension WindowModel {
     /// is a view, not a conversation, so it draws no line.
     public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?) async -> HomeScreen {
         let listings = await workspaceListings()
+        readHomeMergedBranches(listings.map(\.workspace))
         let current = projectKey
         let flags = environmentProduction
         let input = HomeInput(
@@ -259,8 +260,32 @@ extension WindowModel {
             tickets: ticketNeedsRows,
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,
+            branchPRs: homeBranchPRs,
             isProduction: { project, env in project == current ? flags.isProduction(env) : EnvironmentProduction.undeclared.isProduction(env) })
         return homeScreen(input)
+    }
+
+    /// Reads, not waited for, the PRs of each open workspace's branch never read or read over 60 s
+    /// ago (`homeMergedReads`), so a card can offer Archive once every PR is merged (decision 11). A
+    /// read that fails leaves the branch as it was (unread: no offer; Archive stays in ⋯), asked again
+    /// after 60 s. One that lands
+    /// after an organisation switch is dropped (Invariant 4).
+    func readHomeMergedBranches(_ workspaces: [Workspace]) {
+        guard let ticket else { return }
+        let org = organization
+        for at in homeMergedReads(workspaces)
+        where !homeBranchReading.contains(at) && ticketStale(lastRead: homeBranchReadAt[at], now: Date()) {
+            homeBranchReading.insert(at)
+            Task { @MainActor [weak self] in
+                let read = try? await ticket.readBranchPRs(root: at.root, branch: at.branch)
+                guard let self, self.organization == org else { return }
+                self.homeBranchReading.remove(at)
+                // A failure waits its 60 s too, so a branch GitHub cannot answer is not asked on every draw.
+                self.homeBranchReadAt[at] = Date()
+                guard let read else { return }
+                if self.homeBranchPRs[at] != read.prs { self.homeBranchPRs[at] = read.prs }
+            }
+        }
     }
 
     /// ⌘P's Running group's workspaces (decision 27): every unarchived one of the organisation.

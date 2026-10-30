@@ -37,8 +37,10 @@ struct Home: View {
     /// What the page depends on: the place, every live conversation's state and title, the tickets read.
     private var readKey: String {
         let live = model.liveConversationRows().map { "\($0.id):\($0.state.rawValue):\($0.title):\($0.workspace?.id ?? "")" }
+        // Decision 11's offer: a workspace branch's PRs landing redraws the page.
+        let merged = model.homeBranchPRs.map { "\($0.key.root):\($0.key.branch)=\($0.value.map(\.state))" }.sorted()
         return "\(model.organization)/\(model.projectKey)/\(model.environment)|\(live.joined(separator: ","))|"
-            + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)"
+            + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)|\(merged.joined(separator: ","))"
     }
 
     var body: some View {
@@ -263,6 +265,7 @@ struct Home: View {
             .accessibilityAction(.default) { Task { await model.openWorkspace(card.id) } }
             .accessibilityIdentifier("landing.card.\(card.id)")
             .accessibilityValue(card.needsYou ? "needs you" : "")
+            if let merged = card.merged { mergedOffer(card, merged, disabled: disabled) }
             VStack(alignment: .leading, spacing: 0) { ForEach(card.lines) { conversationLine($0) } }
             ForEach(card.children) { child in cardView(child, depth: depth + 1).padding(.leading, 18) }
         }
@@ -292,11 +295,7 @@ struct Home: View {
                 }
             }
             Divider()
-            Button("Archive") {
-                if card.archiveAsks { confirmingArchive = card } else {
-                    run(card.id) { await model.archiveWorkspace(card.id, confirm: false) }
-                }
-            }
+            Button("Archive") { archive(card) }
         } label: {
             Text("⋯").font(.system(size: 14, weight: .semibold)).foregroundStyle(coolWhite.opacity(0.7))
         }
@@ -304,6 +303,34 @@ struct Home: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityIdentifier("landing.card.\(card.id).menu")
+    }
+
+    /// Decision 11's offer, outside the card's combined element so its button is its own control:
+    /// every PR merged, and **Archive** — the menu's own, asking only with a conversation waiting
+    /// (Rule 1), disabled while a card action runs (Rule 5).
+    private func mergedOffer(_ card: HomeCard, _ merged: String, disabled: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(merged) — this work is done")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(TerminalPalette.green))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("landing.card.\(card.id).merged")
+            Button("Archive") { archive(card) }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(violet)
+                .disabled(disabled)
+                // Numbered in drawing order (`HomeScreen.mergedOffers`): a card's own id is generated.
+                .accessibilityIdentifier("landing.archive.offer:\(screen?.mergedOffers.firstIndex(of: card.id) ?? 0)")
+        }
+        .padding(.horizontal, 18)
+    }
+
+    /// Archive, from ⋯ or the merged offer: asks only with a conversation waiting (Rule 1).
+    private func archive(_ card: HomeCard) {
+        if card.archiveAsks { confirmingArchive = card } else {
+            run(card.id) { await model.archiveWorkspace(card.id, confirm: false) }
+        }
     }
 
     /// Runs a card action; the page re-reads after it, and its card is disabled meanwhile (Rule 5).

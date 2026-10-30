@@ -479,6 +479,15 @@ public actor EditorTicketStore {
         await changed()
     }
 
+    /// `ticket_branch` for `branch` on `root`, as the window's own read, kept nowhere here: the home's
+    /// Archive offer reads each workspace branch's PRs through it (workspaces, piece 3; decision 11).
+    public func readBranchPRs(root: String, branch: String) async throws -> TicketBranchState {
+        let (ticket, limit) = (self.ticket, self.readLimit)
+        return try await ActionRegistry.$dispatchCaller.withValue(nil) {
+            try await Self.readBranch(ticket, root: root, branch: branch, limit: limit)
+        }
+    }
+
     /// A shown ticket's other branches, by key, in `<root>:<branch>` order.
     public func ticketBranchReads() -> [String: [TicketBranchState]] {
         alsoReads.mapValues { m in m.keys.sorted().compactMap { m[$0] } }
