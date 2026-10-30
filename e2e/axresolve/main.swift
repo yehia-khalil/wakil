@@ -60,6 +60,10 @@ struct Element: Encodable {
     let identifier: String
     let role: String
     let enabled: Bool
+    /// What the element is called aloud: `AXDescription` (SwiftUI's `accessibilityLabel`), else
+    /// `AXTitle` (a `Button("…")`). Orca's tree text prints a button's title or value and never its
+    /// description, so this is the only read of a custom row's own name (night run 2026-10-29).
+    let label: String
     /// Screen coordinates, top-left origin — the same space `AXPosition`
     /// reports and the same space Orca's snapshot reports its window in.
     let x, y, width, height: Double
@@ -269,6 +273,9 @@ func collect(_ element: AXUIElement, depth: Int, into found: inout [Found]) thro
                     identifier: identifier,
                     role: stringAttribute(element, kAXRoleAttribute as String) ?? "",
                     enabled: (copyAttribute(element, kAXEnabledAttribute as String) as? Bool) ?? true,
+                    label: [kAXDescriptionAttribute, kAXTitleAttribute]
+                        .compactMap { stringAttribute(element, $0 as String) }
+                        .first { !$0.isEmpty } ?? "",
                     x: box.origin.x, y: box.origin.y,
                     width: box.size.width, height: box.size.height),
                 live: element))

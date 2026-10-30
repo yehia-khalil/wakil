@@ -34,6 +34,9 @@ type Element struct {
 	Identifier string  `json:"identifier"`
 	Role       string  `json:"role"`
 	Enabled    bool    `json:"enabled"`
+	// Label is AXDescription, else AXTitle: the element's name aloud, which
+	// orca's tree text never prints for a button (axresolve's header).
+	Label string `json:"label"`
 	X          float64 `json:"x"`
 	Y          float64 `json:"y"`
 	Width      float64 `json:"width"`
