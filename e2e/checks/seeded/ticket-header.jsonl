@@ -12,6 +12,8 @@
 {"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
 {"do":{"click":"editor.column.ticket"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"frame":"editor.column.changes","inside":"editor.column"}}
+{"expect":{"frame":"editor.column.ticket","inside":"editor.column"}}
 {"expect":{"pane":"editor-1","field":"ticket.branch","equals":"ini-142-login"}}
 {"expect":{"pane":"editor-1","field":"ticket.marked","equals":"INI-142"}}
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].number","equals":"212"}}

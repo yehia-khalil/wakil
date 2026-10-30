@@ -225,6 +225,14 @@ struct EditorColumn: View {
             viewTabs(.system(size: 11, weight: .medium, design: .monospaced), spacing: 12)
             viewTabs(.system(size: 11, weight: .medium), spacing: 9)
             viewTabs(.system(size: 10, weight: .medium).width(.condensed), spacing: 5)
+            // Narrower still (a count on Ticket at the column's minimum): two rows of two, never
+            // pushed past the column's edges (piece 3 walk: "hanges" lost its first letter).
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) { viewTab(.files, "Files", "files"); viewTab(.search, "Search", "search") }
+                HStack(spacing: 5) { viewTab(.changes, "Changes", "changes"); viewTab(.ticket, "Ticket", "ticket") }
+            }
+            .font(.system(size: 10, weight: .medium).width(.condensed))
+            .fixedSize()
         }
         .foregroundStyle(EditorPaneStyle.text)
         .frame(maxWidth: .infinity, alignment: .leading)
