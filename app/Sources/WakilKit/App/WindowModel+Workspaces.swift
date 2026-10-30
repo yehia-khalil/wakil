@@ -45,6 +45,10 @@ extension WindowModel {
     /// are filed by workspace; until then the canvas it is on stays (Rule 6).
     func workspaceMoved(_ conversation: String, from: Workspace?, to: Workspace) async {
         await workspaceViewFollows(conversation, from: from, to: to)
+        // Piece 3: a new workspace's branch may carry a ticket (`INI-142-…`), which is then that
+        // workspace's — on the home, not under Tickets not started here, and opened by ⌘P's `#`
+        // (decision 27). In flight is read again, not waited for.
+        if from == nil { Task { @MainActor [weak self] in await self?.ticketNeedsRead(force: true) } }
     }
 
     /// The branch name the ✨ quick task drafts from the Branches instructions (decision 10); nil
@@ -225,12 +229,20 @@ extension WindowModel {
     /// The organisation's workspaces with their holders and live states; empty, with the reason in
     /// `status` whole (Rule 8), when the record cannot be read.
     public func workspaceListings() async -> [WorkspaceListing] {
-        guard let router = workspaceRouter, !organization.isEmpty else { return [] }
-        if let failure = await router.load(org: organization) {
+        let org = organization
+        guard let router = workspaceRouter, !org.isEmpty else { return [] }
+        if let failure = await router.load(org: org) {
             status = failure
             return []
         }
-        return await router.listing()
+        let listings = await router.listing()
+        if org == organization { knownWorkspaces = (org, listings.map(\.workspace)) }
+        return listings
+    }
+
+    /// The workspaces last read for the window's organisation; none for another's (Invariant 4).
+    var workspacesKnownNow: [Workspace] {
+        knownWorkspaces.organization == organization ? knownWorkspaces.workspaces : []
     }
 
     /// The home screen (spec, piece 3), from what the window knows now. `projects` and `past` are

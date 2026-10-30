@@ -129,6 +129,9 @@ public final class WindowModel {
     @ObservationIgnored var runnerWiring: Task<Void, Never>?
     /// The latest leftover-Try sweep (`sweepLeftoverTries`); tests await it.
     @ObservationIgnored var trySweep: Task<Void, Never>?
+    /// Workspaces, piece 3: the organisation's workspaces as `workspaceListings` last read them, so
+    /// ⌘P's ticket rows, built at once as a line is typed, know which ticket has one (decision 27).
+    @ObservationIgnored var knownWorkspaces: (organization: String, workspaces: [Workspace]) = ("", [])
     /// What an agent's place's own `wakil-ctx` says about it — its roots and production
     /// flags — read through `placeClients`. Nil exactly when that is: a window that routes no
     /// call has no place but its own to answer for.
@@ -7237,6 +7240,8 @@ public final class WindowModel {
         paletteGeneration += 1
         let generation = paletteGeneration
         let identity = paletteIdentity
+        // Which ticket has a workspace, as the palette opens (decision 27): its row opens the view.
+        _ = await workspaceListings()
         let context = await paletteContext()
         // An older build finishing after a newer one must not leave its context behind.
         if generation == paletteGeneration {

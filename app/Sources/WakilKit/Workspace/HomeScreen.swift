@@ -388,3 +388,44 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         earlier: HomeEarlier(archived: archived, past: groups), helpInFull: cardCount <= 3,
         firstRun: live.isEmpty && open.isEmpty)
 }
+/// The workspace a ticket in flight is worked in, for ⌘P's `#` (decision 27): an open one carrying
+/// its key or working on one of its branches (`homeTicketRows`), a parent before its child, then the
+/// newest. Nil when none is open: an archived workspace is Earlier's, and the ticket opens instead.
+public func homeTicketWorkspace(_ row: TicketNeedsRow, in workspaces: [Workspace]) -> Workspace? {
+    workspaces.filter { !$0.archived && !homeTicketRows(of: $0, in: [row]).isEmpty }
+        .enumerated()
+        .min { a, b in
+            let pa = a.element.parent == nil ? 0 : 1, pb = b.element.parent == nil ? 0 : 1
+            if pa != pb { return pa < pb }
+            let da = iso(a.element.created) ?? distantPast, db = iso(b.element.created) ?? distantPast
+            if da != db { return da > db }
+            return a.offset < b.offset
+        }?.element
+}
+
+/// The branches decision 11's offer reads: each open workspace's checkouts with a branch, by Main's
+/// root (the repository `ticket_branch` reads PRs from) and the branch, once each.
+public func homeMergedReads(_ workspaces: [Workspace]) -> [TicketShownAt] {
+    var out: [TicketShownAt] = []
+    for w in workspaces where !w.archived {
+        for c in w.checkouts where !c.branch.isEmpty {
+            let at = TicketShownAt(root: c.repo, branch: c.branch)
+            if !out.contains(at) { out.append(at) }
+        }
+    }
+    return out
+}
+
+/// `2 PRs merged` when every PR `w`'s branches head is merged — each branch read, at least one PR
+/// among them — else nil (decision 11). A repo with no PR is not one of its PRs; a closed one is
+/// not merged.
+func homeMergedLine(_ w: Workspace, _ reads: [TicketShownAt: [PullRequestState]]) -> String? {
+    var prs: [PullRequestState] = []
+    for at in homeMergedReads([w]) {
+        guard let read = reads[at] else { return nil }
+        prs += read.filter { $0.head.isEmpty || $0.head == at.branch }
+    }
+    guard !prs.isEmpty, prs.allSatisfy({ $0.state == "merged" }) else { return nil }
+    return prs.count == 1 ? "1 PR merged" : "\(prs.count) PRs merged"
+}
+

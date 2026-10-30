@@ -66,10 +66,11 @@ extension WindowModel {
     /// row's words are its own most urgent state.
     func paletteTickets() -> [PaletteTicket] {
         let live = ticketHandOffLive, drafts = editorReviews.reads.draftRecords
+        let workspaces = workspacesKnownNow
         return ticketNeedsRowsInProject.map { row in
             paletteTicket(row, prWords: { r in
                 ticketUrgentState(r, handoffs: live, drafts: r.threads.filter { drafts[$0] != nil }.count).words
-            })
+            }, workspace: homeTicketWorkspace(row, in: workspaces)?.id)
         }
     }
 
@@ -189,7 +190,8 @@ extension WindowModel {
 /// keyed ticket, `ticket_open`'s params (`ticketOpenParams`), and ⌘↩'s hand-off from the header — none
 /// when no project holds its branch, since an agent needs a root. The PR rows carry no `→ base`: the In
 /// flight read does not name a PR's base.
-public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> String) -> PaletteTicket {
+public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> String,
+                          workspace: String? = nil) -> PaletteTicket {
     let name = ticketNeedsRowName(row)
     let title = row.title.isEmpty ? name : "\(name)  \(row.title)"
     var numbers: [Int] = []
@@ -212,5 +214,6 @@ public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> 
         handOff = .object(o)
     }
     return PaletteTicket(id: row.id, title: title, words: row.urgent.words, key: row.key, numbers: numbers, prs: prs,
-                         open: open, handOff: handOff, tier: row.urgent.tier, activity: row.activity)
+                         open: open, handOff: handOff, tier: row.urgent.tier, activity: row.activity,
+                         workspace: workspace)
 }

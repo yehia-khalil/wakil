@@ -189,6 +189,16 @@
     {
       "match": "where do you work",
       "reply": "map says: {map}"
+    },
+    {
+      "match": "write the merged note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/merged-note.txt", "kind": "file" } },
+      "reply": "wrote the merged note"
+    },
+    {
+      "match": "write the ticket note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/ticket-note.txt", "kind": "file" } },
+      "reply": "wrote the ticket note"
     }
   ]
 }

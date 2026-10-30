@@ -148,4 +148,50 @@ func paletteTicketSource(_ line: String) -> TicketSource {
         #expect(k.prs.isEmpty)
         #expect(k.numbers == [230])
     }
+
+    // Workspaces, piece 3 (decision 27): a ticket with a workspace opens that workspace's view.
+
+    /// Return on a ticket that has a workspace dispatches `workspace_open` for it, under `#` and under
+    /// its key alike; its PR rows and ⌘↩'s hand-off are the ticket's as before.
+    @Test func aTicketWithAWorkspaceOpensTheWorkspace() async {
+        var carried = paletteTicketFixtures
+        carried[0] = carried[0].inWorkspace("ws-142")
+        let tickets = carried
+        for line in ["#", "INI-142"] {
+            let source = TicketSource(tickets: { tickets }, query: { line }, keys: paletteTicketKeys)
+            let rows = await source.entries()
+            let row = rows.first { $0.id == "ticket:INI-142" }
+            #expect(row?.action == .dispatch(action: "workspace_open", params: .object(["workspace": .string("ws-142")])), "\(line)")
+            #expect(row?.verb == "open workspace", "\(line)")
+            #expect(row?.altVerb == "hand to agent", "\(line)")
+            let other = rows.first { $0.id == "ticket:INI-150" }
+            #expect(other?.action == .dispatch(action: "ticket_open", params: tickets[2].open), "\(line)")
+        }
+        let pr = await TicketSource(tickets: { tickets }, query: { "212" }, keys: paletteTicketKeys).entries()
+            .first { $0.id == "ticketpr:initech/api#212" }
+        #expect(pr?.action == .dispatch(action: "ticket_open", params: tickets[0].prs[0].open))
+    }
+
+    /// The workspace a ticket opens: the open one carrying its key or working on one of its branches —
+    /// a parent before its child — never an archived one.
+    @Test func aTicketsWorkspaceIsTheOpenOneCarryingIt() {
+        let r = InFlightRowState(key: "INI-142", root: "/src/api", branch: "ini-142-login", pr: 212, repo: "initech/api")
+        let row = TicketNeedsRow(id: "INI-142", key: "INI-142", title: "Login", urgent: TicketUrgent(tier: 4, words: ""),
+                                 rows: [r], activity: "", openable: true)
+        let archived = Workspace(id: "old", name: "old", slug: "old", project: "api", environment: "staging",
+                                 tickets: ["INI-142"], archived: true)
+        let child = Workspace(id: "kid", name: "kid", slug: "kid", project: "api", environment: "staging",
+                              tickets: ["INI-142"], parent: "top")
+        let top = Workspace(id: "top", name: "top", slug: "top", project: "api", environment: "staging",
+                            tickets: ["INI-142"])
+        let byBranch = Workspace(id: "br", name: "br", slug: "br", project: "api", environment: "staging",
+                                 checkouts: [WorkspaceCheckout(repo: "/src/api", branch: "ini-142-login")])
+        #expect(homeTicketWorkspace(row, in: [archived, child, top])?.id == "top")
+        #expect(homeTicketWorkspace(row, in: [archived, child])?.id == "kid")
+        #expect(homeTicketWorkspace(row, in: [archived]) == nil)
+        #expect(homeTicketWorkspace(row, in: [byBranch])?.id == "br")
+        let t = paletteTicket(row, prWords: { _ in "" }, workspace: "top")
+        #expect(t.workspace == "top")
+        #expect(paletteTicket(row, prWords: { _ in "" }).workspace == nil)
+    }
 }

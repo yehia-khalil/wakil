@@ -777,9 +777,13 @@ public struct PaletteTicket: Sendable, Equatable {
     /// The urgency tier, 1 most urgent, and the newest activity (RFC 3339): `#` lists by these.
     public let tier: Int
     public let activity: String
+    /// The workspace that carries the ticket (`homeTicketWorkspace`), by id: Return opens its view
+    /// (`workspace_open`, decision 27) rather than the ticket. Nil: the ticket opens.
+    public var workspace: String?
 
     public init(id: String, title: String, words: String, key: String?, numbers: [Int], prs: [PaletteTicketPR],
-                open: JSONValue, handOff: JSONValue?, tier: Int, activity: String) {
+                open: JSONValue, handOff: JSONValue?, tier: Int, activity: String, workspace: String? = nil) {
+        self.workspace = workspace
         self.id = id
         self.title = title
         self.words = words
@@ -790,6 +794,13 @@ public struct PaletteTicket: Sendable, Equatable {
         self.handOff = handOff
         self.tier = tier
         self.activity = activity
+    }
+
+    /// The same ticket, carried by workspace `id`.
+    public func inWorkspace(_ id: String?) -> PaletteTicket {
+        var t = self
+        t.workspace = id
+        return t
     }
 }
 
@@ -858,9 +869,14 @@ public struct TicketSource: PaletteSource {
         return keyed + others
     }
 
+    /// A ticket's row. One a workspace carries opens that workspace's view (decision 27); its PR rows
+    /// and ⌘↩'s hand-off stay the ticket's.
     private func row(_ t: PaletteTicket, tier: PaletteTier) -> PaletteEntry {
-        PaletteEntry(id: "ticket:\(t.id)", group: group, title: t.title, subtitle: t.words, kindLabel: "ticket",
-                     verb: "open", action: .dispatch(action: "ticket_open", params: t.open), tier: tier,
+        let action: PaletteAction = t.workspace.map {
+            .dispatch(action: "workspace_open", params: .object(["workspace": .string($0)]))
+        } ?? .dispatch(action: "ticket_open", params: t.open)
+        return PaletteEntry(id: "ticket:\(t.id)", group: group, title: t.title, subtitle: t.words, kindLabel: "ticket",
+                     verb: t.workspace == nil ? "open" : "open workspace", action: action, tier: tier,
                      altAction: Self.handOff(t, open: t.open), altVerb: t.handOff == nil ? nil : Self.handOffVerb)
     }
 
