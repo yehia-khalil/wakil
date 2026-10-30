@@ -63,9 +63,11 @@ struct Home: View {
             .padding(.top, 8)
             .padding(.bottom, 40)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("landing")
         }
+        // On the scroll area, not the page's stack: a `.contain` group whose only child is another
+        // (the quiet line alone, on a home with nothing else) folds that child into itself, so
+        // landing.quiet never reached the tree; the scroll area folds nothing.
+        .accessibilityIdentifier("landing")
         // The page scrolls under the composer, fading over its last 28 pt.
         .mask(VStack(spacing: 0) {
             Color.black
@@ -682,15 +684,11 @@ struct Home: View {
 
     /// `2 quiet projects — web · portal`: each name is the door to its Main view.
     private func quietLine(_ screen: HomeScreen) -> some View {
-        // In a stack: a custom Layout given `.contain` draws no accessibility element of its own (the
-        // e2e run found landing.quiet missing while its texts were read), and a stack does.
-        VStack(alignment: .leading, spacing: 0) {
-            WrappingRow(spacing: 6) {
-                Text("\(screen.quietCount) —").font(.system(size: 12.5)).foregroundStyle(ink.opacity(HomePalette.quiet))
-                ForEach(Array(screen.quiet.enumerated()), id: \.element) { n, project in
-                    if n > 0 { dotSeparator }
-                    projectName(project, size: 11.5, mono: true)
-                }
+        WrappingRow(spacing: 6) {
+            Text("\(screen.quietCount) —").font(.system(size: 12.5)).foregroundStyle(ink.opacity(HomePalette.quiet))
+            ForEach(Array(screen.quiet.enumerated()), id: \.element) { n, project in
+                if n > 0 { dotSeparator }
+                projectName(project, size: 11.5, mono: true)
             }
         }
         .accessibilityElement(children: .contain)
