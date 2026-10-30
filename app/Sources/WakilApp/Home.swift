@@ -144,7 +144,7 @@ struct Home: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { open(need.opens) }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default) { open(need.opens) }
             .accessibilityIdentifier("landing.needs:\(n)")
@@ -241,19 +241,22 @@ struct Home: View {
     /// A project's name: Main's view of it (`workspace_open`, Main), underlined under the pointer.
     private func projectName(_ project: String, size: CGFloat, mono: Bool = false) -> some View {
         let key = "project:\(project)"
-        return Button {
-            Task { await model.openWorkspace(nil, project: project, environment: project == model.projectKey ? model.environment : nil) }
-        } label: {
-            Text(project)
-                .font(.system(size: size, weight: mono ? .regular : .semibold, design: mono ? .monospaced : .default))
-                .foregroundStyle(ink.opacity(mono ? HomePalette.secondary : HomePalette.title))
-                .underline(hovered == key, color: ink.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
-        .help("Open Main's view of \(project): your own folders, with panes")
-        .accessibilityIdentifier("landing.project.\(project)")
+        let open = { Task { await model.openWorkspace(nil, project: project, environment: project == model.projectKey ? model.environment : nil) } }
+        // A pressable element holding its Text, not a Button: a Button's label is not in the tree the
+        // checks read, and the name is what they read the home by.
+        return Text(project)
+            .font(.system(size: size, weight: mono ? .regular : .semibold, design: mono ? .monospaced : .default))
+            .foregroundStyle(ink.opacity(mono ? HomePalette.secondary : HomePalette.title))
+            .underline(hovered == key, color: ink.opacity(0.5))
+            .fixedSize(horizontal: false, vertical: true)
+            .contentShape(Rectangle())
+            .onTapGesture { _ = open() }
+            .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
+            .help("Open Main's view of \(project): your own folders, with panes")
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { _ = open() }
+            .accessibilityIdentifier("landing.project.\(project)")
     }
 
     // MARK: - A card
@@ -315,17 +318,16 @@ struct Home: View {
                     Text("↳").font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.micro))
                         .accessibilityHidden(true)
                 }
-                StateDot(state: card.hue)
+                StateDot(state: card.hue, spoken: card.needsYou ? "\(card.needCount) need you" : card.hue.spoken)
                 cardTitle(card, showsBranch: depth > 0)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .contentShape(Rectangle())
             .onTapGesture { Task { await model.openWorkspace(card.id) } }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default) { Task { await model.openWorkspace(card.id) } }
             .accessibilityIdentifier("landing.card.\(card.id)")
-            .accessibilityValue(card.needsYou ? "\(card.needCount) need you" : card.hue.spoken)
             HStack(alignment: .center, spacing: 12) {
                 if card.needCount > 0 {
                     Text("● \(card.needCount)")
@@ -340,6 +342,7 @@ struct Home: View {
                         Text(ports)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(green)
+                            .accessibilityLabel(card.running ?? ports)
                             .accessibilityIdentifier("landing.card.\(card.id).running")
                         Button { runOnCard(card) { await model.stopOnCard(card.id) } } label: {
                             Image(systemName: "stop.fill")
@@ -367,7 +370,7 @@ struct Home: View {
                 .buttonStyle(.plain)
                 .help(open ? "Collapse" : "Expand: repos, PRs, every conversation")
                 .accessibilityLabel(open ? "Collapse" : "Expand")
-                .accessibilityIdentifier("landing.card.\(card.id).expand")
+                .accessibilityIdentifier("landing.card:\(number(card)).expand")
             }
             .fixedSize()
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -511,7 +514,7 @@ struct Home: View {
         .padding(.trailing, 16)
         .contentShape(Rectangle())
         .onTapGesture { Task { await model.openWorkspace(child.id) } }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default) { Task { await model.openWorkspace(child.id) } }
         .accessibilityIdentifier("landing.card.\(child.id)")
@@ -631,7 +634,7 @@ struct Home: View {
         // Every line opens its conversation, a Main line's and a card's alike (piece 3 walk).
         let action = { Task { await model.openHomeLine(line.id, session: line.session) } }
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
-            StateDot(state: line.state)
+            StateDot(state: line.state, spoken: line.state.spoken)
             if editing {
                 ConversationNameField(
                     conversation: line.id, shown: line.title, identifier: "landing.row.\(id).name",
@@ -657,11 +660,10 @@ struct Home: View {
         .onHover { inside in hovered = inside ? id : (hovered == id ? nil : hovered) }
         .onTapGesture { if !editing { _ = action() } }
         .contextMenu { Button("Rename…") { renaming = line.id } }
-        .accessibilityElement(children: editing ? .contain : .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(editing ? [] : .isButton)
         .accessibilityAction(.default) { if !editing { _ = action() } }
         .accessibilityIdentifier("landing.row.\(id)")
-        .accessibilityValue(line.state.spoken)
     }
 
     private func stateWordColour(_ state: ConversationState) -> Color {
@@ -737,16 +739,18 @@ struct Home: View {
 
     private func earlier(_ earlier: HomeEarlier, line: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Button { earlierOpen.toggle() } label: {
-                HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: earlierOpen ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(ink.opacity(HomePalette.micro))
-                    micro(line)
-                }
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: earlierOpen ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(ink.opacity(HomePalette.micro))
+                    .accessibilityHidden(true)
+                micro(line)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(line)
+            .contentShape(Rectangle())
+            .onTapGesture { earlierOpen.toggle() }
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { earlierOpen.toggle() }
             .accessibilityIdentifier("landing.earlier")
             if earlierOpen {
                 ForEach(Array(earlier.archived.enumerated()), id: \.element.id) { index, w in
@@ -892,8 +896,12 @@ struct Home: View {
 /// (`ChipDot`); idle is a ring.
 private struct StateDot: View {
     let state: ConversationState
+    /// The row's state in words, when the dot speaks for its row: an element of its own, so the row
+    /// keeps its texts as children (a value on the row itself hides them from the tree the checks
+    /// read). Nil for a dot that only colours.
+    var spoken: String? = nil
     var body: some View {
-        Group {
+        let dot = Group {
             if state == .idle {
                 Circle().strokeBorder(Color(HomePalette.ink).opacity(0.5), lineWidth: 1.2).frame(width: 7, height: 7)
             } else {
@@ -901,7 +909,14 @@ private struct StateDot: View {
             }
         }
         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-        .accessibilityHidden(true)
+        if let spoken {
+            dot.accessibilityElement()
+                .accessibilityLabel("State")
+                .accessibilityValue(spoken)
+                .accessibilityAddTraits(.isImage)
+        } else {
+            dot.accessibilityHidden(true)
+        }
     }
 }
 

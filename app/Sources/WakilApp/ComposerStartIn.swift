@@ -26,23 +26,27 @@ struct ComposerStartIn: View {
     var body: some View {
         Group {
             if choices.count > 1 {
-                Button { open.toggle() } label: {
-                    HStack(spacing: 5) {
-                        Text("in \(selected?.label ?? model.project)")
-                            .font(.system(size: 11, design: .monospaced))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.trailing)
-                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-                    }
-                    .foregroundStyle(selected?.isProduction == true ? Color(HomePalette.red) : ink.opacity(HomePalette.secondary))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(ink.opacity(open ? 0.08 : 0)))
-                    .contentShape(Rectangle())
+                // A pressable element holding its Text, not a Button: a Button's label is not in the
+                // tree the checks read, and `in <project> · <environment>` is what they read.
+                HStack(spacing: 5) {
+                    Text("in \(selected?.label ?? model.project)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.trailing)
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                        .accessibilityHidden(true)
                 }
-                .buttonStyle(.plain)
+                .foregroundStyle(selected?.isProduction == true ? Color(HomePalette.red) : ink.opacity(HomePalette.secondary))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 5).fill(ink.opacity(open ? 0.08 : 0)))
+                .contentShape(Rectangle())
+                .onTapGesture { open.toggle() }
                 .fixedSize()
                 .help("Where a send starts: Main of this project and environment")
+                .accessibilityElement(children: .contain)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(.default) { open.toggle() }
                 .accessibilityIdentifier("window.composer.startIn")
                 .popover(isPresented: $open, arrowEdge: .top) {
                     StartInPlane(choices: choices, selected: selected?.id) { choice in
