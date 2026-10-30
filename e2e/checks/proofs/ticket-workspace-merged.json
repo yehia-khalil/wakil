@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/ticket-workspace-merged.jsonl",
+  "baseCommit": "d38ae30e7a06f1f80a6dabb0b07386f499b8e7cc",
+  "provedAt": "2026-10-30T09:15:21Z",
+  "checkBlob": "518ffb55443ad17e4ef7cfdb245f26462ae3e5ca"
+}

@@ -578,6 +578,26 @@ Calls the build made where the umbrella left room, or where code forced a refine
 - **Not built in piece 3:** chips limited to other organisations' agents, ⌘P `#` opening a ticket's
   workspace, and moving data panes when a workspace's environment changes.
 
+### Amendment 2026-10-30 — piece 3 finished
+
+- **Chips are another organisation's only** (`WindowModel.chips` filters `chipCandidates`). The screen's
+  own organisation's conversations, a backgrounded one included, are lines on its home. A chip names the
+  workspace by its first ticket key, else its name: `umbrella · portal · qa — INI-87 · frontend`; one in
+  Main names none. Its identifier is unchanged (`window.agentChip.<org>/<project>/<env>`).
+- **⌘P: a ticket row whose ticket has a workspace opens it** (`workspace_open`), under `#` and under a
+  typed key alike, so a row means one thing; its verb says *open workspace*. Its PR rows still open the
+  ticket, and ⌘↩ still hands it to an agent. The workspace is the open one carrying the key or working
+  on one of the ticket's branches (the card's own rule), a parent before its child, then the newest; an
+  archived one is Earlier's, and the ticket opens. A workspace starting reads In flight again, since its
+  branch may carry a key (`INI-142-…`): the ticket is then that workspace's, here and on the home.
+- **The merged offer** (decision 11): the home reads each open workspace's branch PRs with
+  `ticket_branch {root, branch}` (Main's root, the checkout's branch), not waited for, each at most every
+  60 s. A card offers *"2 PRs merged — this work is done"* with **Archive** (the ⋯ one: it asks only with a
+  conversation waiting) when every branch is read, there is at least one PR, and every one is merged; a
+  closed PR is not merged, and a repo with no PR is not one of its PRs. The offer's Archive is numbered in
+  drawing order (`landing.archive.offer:<n>`), as a card's id is generated.
+- Still not built: moving data panes when a workspace's environment changes (not piece 3's finish list).
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).

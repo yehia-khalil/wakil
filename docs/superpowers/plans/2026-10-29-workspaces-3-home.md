@@ -26,7 +26,7 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
   starts it: the record-only workspace for a ticket comes with crews (piece 5), which own Start.
 - **PRs on a card** are the in-flight rows of the workspace's tickets (or its branches): counted,
   never fetched again here. Archive is always in ⋯ (decision 11 forbids only automatic archive);
-  the merged-PRs offer waits for a read that carries merged PRs (ticket work piece 4).
+  the merged-PRs offer reads each workspace branch's PRs (Phase E).
 - **The composer's project picker is a place switch**: its choices are each project of the
   organization (at the environment it was last in, else its first) and the current project's other
   environments; choosing one runs the same switch the context line does, and the draft stays.
@@ -78,6 +78,22 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
 3. ⌘P workspace rows; composer picker over the home.
 4. e2e checks under `e2e/checks/seeded/` and `agent/` (not run tonight); checks that read the old
    Landing's words move to the home's.
+
+## Phase E — finishing (2026-10-30)
+
+1. **Chips: other organisations only.** Test: an agent of the screen's organisation has a candidate and
+   no chip; moved to another organisation, it is one; a chip names its workspace (`AgentChipTests`).
+   Code: `chipCandidates` (the old derivation) and `chips` filtered; `AgentChip.workspace`/`subject`.
+   Checks: `bg-agent-chip-return`, `-narrow`, `-over-landing` switch organisation before reading the chip;
+   `conversations-background-chip` and `names-rename-running-cmd-r` read the home's line instead.
+2. **⌘P `#` opens a ticket's workspace.** Test: a ticket carried by a workspace dispatches
+   `workspace_open`; `homeTicketWorkspace` picks the open one, parent first (`PaletteTicketSourceTests`).
+   Code: `PaletteTicket.workspace`, `knownWorkspaces` refreshed as ⌘P opens, In flight re-read when a
+   workspace starts. Check: `agent/ticket-workspace-palette.jsonl`.
+3. **The merged offer.** Test: `homeMergedLine` / `homeMergedReads` / `mergedOffers` (`HomeScreenTests`).
+   Code: `EditorTicketStore.readBranchPRs`, `WindowModel.readHomeMergedBranches` → `homeBranchPRs`; the
+   card's offer line with Archive. Check: `agent/ticket-workspace-merged.jsonl` (the GitHub stub's
+   `write-the-merged-note` heads merged PR #216).
 
 ## Interaction Rules
 
