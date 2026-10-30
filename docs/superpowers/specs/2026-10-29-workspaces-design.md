@@ -59,7 +59,8 @@ conversation belongs to which ticket or what a conversation is.
    parent leaves the child, then drawn on its own.
 10. **(2026-10-29)** Branch names follow the operator's **branch instructions**, a fourth text beside
    General, Commits and Pull requests in the agent instructions settings (organization, then
-   project; Decision 45).
+   project; Decision 45). *Refined 2026-10-30:* they also say which base to branch from, and the
+   agent starts its copy from it with `workspace_start` (amendment below).
 11. **(2026-10-29)** **Archive is offered, never automatic.** It snapshots uncommitted work, removes
    the worktrees and keeps the branches; Restore brings all of it back. The card offers Archive once
    every PR of the workspace is merged. No count cap, no age sweep.
@@ -551,6 +552,33 @@ Calls the build made where the umbrella left room, or where code forced a refine
   copy git will not remove (something is in it) is left and named. The thread and the refusal say
   so whole (Rule 8). **A copy taken from Main** carries Main's work, so it is never taken back: the
   write is refused naming where the copy is, and the record in memory keeps it for the next save.
+
+### Amendment 2026-10-30 — decision 10 refined: the agent chooses its copy's base (`workspace_start`)
+
+Operator-approved. Real projects branch from different bases per repo (staging, main, master,
+production), and a hotfix branches from production; the write rule always started from the default
+branch (step 2) or Main's commit (step 0).
+
+- **`workspace_start {repo, base, branch?}`** (agent-reachable, `.mutate`, priced allow): the agent
+  calls it before its first change in a repo, choosing the base and branch from its **branch
+  instructions** (decision 10's fourth text, organisation then project) and the operator's message.
+  `repo` is a project root's folder name or path. In Main it runs step 0 with that base; in a
+  workspace with no checkout of the repo, step 2 with it. `branch` omitted is drafted as today.
+- **Refused whole** (nothing made, no thread line) when the conversation's workspace already has a
+  checkout of the repo — made or recorded — naming it and pointing at switch / branch create in it;
+  for the operator's dispatch; for a repo outside the project; for a name git will not take.
+- **Fallback:** without the call, the first change behaves as before.
+- **The base:** `origin/<base>` when the remote has it, else the local branch (the remote is the
+  shared truth for staging and production; a branch only the repo has still works). Neither is
+  refused whole by wakil-git (`git_worktree_add`'s `base`) and nothing is made; no fetch is run.
+- **Names:** the branch is minted like a new workspace's (`-2` past a taken one) and keeps the
+  ticket's key once (`INI-1637-ini-1637-…` → `INI-1637-…`). In a workspace the slug is its own.
+- **The thread names the base:** *"Made a copy of web from `production` on
+  `from-production/INI-1637-full-jwt`."*; in Main, *"Started workspace ‘…’ — a copy of web from
+  `production` on `…`. Your folder is untouched."* The checkout's `base` records it.
+- **Agent-facing text:** the tool's description and Wakil's rule 8 tell the agent to read its branch
+  instructions for the base and call the tool first; the Branches box's placeholder gives an
+  example (*from staging; a hotfix from production*). No separate Settings field.
 
 ## Errors and edges
 

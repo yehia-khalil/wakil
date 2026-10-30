@@ -123,6 +123,24 @@ terminals left). Tags "Main · your folder" / "workspace copy"; the context line
    No e2e check: a save failure cannot be staged from the screen (the store reads its own file);
    the unit and wakil-git tests drive both halves.
 
+## Phase L — the agent chooses its copy's base: `workspace_start` (amendment 2026-10-30, decision 10 refined)
+
+- [x] **Go.** `WorktreeAddOptions.Base`: `origin/<base>` else the local branch, a new branch minted as
+  `NewBranch`; neither refused whole with nothing made; the reply's `base`. `git_worktree_add`'s
+  `base`. Tests: `TestWorktreeAddFromAChosenBase`, `TestWorktreeAddFromAChosenBaseOrRefusedWhole`.
+- [x] **Swift.** `WorkspaceRouter.start(repo:base:branch:)` (step 0 or step 2 with a `ChosenStart`),
+  `branchWithKeyOnce`, `WorkspaceLine.startedFrom` / `.madeFrom`, the `workspace_start` action. Tests:
+  `workspaceStartInMainMakesTheWorkspaceFromTheChosenBase`,
+  `workspaceStartInAWorkspaceMakesTheRepositoryCopyFromTheChosenBase`,
+  `workspaceStartIsRefusedWholeWhenTheWorkspaceHasACopyOfTheRepo`,
+  `workspaceStartFromABaseThatDoesNotExistMakesNothing`,
+  `workspaceStartIsRefusedForTheOperatorAnUnknownRepoAndABadBranch`, `theStartedLinesNameTheBase`,
+  `aChosenBranchHasTheTicketsKeyOnce`; the registry lists in `AppWiringTests`, `WindowModelPaletteTests`.
+- [x] **Text.** The tool's description, rule 8 in `AgentInstructions.swift`, the Branches placeholder.
+- [x] **E2E (written, not run).** `agent/workspaces-start-from-base.jsonl` with two stub rules
+  (`start the copy from main` → `workspace_start {repo e2e-api, base main, branch e2e-from-main-start}`;
+  `write the started note` → `editor_create`): the thread line, the copy's branch, the write in it.
+
 ## On the walk of the home (2026-10-30) — fixes that are main's too, landed at the stack's base
 
 - [x] The editor column never pushes past its edges (tabs in two rows, a section's control under its title, a
