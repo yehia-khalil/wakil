@@ -716,3 +716,32 @@ private let unsaved = "workspaces.json: CancellationError() — nothing was save
     #expect(branchWithKeyOnce("hotfix/INI-1637-otp", key: "INI-1637") == "hotfix/INI-1637-otp")
     #expect(branchWithKeyOnce("hotfix/otp", key: nil) == "hotfix/otp")
 }
+
+/// The home's doors take a workspace's id or its slug, the folder name the operator sees, as every
+/// operator action that names a workspace does: the view is asked for by the id the slug names.
+@Test func workspaceOpenAndNewConversationTakeTheWorkspacesSlug() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, states: ["c1": .idle], said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    let slug = try #require(await r.store.workspace(id)?.slug)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let registry = ActionRegistry(journalDirectory: directory, sessionId: "workspace-slug")
+    let views = ConversationBroker()
+    await registerWorkspaceActions(into: registry, router: r, organization: { "initech" }, views: views)
+    _ = try await registry.dispatch(name: "workspace_new_conversation", params: .object(["workspace": .string(slug)]),
+                                    origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(name: "workspace_open", params: .object(["workspace": .string(slug)]),
+                                    origin: .ui, caller: .test("staging"), confirmation: nil)
+    var asked: [ConversationRequest] = []
+    for await request in await views.requests() {
+        asked.append(request)
+        if asked.count == 2 { break }
+    }
+    #expect(asked == [.newHere(workspace: id), .openView(workspace: id, place: nil)])
+    await #expect(throws: (any Error).self) {
+        try await registry.dispatch(name: "workspace_open", params: .object(["workspace": .string("no-such-slug")]),
+                                    origin: .ui, caller: .test("staging"), confirmation: nil)
+    }
+}

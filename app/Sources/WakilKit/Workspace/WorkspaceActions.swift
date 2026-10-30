@@ -146,7 +146,7 @@ public func registerWorkspaceActions(
     await registry.register(Action(
         name: "workspace_open",
         description: "Open a workspace's view (decision 22): workspace \"main\" is Main's view of project and environment "
-            + "(the screen's when omitted), the operator's own folders, with panes and no agent needed; a workspace id "
+            + "(the screen's when omitted), the operator's own folders, with panes and no agent needed; a workspace (its id or slug) "
             + "opens on its most recent live conversation, else its view with none. Typing in its composer starts a "
             + "conversation there. Moves the screen, going to the place first. Operator use only.",
         kind: .control, audience: .operatorOnly,
@@ -163,30 +163,30 @@ public func registerWorkspaceActions(
                 return .object(["opening": .string("main")])
             }
             _ = try await org("workspace_open")
-            guard let w = await router.store.workspace(id) else {
+            guard let w = await router.workspace(idOrSlug: id) else {
                 throw WorkspaceWriteError(description: "workspace_open: there is no workspace \(id)")
             }
             if w.archived { throw WorkspaceWriteError(description: "workspace_open: ‘\(w.name)’ is archived; restore it first") }
-            await views.request(.openView(workspace: id, place: nil))
-            return .object(["opening": .string(id)])
+            await views.request(.openView(workspace: w.id, place: nil))
+            return .object(["opening": .string(w.id)])
         }))
 
     await registry.register(Action(
         name: "workspace_new_conversation",
-        description: "New conversation here: a fresh conversation in a workspace's view, the composer focused; nothing is "
+        description: "New conversation here: a fresh conversation in a workspace's (its id or slug) view, the composer focused; nothing is "
             + "sent until the operator types. Operator use only.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["workspace": text], required: ["workspace"]),
         handler: { params in
             _ = try await org("workspace_new_conversation")
             let id = try required(params, "workspace", "workspace_new_conversation")
-            guard let w = await router.store.workspace(id) else {
+            guard let w = await router.workspace(idOrSlug: id) else {
                 throw WorkspaceWriteError(description: "workspace_new_conversation: there is no workspace \(id)")
             }
             if w.archived {
                 throw WorkspaceWriteError(description: "workspace_new_conversation: ‘\(w.name)’ is archived; restore it first")
             }
-            await views.request(.newHere(workspace: id))
-            return .object(["workspace": .string(id)])
+            await views.request(.newHere(workspace: w.id))
+            return .object(["workspace": .string(w.id)])
         }))
 }
