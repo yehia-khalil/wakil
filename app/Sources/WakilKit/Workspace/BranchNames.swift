@@ -73,3 +73,18 @@ public func uniqueSlug(_ slug: String, taken: Set<String>) -> String {
     while taken.contains("\(base)-\(i)") { i += 1 }
     return "\(base)-\(i)"
 }
+
+/// A branch the agent chose (workspace_start) with the ticket's key once: a key written twice in a
+/// row (any case, joined by "-") keeps its first copy — `from-production/INI-1637-ini-1637-full-jwt`
+/// is `from-production/INI-1637-full-jwt` (amendment 2026-10-30, the walk's key once).
+public func branchWithKeyOnce(_ branch: String, key: String?) -> String {
+    guard let key, !key.isEmpty else { return branch }
+    let k = NSRegularExpression.escapedPattern(for: key)
+    guard let twice = try? NSRegularExpression(pattern: "(\(k))-\(k)(?![A-Za-z0-9])", options: .caseInsensitive) else { return branch }
+    var out = branch
+    while true {
+        let next = twice.stringByReplacingMatches(in: out, range: NSRange(out.startIndex..., in: out), withTemplate: "$1")
+        if next == out { return out }
+        out = next
+    }
+}

@@ -158,6 +158,64 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         return await store.workspace(ofConversation: c, root: facts.lineageRoot)?.checkouts.compactMap(\.path) ?? []
     }
 
+    /// workspace_start (amendment 2026-10-30, decision 10 refined): the agent starts its copy of
+    /// `repo` (a project root's path or folder name) from `base`, on `branch` (nil: drafted as the
+    /// first change would) — in Main a new workspace (step 0), in its workspace a checkout made there
+    /// (step 2). Refused whole when its workspace already has a checkout of the repo, and when the
+    /// base is not there; nothing is made then.
+    public func start(repo: String, base: String, branch: String?) async throws -> WorkspaceStarted {
+        let action = "workspace_start"
+        guard let (c, facts) = await agentFacts() else {
+            throw WorkspaceWriteError(description: "\(action): only an agent's conversation starts its own copy; the "
+                + "operator's writes land where they are aimed")
+        }
+        let base = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty, !base.hasPrefix("-"), NormalisedBranch(base) == base else {
+            throw WorkspaceWriteError(description: "\(action): \(base) is not a branch name git takes")
+        }
+        var named: String?
+        if let raw = branch?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            guard !raw.hasPrefix("-"), let b = NormalisedBranch(raw) else {
+                throw WorkspaceWriteError(description: "\(action): \(raw) is not a branch name git takes")
+            }
+            named = b
+        }
+        let chosen = named
+        let wanted = (repo as NSString).standardizingPath
+        guard let root = facts.mainRoots.first(where: {
+            ($0 as NSString).standardizingPath == wanted || ($0 as NSString).lastPathComponent == repo
+        }) else {
+            let names = facts.mainRoots.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")
+            throw WorkspaceWriteError(description: "\(action): \(repo) is not one of this project's repos (\(names))")
+        }
+        await store.ensure(org: facts.organization)
+        return try await serially {
+            let mine = await self.store.workspace(ofConversation: c, root: facts.lineageRoot)
+            if let mine, let co = mine.checkout(of: root) {
+                let held = co.path == nil ? "has \(self.repoName(root)) on `\(co.branch)` (its copy is put back at the next change)"
+                    : "already has a copy of \(self.repoName(root)), on `\(co.branch)`"
+                throw WorkspaceWriteError(description: "\(action): workspace ‘\(mine.name)’ \(held), so a new one was not "
+                    + "started. Work in it: for another base, switch or make a branch there (editor_changes_switch, "
+                    + "editor_changes_branch_create).")
+            }
+            if let mine, await !self.store.isMember(c) {
+                await self.store.move(c, root: facts.lineageRoot, to: mine.id)
+                await self.hooks?.moved(c, mine, mine)
+            }
+            try await self.requireRepository(root, action: action)
+            let start = ChosenStart(base: base, branch: chosen.map { branchWithKeyOnce($0, key: mine?.tickets.first ?? facts.ticket) })
+            let path: String
+            if let mine {
+                path = try await self.make(mine, repo: root, start: .base, conversation: c, facts: facts, chosen: start)
+            } else {
+                path = try await self.startWorkspace(root, conversation: c, facts: facts, chosen: start)
+            }
+            let w = await self.store.workspace(ofConversation: c, root: facts.lineageRoot)
+            let co = w?.checkout(of: root)
+            return WorkspaceStarted(workspace: w?.id ?? "", repo: root, path: path, branch: co?.branch ?? "", base: base)
+        }
+    }
+
     // MARK: one write at a time
 
     func serially<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
@@ -279,25 +337,41 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     /// Step 0: a workspace for a conversation in Main, its first checkout from the commit Main's
     /// folder is on (call 4; a detached HEAD is that commit). Main's uncommitted changes are not
     /// carried, and the thread says how many there were.
-    private func startWorkspace(_ repo: String, conversation c: String, facts: WorkspaceConversationFacts) async throws -> String {
+    /// With `chosen` (workspace_start), the copy starts from its base, on its branch when it names one.
+    private func startWorkspace(_ repo: String, conversation c: String, facts: WorkspaceConversationFacts,
+                                chosen: ChosenStart? = nil) async throws -> String {
         let all = await store.all()
         let name = facts.title.isEmpty || facts.title == newConversationTitle
             ? (facts.firstMessage.map(conversationTitle) ?? "Work") : facts.title
-        let drafted = await hooks?.branchName(BranchNameRequest(
-            key: facts.ticket, title: name, firstMessage: facts.firstMessage, repo: repo,
-            organization: facts.organization, project: facts.project))
-        let asked = drafted.flatMap { NormalisedBranch($0) } ?? fallbackBranchName(key: facts.ticket, title: name)
+        let asked: String
+        if let b = chosen?.branch {
+            asked = b
+        } else {
+            let drafted = await hooks?.branchName(BranchNameRequest(
+                key: facts.ticket, title: name, firstMessage: facts.firstMessage, repo: repo,
+                organization: facts.organization, project: facts.project))
+            asked = drafted.flatMap { NormalisedBranch($0) } ?? fallbackBranchName(key: facts.ticket, title: name)
+        }
         let takenSlugs = Set(all.filter { $0.project == facts.project }.map(\.slug))
-        let main = await mainState(repo)
+        let main = chosen == nil ? await mainState(repo) : nil
+        var args: [String: JSONValue] = [
+            "root": .string(repo), "project": .string(facts.project),
+            "slug": .string(uniqueSlug(branchSlug(asked), taken: takenSlugs)),
+            "branch": .string(asked), "newName": .bool(true), "takenSlugs": names(takenSlugs),
+            "takenBranches": names(recordedBranches(all)),
+        ]
+        if let chosen {
+            args["base"] = .string(chosen.base)
+        } else {
+            args["create"] = .bool(true)
+            args["from"] = .string("HEAD")
+        }
         let made: JSONValue
         do {
-            made = try await call("git_worktree_add", [
-                "root": .string(repo), "project": .string(facts.project),
-                "slug": .string(uniqueSlug(branchSlug(asked), taken: takenSlugs)),
-                "branch": .string(asked), "create": .bool(true), "from": .string("HEAD"),
-                "newName": .bool(true), "takenSlugs": names(takenSlugs), "takenBranches": names(recordedBranches(all)),
-            ])
+            made = try await call("git_worktree_add", args)
         } catch {
+            // A chosen start is refused whole: nothing was made, and the agent's call says why.
+            if chosen != nil { throw WorkspaceWriteError(description: "workspace_start: \(error)") }
             await hooks?.say(c, .addFailed(repo: repoName(repo), message: "\(error)"))
             throw WorkspaceWriteError(description: WorkspaceLine.addFailed(repo: repoName(repo), message: "\(error)").text)
         }
@@ -309,7 +383,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
             id: newId(), name: name, slug: slug, project: facts.project, environment: facts.environment,
             tickets: facts.ticket.map { [$0] } ?? [], branch: branch,
             created: ISO8601DateFormatter().string(from: Date()))
-        w.checkouts = [WorkspaceCheckout(repo: repo, path: path, branch: branch, base: main?.branch)]
+        w.checkouts = [WorkspaceCheckout(repo: repo, path: path, branch: branch, base: chosen?.base ?? main?.branch)]
         await store.add(w)
         await store.move(c, root: facts.lineageRoot, to: w.id)
         await store.hold(WorkspaceHold(workspace: w.id, repo: repo), by: c, root: facts.lineageRoot)
@@ -319,7 +393,11 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
                                  branch: flag(made, "created") ? branch : nil, path: path) {
             await self.store.remove(id)
         }
-        await hooks?.say(c, .started(name: name, repo: repoName(repo), branch: branch, uncommitted: main?.uncommitted ?? 0))
+        if let chosen {
+            await hooks?.say(c, .startedFrom(name: name, repo: repoName(repo), base: chosen.base, branch: branch))
+        } else {
+            await hooks?.say(c, .started(name: name, repo: repoName(repo), branch: branch, uncommitted: main?.uncommitted ?? 0))
+        }
         await hooks?.moved(c, nil, w)
         return path
     }
@@ -369,9 +447,9 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         return child.checkout(of: repo)?.path ?? ""
     }
 
-    /// Step 2: a checkout of `repo` made in `w`.
+    /// Step 2: a checkout of `repo` made in `w`; with `chosen` (workspace_start), a new branch from its base.
     private func make(_ w: Workspace, repo: String, start: CheckoutStart, conversation c: String,
-                      facts: WorkspaceConversationFacts) async throws -> String {
+                      facts: WorkspaceConversationFacts, chosen: ChosenStart? = nil) async throws -> String {
         let recorded = w.checkout(of: repo)
         var branch = recorded?.branch ?? w.branch ?? fallbackBranchName(key: w.tickets.first, title: w.name)
         var path: String?
@@ -379,40 +457,57 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         var base = recorded?.base
         var line: WorkspaceLine?
         do {
-            switch start {
-            case .takeFromMain:
-                var args: [String: JSONValue] = [
-                    "root": .string(repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(branch),
-                ]
-                if let base { args["base"] = .string(base) }
-                let r = try await call("git_take_from_main", args)
-                path = string(r, "path")
-                let now = await mainState(repo)?.branch ?? base ?? "its base"
-                base = base ?? now
-                line = .tookFromMain(repo: repoName(repo), branch: branch, base: now, carried: flag(r, "carried"))
-            case .existingBranch:
-                let r = try await call("git_worktree_add", [
-                    "root": .string(repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(branch),
-                    "create": .bool(true), "fromIsBase": .bool(true),
-                ])
-                path = string(r, "path")
-                created = flag(r, "created")
-                if let snap = recorded?.snapshot, let path {
-                    _ = try await call("git_snapshot_apply", ["root": .string(path), "ref": .string(snap)])
-                }
-            case .base:
-                // The workspace's branch, unless another folder holds it (amendment 2026-10-30, the walk).
+            if let chosen {
+                // A new branch from the chosen base: wakil-git mints it (-2 past a taken one); the
+                // workspace's folder is its own, so the slug stays.
+                if let b = chosen.branch { branch = b }
                 let others = recordedBranches(await store.all().filter { $0.id != w.id })
                 let r = try await call("git_worktree_add", [
                     "root": .string(repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(branch),
-                    "create": .bool(true), "fromIsBase": .bool(true), "freeBranch": .bool(true), "takenBranches": names(others),
+                    "base": .string(chosen.base), "takenBranches": names(others),
                 ])
                 path = string(r, "path")
                 branch = string(r, "branch") ?? branch
                 created = flag(r, "created")
-                if let note = string(r, "note"), !note.isEmpty { line = .madeCheckout(repo: repoName(repo), branch: branch, note: note) }
+                base = chosen.base
+                line = .madeFrom(repo: repoName(repo), base: chosen.base, branch: branch)
+            } else {
+                switch start {
+                case .takeFromMain:
+                    var args: [String: JSONValue] = [
+                        "root": .string(repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(branch),
+                    ]
+                    if let base { args["base"] = .string(base) }
+                    let r = try await call("git_take_from_main", args)
+                    path = string(r, "path")
+                    let now = await mainState(repo)?.branch ?? base ?? "its base"
+                    base = base ?? now
+                    line = .tookFromMain(repo: repoName(repo), branch: branch, base: now, carried: flag(r, "carried"))
+                case .existingBranch:
+                    let r = try await call("git_worktree_add", [
+                        "root": .string(repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(branch),
+                        "create": .bool(true), "fromIsBase": .bool(true),
+                    ])
+                    path = string(r, "path")
+                    created = flag(r, "created")
+                    if let snap = recorded?.snapshot, let path {
+                        _ = try await call("git_snapshot_apply", ["root": .string(path), "ref": .string(snap)])
+                    }
+                case .base:
+                    // The workspace's branch, unless another folder holds it (amendment 2026-10-30, the walk).
+                    let others = recordedBranches(await store.all().filter { $0.id != w.id })
+                    let r = try await call("git_worktree_add", [
+                        "root": .string(repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(branch),
+                        "create": .bool(true), "fromIsBase": .bool(true), "freeBranch": .bool(true), "takenBranches": names(others),
+                    ])
+                    path = string(r, "path")
+                    branch = string(r, "branch") ?? branch
+                    created = flag(r, "created")
+                    if let note = string(r, "note"), !note.isEmpty { line = .madeCheckout(repo: repoName(repo), branch: branch, note: note) }
+                }
             }
         } catch {
+            if chosen != nil { throw WorkspaceWriteError(description: "workspace_start: \(error)") }
             await hooks?.say(c, .addFailed(repo: repoName(repo), message: "\(error)"))
             throw WorkspaceWriteError(description: WorkspaceLine.addFailed(repo: repoName(repo), message: "\(error)").text)
         }
@@ -569,6 +664,21 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     }
 
     nonisolated func repoName(_ repo: String) -> String { (repo as NSString).lastPathComponent }
+}
+
+/// What workspace_start was asked for: the base, and the branch when the agent named one.
+struct ChosenStart: Sendable, Equatable {
+    let base: String
+    let branch: String?
+}
+
+/// What workspace_start made: the workspace, the repo (Main's folder), the copy and its branch and base.
+public struct WorkspaceStarted: Sendable, Equatable {
+    public let workspace: String
+    public let repo: String
+    public let path: String
+    public let branch: String
+    public let base: String
 }
 
 /// An agent's write in a project root that is not a git repository (amendment 2026-10-30), whole.

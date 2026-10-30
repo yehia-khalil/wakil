@@ -9,6 +9,10 @@ public enum WorkspaceLine: Equatable, Sendable {
     case tookFromMain(repo: String, branch: String, base: String, carried: Bool)
     case addFailed(repo: String, message: String)
     case madeCheckout(repo: String, branch: String, note: String?)
+    /// workspace_start (amendment 2026-10-30, decision 10 refined): a copy from the base the agent
+    /// chose, in Main (a new workspace) or in its workspace.
+    case startedFrom(name: String, repo: String, base: String, branch: String)
+    case madeFrom(repo: String, base: String, branch: String)
     case moved(name: String)
     case switchBranchedOff(branch: String, holder: String, fresh: String)
     /// The record could not be saved after a copy was made: the copy was taken back (`leftAt` nil),
@@ -37,6 +41,10 @@ public enum WorkspaceLine: Equatable, Sendable {
         case .madeCheckout(let repo, let branch, let note):
             let base = "Made a copy of \(repo) in this workspace, on `\(branch)`."
             return note.map { "\(base) \($0)." } ?? base
+        case .startedFrom(let name, let repo, let base, let branch):
+            return "Started workspace ‘\(name)’ — a copy of \(repo) from `\(base)` on `\(branch)`. Your folder is untouched."
+        case .madeFrom(let repo, let base, let branch):
+            return "Made a copy of \(repo) from `\(base)` on `\(branch)`."
         case .moved(let name):
             return "Moved to workspace ‘\(name)’."
         case .switchBranchedOff(let branch, let holder, let fresh):

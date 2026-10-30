@@ -14,7 +14,7 @@ private actor Said {
 
 private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails: String? = nil,
                      notRepositories: Set<String> = [], renames: [String: String] = [:],
-                     discardFails: String? = nil) -> RecordingToolCaller {
+                     discardFails: String? = nil, missingBases: Set<String> = []) -> RecordingToolCaller {
     RecordingToolCaller(reply: { name, args in
         guard case .object(let a) = args else { return .object([:]) }
         func s(_ k: String) -> String { if case .string(let v)? = a[k] { v } else { "" } }
@@ -27,6 +27,9 @@ private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails
             return .object(["branch": .string(mainBranch), "files": .array(files)])
         case "git_worktree_add":
             if let addFails { throw WorkspaceWriteError(description: addFails) }
+            if missingBases.contains(s("base")) {
+                throw WorkspaceWriteError(description: "There is no branch \(s("base")) here nor on the remote (origin/\(s("base"))), so no copy was made")
+            }
             // wakil-git picks the next free names (newName); `renames` stands in for what it found taken.
             let slug = renames[s("slug")] ?? s("slug"), branch = renames[s("branch")] ?? s("branch")
             return .object(["path": .string("/h/ws/\(s("project"))/\(slug)/\((s("root") as NSString).lastPathComponent)"),
@@ -71,7 +74,7 @@ private final class SaveSwitch: @unchecked Sendable {
 
 private func router(
     git: RecordingToolCaller, states: [String: ConversationState] = [:], said: Said, titles: [String: String] = [:],
-    saves: SaveSwitch = SaveSwitch()
+    saves: SaveSwitch = SaveSwitch(), tickets: [String: String] = [:]
 ) async -> WorkspaceRouter {
     let store = WorkspaceStore()
     await store.use(load: { WorkspacesFile() }, save: { _ in try saves.check() })
@@ -81,7 +84,7 @@ private func router(
     await r.setIds { counter.next() }
     await r.setFolderExists { !$0.contains("/gone/") }
     await r.install(WorkspaceRouterHooks(
-        conversation: { id in facts(id, title: titles[id] ?? "Fix OTP guard order") },
+        conversation: { id in facts(id, title: titles[id] ?? "Fix OTP guard order", ticket: tickets[id]) },
         states: { states },
         say: { c, l in await said.add(c, l) },
         moved: { c, from, to in await said.move(c, from?.id, to.id) }))
@@ -580,4 +583,112 @@ private let unsaved = "workspaces.json: CancellationError() — nothing was save
     guard case .object(let a) = add.arguments else { Issue.record("no args"); return }
     #expect(a["freeBranch"] == .bool(true))
     #expect(a["newName"] == nil)
+}
+
+// MARK: workspace_start (amendment 2026-10-30, decision 10 refined): the agent chooses its copy's base
+
+/// In Main: the workspace is made with its first copy from the chosen base, on the chosen branch
+/// with the ticket's key once; the record keeps the base and the thread names it.
+@Test func workspaceStartInMainMakesTheWorkspaceFromTheChosenBase() async throws {
+    let git = fakeGit()
+    let said = Said()
+    let r = await router(git: git, said: said, tickets: ["c1": "INI-1637"])
+    let started = try await asAgent("c1") {
+        try await r.start(repo: "web", base: "production", branch: "from-production/INI-1637-ini-1637-full-jwt")
+    }
+    let branch = "from-production/INI-1637-full-jwt"
+    #expect(started.path == "/h/ws/estate/from-production-ini-1637-full-jwt/web")
+    #expect(started.branch == branch && started.base == "production")
+    let add = try #require(await git.calls.first { $0.name == "git_worktree_add" })
+    guard case .object(let a) = add.arguments else { Issue.record("no args"); return }
+    #expect(a["root"] == .string("/p/web") && a["base"] == .string("production") && a["branch"] == .string(branch))
+    #expect(a["newName"] == .bool(true) && a["from"] == nil)
+    let w = try #require(await r.store.workspace(ofConversation: "c1"))
+    #expect(w.branch == branch && w.tickets == ["INI-1637"])
+    #expect(w.checkouts == [WorkspaceCheckout(repo: "/p/web", path: started.path, branch: branch, base: "production",
+                                              lastHolder: "root-c1")])
+    #expect(await said.lines.map(\.1) == [.startedFrom(name: "Fix OTP guard order", repo: "web", base: "production", branch: branch)])
+    #expect(await said.moves.map(\.2) == [w.id])
+    // The first change lands in that copy: nothing new is made.
+    #expect(try await asAgent("c1") { try await r.routePath("/p/web/a.ts", action: "editor_save") } == started.path + "/a.ts")
+    #expect(await git.calls.filter { $0.name == "git_worktree_add" }.count == 1)
+}
+
+/// In a workspace with no copy of the repo: the copy is made there from the chosen base, on the
+/// workspace's branch when none is named.
+@Test func workspaceStartInAWorkspaceMakesTheRepositoryCopyFromTheChosenBase() async throws {
+    let git = fakeGit()
+    let said = Said()
+    let r = await router(git: git, said: said)
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let started = try await asAgent("c1") { try await r.start(repo: "/p/web", base: "staging", branch: nil) }
+    #expect(started.path == "/h/ws/estate/fix-otp-guard-order/web" && started.branch == "fix-otp-guard-order")
+    let add = try #require(await git.calls.last { $0.name == "git_worktree_add" })
+    guard case .object(let a) = add.arguments else { Issue.record("no args"); return }
+    #expect(a["base"] == .string("staging") && a["fromIsBase"] == nil && a["slug"] == .string("fix-otp-guard-order"))
+    let w = try #require(await r.store.workspace(ofConversation: "c1"))
+    #expect(w.checkout(of: "/p/web")?.base == "staging")
+    #expect(await r.store.holder(of: WorkspaceHold(workspace: w.id, repo: "/p/web")) == "c1")
+    #expect(await said.lines.last?.1 == .madeFrom(repo: "web", base: "staging", branch: "fix-otp-guard-order"))
+}
+
+/// A conversation whose workspace already has a copy of the repo: refused whole, naming why.
+@Test func workspaceStartIsRefusedWholeWhenTheWorkspaceHasACopyOfTheRepo() async throws {
+    let git = fakeGit()
+    let r = await router(git: git, said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    await #expect {
+        try await asAgent("c1") { try await r.start(repo: "core", base: "production", branch: "hotfix") }
+    } throws: { error in
+        let text = "\(error)"
+        return text.contains("workspace_start: workspace ‘Fix OTP guard order’ already has a copy of core, on `fix-otp-guard-order`")
+            && text.contains("editor_changes_branch_create")
+    }
+    #expect(await git.calls.filter { $0.name == "git_worktree_add" }.count == 1)
+}
+
+/// A base the repo does not have, locally or on the remote: refused whole, and nothing is made —
+/// no workspace, no move, no thread line.
+@Test func workspaceStartFromABaseThatDoesNotExistMakesNothing() async throws {
+    let git = fakeGit(missingBases: ["production"])
+    let said = Said()
+    let r = await router(git: git, said: said)
+    await #expect {
+        try await asAgent("c1") { try await r.start(repo: "web", base: "production", branch: "hotfix") }
+    } throws: { error in "\(error)".contains("workspace_start: There is no branch production here nor on the remote") }
+    #expect(await r.store.all().isEmpty)
+    #expect(await r.store.workspace(ofConversation: "c1") == nil)
+    #expect(await said.lines.isEmpty)
+    #expect(await said.moves.isEmpty)
+}
+
+/// Only an agent's conversation starts its copy; a repo that is not one of the project's roots, and a
+/// branch git would not take, are refused naming them.
+@Test func workspaceStartIsRefusedForTheOperatorAnUnknownRepoAndABadBranch() async throws {
+    let git = fakeGit()
+    let r = await router(git: git, said: Said())
+    await #expect { try await r.start(repo: "web", base: "main", branch: nil) } throws: {
+        "\($0)".contains("workspace_start: only an agent's conversation")
+    }
+    await #expect { try await asAgent("c1") { try await r.start(repo: "mobile", base: "main", branch: nil) } } throws: {
+        "\($0)".contains("mobile is not one of this project's repos") && "\($0)".contains("core, web")
+    }
+    await #expect { try await asAgent("c1") { try await r.start(repo: "web", base: "main", branch: "-x") } } throws: {
+        "\($0)".contains("is not a branch name git takes")
+    }
+    #expect(await git.calls.allSatisfy { $0.name != "git_worktree_add" })
+}
+
+@Test func theStartedLinesNameTheBase() {
+    #expect(WorkspaceLine.madeFrom(repo: "web", base: "production", branch: "from-production/INI-1637-full-jwt").text
+        == "Made a copy of web from `production` on `from-production/INI-1637-full-jwt`.")
+    #expect(WorkspaceLine.startedFrom(name: "Full JWT", repo: "web", base: "production", branch: "from-production/INI-1637-full-jwt").text
+        == "Started workspace ‘Full JWT’ — a copy of web from `production` on `from-production/INI-1637-full-jwt`. Your folder is untouched.")
+}
+
+@Test func aChosenBranchHasTheTicketsKeyOnce() {
+    #expect(branchWithKeyOnce("from-production/INI-1637-ini-1637-full-jwt", key: "INI-1637") == "from-production/INI-1637-full-jwt")
+    #expect(branchWithKeyOnce("INI-1637-INI-1637", key: "INI-1637") == "INI-1637")
+    #expect(branchWithKeyOnce("hotfix/INI-1637-otp", key: "INI-1637") == "hotfix/INI-1637-otp")
+    #expect(branchWithKeyOnce("hotfix/otp", key: nil) == "hotfix/otp")
 }

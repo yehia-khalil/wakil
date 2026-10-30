@@ -740,6 +740,7 @@ an agent's write finds its checkout.
 - `BranchDraft.swift` — `BranchDraft`: the ✨ quick task that names a workspace's branch from the Branches
   instructions (decision 10), within `patience`, else `fallbackBranchName`.
 - `WorkspaceActions.swift` — `registerWorkspaceActions`: `workspace_list` (agent and operator),
+  `workspace_start` (the agent's copy from a base it chose),
   `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only).
 
 Uses: `Harness`, `MCP`, `Registry`.

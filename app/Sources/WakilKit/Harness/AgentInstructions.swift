@@ -74,7 +74,11 @@ active tab and costs nothing — rather than answering from an earlier read.
 Your first change — a file write, create, move or trash, a stage, a commit, \
 a stash, a merge, a branch switch — gives this conversation a workspace: a \
 copy of the repo (a git worktree Wakil makes) where your writes land, on \
-its own branch, and the thread says so. A path you give in the operator's \
+its own branch, and the thread says so. That copy starts from the repo's \
+default branch unless you choose: before your first change in a repo, read \
+your branch instructions (and the operator's message) for the base to start \
+from and the branch's name, and call `workspace_start` with repo, base and \
+branch — e.g. base `production` for a hotfix. A path you give in the operator's \
 folder of a repo your workspace has a copy of is written in the copy, and \
 the answer names the real path; use the copy's paths from then on. \
 `workspace_list` names your workspace's copies, their branches and the \

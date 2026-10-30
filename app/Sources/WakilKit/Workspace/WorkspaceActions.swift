@@ -1,7 +1,8 @@
 import Foundation
 
 /// Workspaces, piece 1: the actions over the record. `workspace_list` is the agent's and the
-/// operator's read; archive, restore, Bring to Main and Move to workspace… are the operator's (the
+/// operator's read; `workspace_start` the agent's choice of its copy's base (amendment 2026-10-30,
+/// decision 10 refined); archive, restore, Bring to Main and Move to workspace… are the operator's (the
 /// card's ⋯ menu, piece 3): an agent does not move work out from under another, nor itself.
 public func registerWorkspaceActions(
     into registry: ActionRegistry, router: WorkspaceRouter,
@@ -43,6 +44,30 @@ public func registerWorkspaceActions(
             let rows = await router.listing(project: project?.isEmpty == true ? nil : project)
             return .object(["workspaces": .array(rows.map(\.json))])
         }))
+
+    await registry.register(Action(
+        name: "workspace_start",
+        description: "Start your copy of a repo from the base your branch instructions (or the operator) name — before "
+            + "your first change in that repo. Your first change otherwise starts it from the repo's default branch. "
+            + "repo is the project root's folder name or path; base the branch to start from (e.g. staging, main, "
+            + "production for a hotfix); branch the new branch's name, following your branch instructions (omit it "
+            + "and Wakil drafts one). In Main it starts your workspace; in your workspace it adds that repo's copy. "
+            + "A taken branch name steps to -2. Refused whole, with nothing made, when your workspace already has a "
+            + "copy of the repo (switch or make a branch there instead) or when the base is neither in the repo nor "
+            + "on its remote. Answers the copy's path, branch and base; use the copy's paths from then on.",
+        kind: .mutate, audience: .agentReachable,
+        schema: schema(["repo": text, "base": text, "branch": text], required: ["repo", "base"]),
+        handler: { params in
+            _ = try await org("workspace_start")
+            let started = try await router.start(repo: try required(params, "repo", "workspace_start"),
+                                                  base: try required(params, "base", "workspace_start"),
+                                                  branch: string(params, "branch"))
+            return .object([
+                "workspace": .string(started.workspace), "repo": .string(started.repo), "path": .string(started.path),
+                "branch": .string(started.branch), "base": .string(started.base),
+            ])
+        },
+        price: (production: .allow, otherwise: .allow)))
 
     await registry.register(Action(
         name: "workspace_archive",

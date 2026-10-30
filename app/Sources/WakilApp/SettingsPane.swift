@@ -1347,7 +1347,7 @@ struct SettingsPane: View {
     // 3a-iii-b: examples of what a box holds, read as its placeholder.
     private static let generalPlaceholder = "Tell the agent how to work here — e.g. ask before running migrations"
     private static let commitsPlaceholder = "Tell the agent how to write commits — e.g. imperative subject under 72 characters"
-    private static let branchesPlaceholder = "Tell Wakil how to name a workspace's branch — e.g. <KEY>-<short summary>, lower case"
+    private static let branchesPlaceholder = "Tell Wakil how to name a workspace's branch and which branch it starts from — e.g. <KEY>-<short summary>, lower case, from staging; a hotfix from production"
     private static let pullRequestsPlaceholder = "Tell the agent how to write pull requests — e.g. what changed and why, then how to test"
 
     /// An organisation's agent box, saved through the organisation's one-field write. Keyed to the
