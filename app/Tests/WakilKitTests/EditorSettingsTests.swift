@@ -428,6 +428,35 @@ private actor GhostRecordingCaller: ToolCaller {
         #expect(model.browserSettingsCache.current == nil)
     }
 
+    /// A write that reaches the registry by another route — a socket call, an e2e dispatch — never
+    /// passes `saveBrowserSettings`, so the window re-reads on seeing it go by (night run 2026-10-29:
+    /// the vertical tab column stayed hidden after a dispatched `tabs: vertical`).
+    @Test func aWriteFromAnotherRouteIsReadBack() async throws {
+        let (model, _, _) = await editorWindowParts(roots: ["/p/api"])
+        let registry = model.registryForTesting
+        let stored = StoredTabs()
+        await registry.register(Action(name: "ctx_browser_settings", description: "", kind: .read,
+                                       schema: .object([:])) { _ in
+            .object(["structuredContent": .object([
+                "searchEngine": .string("google"), "startPage": .string(""), "tabs": .string(await stored.tabs)])])
+        })
+        await registry.register(Action(name: "ctx_set_browser_settings", description: "", kind: .control,
+                                       schema: .object([:])) { _ in
+            await stored.set("vertical")
+            return .object([:])
+        })
+        _ = try await registry.dispatch(
+            name: "ctx_set_browser_settings", params: .object(["tabs": .string("vertical")]), origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        for _ in 0..<100 where model.browserSettings.tabs != "vertical" { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.browserSettings.tabs == "vertical")
+    }
+
+    private actor StoredTabs {
+        var tabs = "horizontal"
+        func set(_ value: String) { tabs = value }
+    }
+
     @Test func aRefusedWriteAnswersItsSentence() async throws {
         let (model, _, _) = await editorWindowParts(roots: ["/p/api"])
         let refusal = await model.saveBrowserSettings(["searchEngine": .string("kagi")])
