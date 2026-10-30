@@ -72,6 +72,23 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     #expect(arguments["displayName"] == .string("Acme Corporation"))
 }
 
+/// Workspaces (decision 10): the Branches box saves through the same action, so its field must
+/// travel like the other agent instructions — dropped here, the box saved nothing (e2e 2026-10-30).
+@Test func theBranchesInstructionsTravelToGo() async throws {
+    let (registry, caller) = try await registryWithRecordingContext()
+
+    _ = try await registry.dispatch(
+        name: "ctx_update_org",
+        params: .object(["id": .string("acme"), "gitBranchInstructions": .string("KEY-short-summary")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+
+    let calls = await caller.recorded()
+    guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
+        Issue.record("expected one update_org call, got \(calls)"); return
+    }
+    #expect(arguments["gitBranchInstructions"] == .string("KEY-short-summary"))
+}
+
 /// An explicit empty string is a value — "clear this" — and must reach Go
 /// as one. It is the only way an operator clears a Jira site, and a filter
 /// that dropped empties would leave them unable to.

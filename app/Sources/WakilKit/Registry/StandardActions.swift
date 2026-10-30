@@ -1517,7 +1517,7 @@ public func registerStandardActions(
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
             for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail", "pullStrategy",
-                        "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
+                        "agentGeneral", "gitCommitInstructions", "gitPRInstructions", "gitBranchInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             for key in ["ghostText", "fastPath", "commitDrafts", "conversationNames"] {
