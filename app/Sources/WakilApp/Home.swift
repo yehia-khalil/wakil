@@ -781,17 +781,23 @@ struct Home: View {
                 ForEach(earlier.past) { group in
                     micro(group.name).padding(.leading, 17).padding(.top, 6)
                     ForEach(group.conversations) { c in
-                        Button { Task { await model.continueSession(c.id) } } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(c.title).font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.strong))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text(c.subtitle).font(.system(size: 10.5, design: .monospaced))
-                                    .foregroundStyle(ink.opacity(HomePalette.quiet))
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                        // A pressable element holding its texts, not a Button: a Button's label is not
+                        // in the tree the checks read (projectName's case), and the title is what they
+                        // find a past conversation by.
+                        let resume = { Task { await model.continueSession(c.id) } }
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(c.title).font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.strong))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(c.subtitle).font(.system(size: 10.5, design: .monospaced))
+                                .foregroundStyle(ink.opacity(HomePalette.quiet))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .onTapGesture { _ = resume() }
                         .padding(.leading, 27)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction(.default) { _ = resume() }
                         .accessibilityIdentifier("landing.row.\(c.id)")
                     }
                 }
