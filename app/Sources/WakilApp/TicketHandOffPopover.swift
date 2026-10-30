@@ -11,6 +11,8 @@ import SwiftUI
 /// a `ticket_hand_off_*` action. Start sends exactly what is drawn (`startParams`, the field's text
 /// as the brief), and reads `Starting…`, disabled, while it runs (Rule 5); Cancel then stops it
 /// (Rule 4). A failure shows here, whole, the brief intact (Rule 8). **Similar before** is not drawn.
+/// Item 8: when a live conversation carries the ticket, **Send to “<title>”** is primary (a ▾ picks
+/// another) and **Start another** second; one per repo offers Start alone.
 struct TicketHandOffPopover: View {
     let state: TicketHandOffState
     /// A `ticket_hand_off_*` action on the pane, its refusal on the status line.
@@ -44,7 +46,7 @@ struct TicketHandOffPopover: View {
                 Task { await dispatch("ticket_hand_off_open", p) }
             }
             .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .help("Refill the brief from where it was handed from")
             .accessibilityIdentifier("ticket.handoff.reset")
             choices
@@ -57,6 +59,9 @@ struct TicketHandOffPopover: View {
                     .textSelection(.enabled)
                     .accessibilityIdentifier("ticket.handoff.error")
             }
+            if state.offersSend {
+                sendRow
+            }
             HStack(spacing: Space.s) {
                 Spacer()
                 Button("Cancel") {
@@ -65,11 +70,20 @@ struct TicketHandOffPopover: View {
                     Task { await dispatch(state.starting ? "ticket_hand_off_cancel" : "ticket_hand_off_close", p) }
                 }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(state.sending)
                     .accessibilityIdentifier("ticket.handoff.cancel")
-                Button(state.starting ? state.startLabel : "\(state.startLabel) ⌘↩") { start() }
-                    .buttonStyle(.borderedProminent).tint(EditorPaneStyle.violet)
-                    .disabled(state.starting)
-                    .accessibilityIdentifier("ticket.handoff.start")
+                if state.offersSend {
+                    // Item 8: the second choice beside Send to — a new conversation, numbered.
+                    Button(state.startLabel) { start() }
+                        .buttonStyle(.bordered)
+                        .disabled(state.starting || state.sending)
+                        .accessibilityIdentifier("ticket.handoff.startAnother")
+                } else {
+                    Button(state.starting ? state.startLabel : "\(state.startLabel) ⌘↩") { start() }
+                        .buttonStyle(.borderedProminent).tint(EditorPaneStyle.violet)
+                        .disabled(state.starting || state.sending)
+                        .accessibilityIdentifier("ticket.handoff.start")
+                }
             }
         }
         .padding(Space.m)
@@ -97,6 +111,41 @@ struct TicketHandOffPopover: View {
         .accessibilityIdentifier("ticket.handoff")
     }
 
+    /// Item 8: a live conversation carries the ticket, so **Send to “<title>”** is the primary
+    /// choice — the brief as the operator's own message to it; idle it starts a turn off screen, in a
+    /// turn it is queued (Rule 6, Rule 4) — with a ▾ to pick another when several carry it. Its title
+    /// wraps whole, never cut. ⌘↩ sends.
+    private var sendRow: some View {
+        HStack(alignment: .top, spacing: Space.s) {
+            Spacer(minLength: Space.m)
+            Button { send() } label: {
+                Text(state.sending ? state.sendLabel : "\(state.sendLabel) ⌘↩")
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.borderedProminent).tint(EditorPaneStyle.violet)
+            .disabled(state.sending || state.starting)
+            .accessibilityIdentifier("ticket.handoff.send")
+            if state.carriers.count > 1 {
+                Menu {
+                    ForEach(Array(state.carriers.enumerated()), id: \.element.conversation) { i, c in
+                        Button(c.working ? "\(c.title) · working" : c.title) {
+                            set(["sendTo": .string(c.conversation)])
+                        }
+                        .accessibilityIdentifier("ticket.handoff.sendTo:\(i + 1)")
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .disabled(state.sending || state.starting)
+                .help("Send to another conversation carrying this ticket")
+                .accessibilityLabel("Send to another conversation")
+                .accessibilityIdentifier("ticket.handoff.sendTo")
+            }
+        }
+    }
+
     /// The harness and provider menus, **May push** and the place line.
     private var choices: some View {
         HStack(spacing: Space.m) {
@@ -109,7 +158,7 @@ struct TicketHandOffPopover: View {
                 Text(ticketHandOffHarnesses.first { $0.id == state.harness }?.label ?? state.harness)
             }
             .menuStyle(.borderlessButton).fixedSize()
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .accessibilityIdentifier("ticket.handoff.harness")
             Menu {
                 ForEach(providerRows, id: \.id) { p in
@@ -120,11 +169,11 @@ struct TicketHandOffPopover: View {
                 Text(providerRows.first { $0.id == state.provider }?.shown ?? state.provider)
             }
             .menuStyle(.borderlessButton).fixedSize()
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .accessibilityIdentifier("ticket.handoff.provider")
             Toggle("May push", isOn: Binding(get: { state.mayPush }, set: { set(["mayPush": .bool($0)]) }))
                 .toggleStyle(.switch).controlSize(.mini)
-                .disabled(state.starting)
+                .disabled(state.starting || state.sending)
                 .help("On, the agent's push and sync run as any agent's; publish, merge and rebase still ask you")
                 .accessibilityIdentifier("ticket.handoff.mayPush")
             Spacer(minLength: Space.s)
@@ -161,7 +210,7 @@ struct TicketHandOffPopover: View {
                             }))
                             .toggleStyle(.checkbox)
                             .fixedSize(horizontal: false, vertical: true)
-                            .disabled(state.starting)
+                            .disabled(state.starting || state.sending)
                             .accessibilityIdentifier("ticket.handoff.repo:\(repo.name)")
                     }
                 }
@@ -184,7 +233,7 @@ struct TicketHandOffPopover: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(state.starting)
+        .disabled(state.starting || state.sending)
         .accessibilityAddTraits(chosen ? .isSelected : [])
         .accessibilityIdentifier("ticket.handoff.agents:\(agents.rawValue)")
     }
@@ -202,7 +251,7 @@ struct TicketHandOffPopover: View {
             .background(RoundedRectangle(cornerRadius: 6).fill(EditorPaneStyle.lifted))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(EditorPaneStyle.text.opacity(briefFocused ? 0.3 : 0.12)))
             .focused($briefFocused)
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .onChange(of: text) { _, now in
                 typed = now != state.brief
                 draft.text = now
@@ -211,10 +260,11 @@ struct TicketHandOffPopover: View {
                 if old, !now { keep() }
                 if now { Task { @MainActor in caretToEnd() } }
             }
-            // Return is a new line (the editor's own); ⌘↩ starts.
+            // Return is a new line (the editor's own); ⌘↩ presses the primary choice: Send to when
+            // a live conversation carries the ticket, else Start.
             .onKeyPress(.return, phases: .down) { press in
                 guard press.modifiers.contains(.command) else { return .ignored }
-                start()
+                if state.offersSend { send() } else { start() }
                 return .handled
             }
             .accessibilityLabel("Brief")
@@ -252,9 +302,18 @@ struct TicketHandOffPopover: View {
         Task { await dispatch("ticket_hand_off_brief", params) }
     }
 
-    /// Start: exactly what is drawn, the field's text as the brief. Not twice (Rule 5).
+    /// Send to: the field's text to the conversation drawn. Not twice (Rule 5); a failure is the
+    /// popover's to show, whole (`state.error`).
+    private func send() {
+        guard !state.sending, !state.starting else { return }
+        var params = state.sendParams
+        params["brief"] = .string(text)
+        Task { _ = try? await dispatchReply("ticket_hand_off_send", params) }
+    }
+
+    /// Start (or Start another): exactly what is drawn, the field's text as the brief. Not twice (Rule 5).
     private func start() {
-        guard !state.starting else { return }
+        guard !state.starting, !state.sending else { return }
         var params = state.startParams
         params["brief"] = .string(text)
         let keepFirst = text != state.brief

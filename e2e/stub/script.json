@@ -14,6 +14,19 @@
       "reply": "crew member on its repo"
     },
     {
+      "match": "send-to check, second word",
+      "reply": "the second word arrived"
+    },
+    {
+      "match": "send-to check, another agent",
+      "reply": "another send-to agent started"
+    },
+    {
+      "match": "send-to check, first agent",
+      "hold": "wakil-e2e-release-sendto",
+      "reply": "the first send-to agent finished"
+    },
+    {
       "match": "build the portal login form against post /login",
       "reply": "portal teammate started on the form"
     },

@@ -162,9 +162,6 @@ extension WindowModel {
                   providerId: agent.providerId, conversation: agent.id)
     }
 
-    /// The queued messages of the conversation on screen: the strip over its thread.
-    public var queuedTurnsOnScreen: [QueuedTurn] { currentAgent?.queuedTurns ?? [] }
-
     /// Cancel: ends the conversation a Start reserved, whatever its start has reached (Rule 4) —
     /// its harness is stopped and its hand-off, if recorded, ends. Asks nothing: the operator
     /// pressed Cancel.

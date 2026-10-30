@@ -48,3 +48,18 @@
 {"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-api"}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-portal"}}
+{"dispatch":{"action":"ticket_hand_off_open","params":{"key":"INI-142","root":"{fixtureRoot}/e2e-api","branch":"ini-142-login","from":"header"}}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.carriers[1].title","contains":"INI-142 · e2e-"}}
+{"expect":{"tree":"contains","text":"Send to “INI-142 · e2e-"}}
+{"expect":{"frame":"ticket.handoff.sendTo","inside":"ticket.handoff"}}
+{"do":{"click":"ticket.handoff.sendTo"}}
+{"do":{"click":"ticket.handoff.sendTo:2"}}
+{"expect":{"journal":{"contains":"\"sendTo\""}}}
+{"dispatch":{"action":"ticket_hand_off_brief","params":{"sendTo":"x"},"refuses":"only the operator sets sendTo"}}
+{"do":{"click":"ticket.handoff.agents:perRepo"}}
+{"expect":{"tree":"absent","text":"Start another"}}
+{"expect":{"tree":"absent","text":"Send to “"}}
+{"expect":{"frame":"ticket.handoff.start","inside":"ticket.handoff"}}
+{"do":{"click":"ticket.handoff.cancel"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"false"}}

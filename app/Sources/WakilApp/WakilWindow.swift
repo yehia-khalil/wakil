@@ -342,6 +342,12 @@ struct WakilWindow: View {
                                 proposals: session.model.teammateProposalsOnScreen,
                                 dispatch: { name, params in await session.model.dispatchFromSurfaceReply(name, params) })
                         }
+                        // Item 8: Send to's messages queued for the conversation on screen.
+                        if let agent = session.model.currentAgent, !agent.queuedTurns.isEmpty {
+                            QueuedTurnsStrip(
+                                conversation: agent.id, queued: agent.queuedTurns,
+                                dispatch: { name, params in await session.model.dispatchFromSurfaceReply(name, params) })
+                        }
                         ThoughtThread(
                             rows: session.model.thoughts,
                             parallax: CGSize(width: nearOffset.x, height: nearOffset.y),
