@@ -9955,6 +9955,9 @@ public final class WindowModel {
         if screenConversations[place] != nil { await showLanding(in: place) }
         composerFocusForced = true
         defer { composerFocusForced = false }
+        // Rule 3: the composer keeps the keyboard while the view comes in — a focused pane there (an
+        // editor appearing) stands down rather than taking it (the e2e run found it in Monaco).
+        composerHoldsKeyboardUntil = .now + Self.fastPathKeyboardHold
         await enterConversation()
         guard let w, let agent = currentAgent, let router = workspaceRouter else { return }
         await router.store.move(agent.id, root: agent.lineageRoot, to: w.id)

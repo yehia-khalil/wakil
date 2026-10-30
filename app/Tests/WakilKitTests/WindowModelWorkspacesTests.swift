@@ -486,6 +486,28 @@ struct WindowModelWorkspaceViewsTests {
         await model.shutdown()
     }
 
+    /// Rule 3: New conversation here's composer takes the keyboard, and keeps it while the
+    /// workspace's view comes in — its focused editor stands down (`composerHoldsKeyboard`) rather
+    /// than taking the keys as it appears (the e2e run found focus in Monaco, not the composer).
+    @Test func newConversationHereFocusesTheComposerOverTheViewsFocusedPane() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        first.workspace = ws
+        var told: [Bool] = []
+        model.onScreenChange = { _, _, focus in told.append(focus) }
+
+        await model.newConversationHere("w1")
+
+        #expect(told.contains(true), "the composer is handed the keyboard")
+        #expect(model.composerHoldsKeyboard, "the view's focused pane does not take it as it appears")
+        await model.shutdown()
+    }
+
     @Test func anUnknownWorkspaceIsSaidWhole() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)
