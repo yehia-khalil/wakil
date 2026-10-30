@@ -86,6 +86,14 @@ lines (`wakilkit.md`, `flows.md`); the spec's piece 5 amendment.
    Cancel is refused (`aMemberAfterCancelIsNotAdmitted`); the window ends a member not admitted unsent
    and starts no more (`CrewWindowTests.aCrewMemberNotAdmittedNeverStartsAndStopsTheRest`). Then:
    the store keeps every conversation a start reserved; `startCrew(_:admit:)` asks before each
-   member's first message; Cancel ends them all. e2e: `seeded/ws5-crew-cancel`.
-2. **e2e for the Teammates strip's controls**: the brief kept on blur, Start, Dismiss — each pressed
-   on screen through the strip's identifiers, read back from `session_list` and the thread.
+   member's first message; Cancel ends them all. **e2e: walk-only** — a start is a stub spawn of
+   milliseconds, and the harness has no hold before a turn starts, so no press of Cancel can be
+   made to land inside one.
+2. **e2e for the popover's controls.** The Teammates strip's Start, Dismiss and brief were already
+   pressed (`agent/workspaces-5-teammate*.jsonl`). The Hand to agent popover's piece 5 controls were
+   not, and could not be: `ticket` was no registered surface, so the resolver dropped every
+   `ticket.handoff.*`. Register it; draw **Agents** as two buttons (`ticket.handoff.agents:one` /
+   `:perRepo` — a segmented Picker's segments carry no identifier); write
+   `agent/ticket-workspaces-5-one-per-repo.jsonl`: one by default (Rule 9), one per repo and back,
+   each repo toggled, the agent's `agents` refused, the toggles' frames at the narrow window, Start
+   — two handed agents, the popover closed, the view kept (Rule 6).
