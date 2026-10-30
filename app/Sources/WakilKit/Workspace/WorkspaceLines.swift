@@ -11,6 +11,9 @@ public enum WorkspaceLine: Equatable, Sendable {
     case madeCheckout(repo: String, branch: String, note: String?)
     case moved(name: String)
     case switchBranchedOff(branch: String, holder: String, fresh: String)
+    /// The record could not be saved after a copy was made: the copy was taken back (`leftAt` nil),
+    /// or could not be and is still there (amendment 2026-10-30, the walk).
+    case recordFailed(repo: String, reason: String, leftAt: String?)
 
     public var text: String {
         switch self {
@@ -38,6 +41,12 @@ public enum WorkspaceLine: Equatable, Sendable {
             return "Moved to workspace ‘\(name)’."
         case .switchBranchedOff(let branch, let holder, let fresh):
             return "‘\(holder)’ is working on `\(branch)`, so this copy switched to a new branch `\(fresh)` off its tip."
+        case .recordFailed(let repo, let reason, nil):
+            return "Made a copy of \(repo) but could not save the workspace record, so the copy was taken back (nothing had "
+                + "been written in it) and the change was not made. Your folder is untouched:\n\(reason)"
+        case .recordFailed(let repo, let reason, let path?):
+            return "Made a copy of \(repo) but could not save the workspace record, so the change was not made. The copy "
+                + "could not be taken back and is still at \(path):\n\(reason)"
         }
     }
 }

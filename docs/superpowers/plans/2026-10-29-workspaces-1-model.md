@@ -104,3 +104,21 @@ terminals left). Tags "Main · your folder" / "workspace copy"; the context line
 4. **A resumed thread's rows leave the map out.** `blockEntries` drops the block from user entries
    (`withoutWakilBlocks`, as `firstPrompt`). Test: `TestReadSession_UserRowsLeaveOutTheWorkspaceMap`.
    E2E: `agent/workspaces-map-resumed.jsonl`.
+
+## Phase K — the operator's walk: names and orphan copies (amendment 2026-10-30)
+
+1. **The key once.** `fallbackBranchName` drops the slug's leading copy of the key. Test:
+   `aTitleStartingWithTheTicketsKeyIsNotPrefixedTwice`.
+2. **No name fails a copy.** `WorktreeAddOptions.NewBranch / FreeBranch / TakenBranches`,
+   `FreeName`; `git_worktree_add`'s `newName`, `takenSlugs`, `freeBranch`, `takenBranches`, its
+   reply's `slug` and `created`; the router records the names used. Tests:
+   `TestWorktreeAddOfANewBranchTakesTheNextFreeName`, `TestWorktreeAddOfAFreeBranchStepsPastOnlyAHeldOne`,
+   `TestWorktreeAddOfANewWorkspaceStepsPastTakenNamesAndDiscardTakesItBack`,
+   `twoConversationsWithTheSameTitleGetTwoWorkspacesWithTheNextFreeNames`, `aLazilyMadeCheckoutRecordsTheBranchItGot`.
+3. **No orphan copies.** `WorktreeDiscard`, `git_worktree_discard`; `WorkspaceRouter.saveOrTakeBack`,
+   `WorkspaceStore.remove`, `WorkspaceLine.recordFailed`. Tests:
+   `TestWorktreeDiscardRemovesTheCheckoutAndTheBranchItMade`,
+   `step0ACopyWhoseRecordCannotBeSavedIsTakenBackWithItsBranch`, `aCopyThatCannotBeTakenBackIsNamedWhole`,
+   `aBranchOffWhoseRecordCannotBeSavedIsTakenBack`, `aLazilyMadeCheckoutWhoseRecordCannotBeSavedIsTakenBack`.
+   No e2e check: a save failure cannot be staged from the screen (the store reads its own file);
+   the unit and wakil-git tests drive both halves.

@@ -534,6 +534,23 @@ Calls the build made where the umbrella left room, or where code forced a refine
 - **The key once** (decision 10's fallback). `<KEY>-<slug of title>` drops the slug's leading copy of
   the key (any case): a ticket conversation titled *AQ247-141 · Work toward Next.* gets
   `AQ247-141-work-toward-next`, not `AQ247-141-aq247-141-work-toward-next`.
+- **No name fails a copy** (Errors and edges). A new workspace's slug and branch (step 0, a
+  branch-off) step past any that is taken — a slug the record uses or whose folder exists, a branch
+  the record names, the repo has, or any worktree has checked out — to the next free `-2`, `-3`;
+  wakil-git picks them (`git_worktree_add` with `newName`) and the record keeps the ones used. Two
+  conversations with the same title get two workspaces. A checkout made later in a workspace
+  (step 2) asks for the workspace's branch and checks it out as it is when it exists (a ticket's
+  branch), stepping past it only when another folder holds it (`freeBranch`); the checkout records
+  the branch it got.
+- **No orphan copies.** The call: **make the copy, then save; when the save fails, take the copy
+  back** — not save first. wakil-git's confinement admits only checkouts the saved record holds and
+  only Go knows the copy's path, so saving first would record a folder that may never exist. When
+  step 0, a branch-off or a step-2 checkout cannot save the record, the record in memory goes back
+  as it was and `git_worktree_discard` removes the folder (and the workspace's folder, when empty)
+  and the branch when the add made it. Nothing was written in the copy yet, so nothing is lost; a
+  copy git will not remove (something is in it) is left and named. The thread and the refusal say
+  so whole (Rule 8). **A copy taken from Main** carries Main's work, so it is never taken back: the
+  write is refused naming where the copy is, and the record in memory keeps it for the next save.
 
 ## Errors and edges
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,13 +19,27 @@ type workspacesArg struct {
 	Workspaces []wakilcore.Workspace `json:"workspaces" jsonschema:"the whole record, every workspace of the organisation"`
 }
 type worktreeAddArg struct {
-	Root       string `json:"root" jsonschema:"absolute path of one of the active project's own roots (Main's folder of the repo)"`
-	Project    string `json:"project" jsonschema:"the project's registry key"`
-	Slug       string `json:"slug" jsonschema:"the workspace's folder name"`
-	Branch     string `json:"branch" jsonschema:"the branch the checkout is on"`
-	From       string `json:"from,omitempty" jsonschema:"with create: the commit or branch a new branch starts from"`
-	Create     bool   `json:"create,omitempty" jsonschema:"make the branch when it does not exist"`
-	FromIsBase bool   `json:"fromIsBase,omitempty" jsonschema:"from is the repo's base: when missing, start from the remote's default branch and say so"`
+	Root          string   `json:"root" jsonschema:"absolute path of one of the active project's own roots (Main's folder of the repo)"`
+	Project       string   `json:"project" jsonschema:"the project's registry key"`
+	Slug          string   `json:"slug" jsonschema:"the workspace's folder name"`
+	Branch        string   `json:"branch" jsonschema:"the branch the checkout is on"`
+	From          string   `json:"from,omitempty" jsonschema:"with create: the commit or branch a new branch starts from"`
+	Create        bool     `json:"create,omitempty" jsonschema:"make the branch when it does not exist"`
+	FromIsBase    bool     `json:"fromIsBase,omitempty" jsonschema:"from is the repo's base: when missing, start from the remote's default branch and say so"`
+	NewName       bool     `json:"newName,omitempty" jsonschema:"slug and branch are names to mint (a new workspace): a slug in takenSlugs or whose folder exists, and a branch the repo has, another worktree holds or takenBranches names, give way to the next free -2, -3"`
+	FreeBranch    bool     `json:"freeBranch,omitempty" jsonschema:"a branch another worktree holds (or takenBranches names) gives way to the next free -2, -3; an existing free one is checked out as it is"`
+	TakenSlugs    []string `json:"takenSlugs,omitempty" jsonschema:"with newName: the slugs the record already uses in this project"`
+	TakenBranches []string `json:"takenBranches,omitempty" jsonschema:"with newName or freeBranch: the branches the record already names"`
+}
+type worktreeAddResult struct {
+	Slug string `json:"slug"`
+	wakilcore.WorktreeAddResult
+}
+type worktreeDiscardArg struct {
+	Root    string `json:"root" jsonschema:"absolute path of one of the active project's own roots (Main's folder of the repo)"`
+	Project string `json:"project" jsonschema:"the project's registry key"`
+	Slug    string `json:"slug" jsonschema:"the workspace's folder name the checkout was made under"`
+	Branch  string `json:"branch,omitempty" jsonschema:"the branch git_worktree_add made for it (its reply said created); omit to keep the branch"`
 }
 type worktreeRemoveArg struct {
 	Root     string `json:"root" jsonschema:"absolute path of the project root (Main's folder) the checkout belongs to"`
@@ -113,21 +128,56 @@ func addWorkspaceTools(s *mcp.Server) {
 			return nil, emptyResult{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_worktree_add", Description: "Writes. Makes a workspace's checkout of one of the project's roots: a git worktree at ~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder>, on branch (an existing one as it is; with create, a new one from from). A branch checked out elsewhere is refused naming where; git's own refusal is whole and leaves nothing behind."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a worktreeAddArg) (*mcp.CallToolResult, wakilcore.WorktreeAddResult, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "git_worktree_add", Description: "Writes. Makes a workspace's checkout of one of the project's roots: a git worktree at ~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder>, on branch (an existing one as it is; with create, a new one from from). With newName or freeBranch a taken name gives way to the next free one, and the reply's slug and branch are the ones used; otherwise a branch checked out elsewhere is refused naming where. created says the branch was made for it. git's own refusal is whole and leaves nothing behind."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a worktreeAddArg) (*mcp.CallToolResult, worktreeAddResult, error) {
 			w, fail := mainRootWriter(a.Root)
 			if fail != nil {
-				return fail, wakilcore.WorktreeAddResult{}, nil
+				return fail, worktreeAddResult{}, nil
+			}
+			slug := a.Slug
+			if a.NewName {
+				recorded := map[string]bool{}
+				for _, s := range a.TakenSlugs {
+					recorded[s] = true
+				}
+				slug = wakilcore.FreeName(slug, func(s string) bool {
+					if recorded[s] {
+						return true
+					}
+					p, fail := checkoutPath(a.Project, s, a.Root)
+					if fail != nil {
+						return false // the add below refuses it whole
+					}
+					_, err := os.Stat(filepath.Dir(p))
+					return err == nil
+				})
+			}
+			path, fail := checkoutPath(a.Project, slug, a.Root)
+			if fail != nil {
+				return fail, worktreeAddResult{}, nil
+			}
+			r, err := w.WorktreeAdd(ctx, wakilcore.WorktreeAddOptions{Path: path, Branch: a.Branch, From: a.From, Create: a.Create,
+				FromIsBase: a.FromIsBase, NewBranch: a.NewName, FreeBranch: a.FreeBranch, TakenBranches: a.TakenBranches})
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), worktreeAddResult{}, nil
+			}
+			return nil, worktreeAddResult{Slug: slug, WorktreeAddResult: r}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_worktree_discard", Description: "Writes. Takes back a checkout git_worktree_add just made whose record could not be saved: removes the worktree at ~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder> and, when given, the branch the add made. Never Main's folder; a checkout with anything written in it is refused in git's words."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a worktreeDiscardArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := mainRootWriter(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
 			}
 			path, fail := checkoutPath(a.Project, a.Slug, a.Root)
 			if fail != nil {
-				return fail, wakilcore.WorktreeAddResult{}, nil
+				return fail, emptyResult{}, nil
 			}
-			r, err := w.WorktreeAdd(ctx, wakilcore.WorktreeAddOptions{Path: path, Branch: a.Branch, From: a.From, Create: a.Create, FromIsBase: a.FromIsBase})
-			if err != nil {
-				return mcpx.ToolErr("wakil-git", err), wakilcore.WorktreeAddResult{}, nil
+			if err := w.WorktreeDiscard(ctx, path, a.Branch); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
 			}
-			return nil, r, nil
+			return nil, emptyResult{}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_worktree_remove", Description: "Writes. Removes one recorded checkout (never Main's folder). With snapshot, its uncommitted work (untracked included) is kept under that ref first and the folder removed even when dirty; without, a dirty checkout is refused in git's words. The branch stays."},

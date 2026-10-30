@@ -92,3 +92,38 @@ func TestWorktreeAddRefusesACheckoutAsItsRoot(t *testing.T) {
 		t.Fatal("want refusal of a slug that escapes")
 	}
 }
+
+// A new workspace's names step past what is taken: a slug the record names or whose folder exists
+// (an orphan), a branch the repo has. The reply says which were used.
+func TestWorktreeAddOfANewWorkspaceStepsPastTakenNamesAndDiscardTakesItBack(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	cs := connectedClient(t)
+	first, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": root, "project": "proj", "slug": "fix-otp", "branch": "fix-otp", "create": true, "from": "HEAD"})
+	if fail != "" {
+		t.Fatal(fail)
+	}
+	// The first is never recorded (the walk's orphan): a second with the same title still gets a copy.
+	second, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": root, "project": "proj", "slug": "fix-otp", "branch": "fix-otp",
+		"create": true, "from": "HEAD", "newName": true, "takenSlugs": []string{"fix-otp-2"}})
+	if fail != "" {
+		t.Fatal(fail)
+	}
+	if second["slug"] != "fix-otp-3" || second["branch"] != "fix-otp-2" || second["created"] != true {
+		t.Fatalf("second %v", second)
+	}
+	if !strings.Contains(second["path"].(string), filepath.Join("proj", "fix-otp-3", filepath.Base(root))) {
+		t.Fatalf("path %v", second["path"])
+	}
+	// Taken back: folder and branch.
+	if _, fail := callJSON(t, cs, "git_worktree_discard", map[string]any{"root": root, "project": "proj", "slug": "fix-otp-3", "branch": "fix-otp-2"}); fail != "" {
+		t.Fatal(fail)
+	}
+	if _, err := os.Stat(second["path"].(string)); !os.IsNotExist(err) {
+		t.Fatal("checkout left")
+	}
+	if _, err := os.Stat(first["path"].(string)); err != nil {
+		t.Fatal("discard reached another checkout")
+	}
+}

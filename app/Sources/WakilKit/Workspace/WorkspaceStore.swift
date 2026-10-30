@@ -120,6 +120,15 @@ public actor WorkspaceStore {
         revision += 1
     }
 
+    /// Takes a workspace out of the record (in memory) with its members and holds: one whose copy
+    /// was taken back because the record could not be saved.
+    public func remove(_ id: String) {
+        file.workspaces.removeAll { $0.id == id }
+        members = members.filter { $0.value != id }
+        holds = holds.filter { $0.key.workspace != id }
+        revision += 1
+    }
+
     /// Changes one workspace in place; false when there is none with that id.
     @discardableResult
     public func update(_ id: String, _ change: (inout Workspace) -> Void) -> Bool {

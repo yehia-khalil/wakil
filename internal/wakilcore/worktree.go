@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -73,21 +74,43 @@ func (w *GitWriter) WorktreeList(ctx context.Context) ([]GitWorktree, error) {
 // checked out as it is; with Create a missing one is made from From (a commit or branch). With
 // FromIsBase, a From that does not resolve (a base missing on the remote) falls back to the remote's
 // default branch, else HEAD, and the result's Note says so.
+//
+// A name never fails a checkout (amendment 2026-10-30, the walk): with NewBranch, Branch is a name
+// to mint, so one the repo has, one another worktree has checked out or one in TakenBranches (the
+// record's) gives way to the next free `-2`, `-3`; with FreeBranch, only a branch another worktree
+// holds (or TakenBranches names) does, and an existing free one is checked out as it is.
 type WorktreeAddOptions struct {
-	Path       string `json:"path"`
-	Branch     string `json:"branch"`
-	From       string `json:"from,omitempty"`
-	Create     bool   `json:"create,omitempty"`
-	FromIsBase bool   `json:"fromIsBase,omitempty"`
+	Path          string   `json:"path"`
+	Branch        string   `json:"branch"`
+	From          string   `json:"from,omitempty"`
+	Create        bool     `json:"create,omitempty"`
+	FromIsBase    bool     `json:"fromIsBase,omitempty"`
+	NewBranch     bool     `json:"newBranch,omitempty"`
+	FreeBranch    bool     `json:"freeBranch,omitempty"`
+	TakenBranches []string `json:"takenBranches,omitempty"`
 }
 
-// WorktreeAddResult is where the checkout is, its branch and commit, and a sentence when its start
-// was not the one asked for.
+// WorktreeAddResult is where the checkout is, its branch and commit, whether the branch was made
+// for it (so a checkout taken back takes its branch too), and a sentence when its start was not
+// the one asked for.
 type WorktreeAddResult struct {
-	Path   string `json:"path"`
-	Branch string `json:"branch"`
-	Head   string `json:"head"`
-	Note   string `json:"note,omitempty"`
+	Path    string `json:"path"`
+	Branch  string `json:"branch"`
+	Head    string `json:"head"`
+	Created bool   `json:"created,omitempty"`
+	Note    string `json:"note,omitempty"`
+}
+
+// FreeName is base, else base-2, base-3 … the first taken does not answer true for.
+func FreeName(base string, taken func(string) bool) string {
+	if !taken(base) {
+		return base
+	}
+	for i := 2; ; i++ {
+		if n := base + "-" + strconv.Itoa(i); !taken(n) {
+			return n
+		}
+	}
 }
 
 func (w *GitWriter) resolves(ctx context.Context, rev string) bool {
@@ -113,13 +136,30 @@ func (w *GitWriter) WorktreeAdd(ctx context.Context, o WorktreeAddOptions) (Work
 	if err != nil {
 		return WorktreeAddResult{}, err
 	}
-	for _, t := range list {
-		if t.Branch == o.Branch && o.Branch != "" && !t.Prunable {
-			return WorktreeAddResult{}, &BranchHeldError{Branch: o.Branch, Path: t.Path}
+	heldAt := func(b string) (string, bool) {
+		for _, t := range list {
+			if t.Branch == b && b != "" && !t.Prunable {
+				return t.Path, true
+			}
 		}
+		return "", false
+	}
+	if o.NewBranch || o.FreeBranch {
+		recorded := map[string]bool{}
+		for _, b := range o.TakenBranches {
+			recorded[b] = true
+		}
+		o.Branch = FreeName(o.Branch, func(b string) bool {
+			_, held := heldAt(b)
+			return recorded[b] || held || (o.NewBranch && w.localBranchExists(ctx, b))
+		})
+	}
+	if p, held := heldAt(o.Branch); held {
+		return WorktreeAddResult{}, &BranchHeldError{Branch: o.Branch, Path: p}
 	}
 	var args []string
 	var note string
+	created := false
 	switch {
 	case w.localBranchExists(ctx, o.Branch):
 		args = []string{"add", o.Path, o.Branch}
@@ -146,6 +186,7 @@ func (w *GitWriter) WorktreeAdd(ctx context.Context, o WorktreeAddOptions) (Work
 			from = fallback
 		}
 		args = []string{"add", "-b", o.Branch, o.Path, from}
+		created = true
 	default:
 		return WorktreeAddResult{}, UserError("There is no branch " + o.Branch)
 	}
@@ -161,7 +202,26 @@ func (w *GitWriter) WorktreeAdd(ctx context.Context, o WorktreeAddOptions) (Work
 		return WorktreeAddResult{}, err
 	}
 	head, _ := (&GitRunner{Root: o.Path}).Run(ctx, "rev-parse", "HEAD")
-	return WorktreeAddResult{Path: o.Path, Branch: o.Branch, Head: strings.TrimSpace(string(head)), Note: note}, nil
+	return WorktreeAddResult{Path: o.Path, Branch: o.Branch, Head: strings.TrimSpace(string(head)), Created: created, Note: note}, nil
+}
+
+// WorktreeDiscard takes back a checkout just made for a record that could not be saved
+// (amendment 2026-10-30, the walk): its folder, the workspace folder above it when that is left
+// empty, and branch when given (the one the add made). Never the repository's own folder; a
+// checkout with anything written in it is refused in git's words, so no work is lost.
+func (w *GitWriter) WorktreeDiscard(ctx context.Context, path, branch string) error {
+	if err := notAFlag(branch); err != nil {
+		return err
+	}
+	if err := w.WorktreeRemove(ctx, path); err != nil {
+		return err
+	}
+	os.Remove(filepath.Dir(path)) // only when empty: another repo's checkout keeps it
+	if branch == "" || !w.localBranchExists(ctx, branch) {
+		return nil
+	}
+	_, err := w.git(context.WithoutCancel(ctx), nil, "branch", "-D", branch)
+	return err
 }
 
 // worktreeAt is the listed worktree at path, compared through symlinks.

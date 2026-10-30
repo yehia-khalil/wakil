@@ -314,3 +314,87 @@ func TestReleaseBranchSendsMainBackToItsDefaultBranchWithItsChanges(t *testing.T
 		t.Fatalf("a.txt %q", b)
 	}
 }
+
+// A name to mint (step 0, a branch-off) never fails on a name: a branch the repo has, one another
+// worktree has checked out, or one the record names, gives way to the next free -2, -3 (the walk's
+// second conversation with the same title).
+func TestWorktreeAddOfANewBranchTakesTheNextFreeName(t *testing.T) {
+	_, home, w := worktreeFixture(t)
+	ctx := context.Background()
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "a"), Branch: "fix-otp", Create: true}); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, w.Root, "branch", "fix-otp-2")
+	r, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "b"), Branch: "fix-otp", Create: true,
+		NewBranch: true, TakenBranches: []string{"fix-otp-3"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "fix-otp-4" || !r.Created {
+		t.Fatalf("result %+v", r)
+	}
+	if got := gitOut(t, filepath.Join(home, "b"), "rev-parse", "--abbrev-ref", "HEAD"); got != "fix-otp-4" {
+		t.Fatalf("branch %q", got)
+	}
+	// "feature" exists but nobody holds it: a fresh name still steps past it.
+	r, err = w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "c"), Branch: "feature", Create: true, NewBranch: true})
+	if err != nil || r.Branch != "feature-2" {
+		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+// A lazily made checkout on the workspace's branch checks out a branch the repo has as it is, and
+// steps past it only when another folder holds it.
+func TestWorktreeAddOfAFreeBranchStepsPastOnlyAHeldOne(t *testing.T) {
+	_, home, w := worktreeFixture(t)
+	ctx := context.Background()
+	r, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "a"), Branch: "feature", Create: true, FreeBranch: true})
+	if err != nil || r.Branch != "feature" || r.Created {
+		t.Fatalf("%+v %v", r, err)
+	}
+	r, err = w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "b"), Branch: "feature", Create: true, FreeBranch: true})
+	if err != nil || r.Branch != "feature-2" || !r.Created {
+		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+// A checkout made for a record that could not be saved is taken back whole: the folder, and the
+// branch it made. Nothing was written there yet; anything that was is refused in git's words.
+func TestWorktreeDiscardRemovesTheCheckoutAndTheBranchItMade(t *testing.T) {
+	_, home, w := worktreeFixture(t)
+	ctx := context.Background()
+	path := filepath.Join(home, "slug", "core")
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: path, Branch: "fix-otp", Create: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WorktreeDiscard(ctx, path, "fix-otp"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("folder left")
+	}
+	if _, err := os.Stat(filepath.Join(home, "slug")); !os.IsNotExist(err) {
+		t.Fatal("the workspace's empty folder was left")
+	}
+	if w.localBranchExists(ctx, "fix-otp") {
+		t.Fatal("the branch it made was left")
+	}
+	// Without a branch, an existing one stays.
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: path, Branch: "feature"}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(path, "a.txt"), []byte("written\n"), 0o644)
+	if err := w.WorktreeDiscard(ctx, path, ""); err == nil {
+		t.Fatal("a checkout with work in it was discarded")
+	}
+	gitIn(t, path, "checkout", "--", "a.txt")
+	if err := w.WorktreeDiscard(ctx, path, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !w.localBranchExists(ctx, "feature") {
+		t.Fatal("a branch it did not make was deleted")
+	}
+	if err := w.WorktreeDiscard(ctx, w.Root, ""); err == nil {
+		t.Fatal("the repository's own folder was discarded")
+	}
+}

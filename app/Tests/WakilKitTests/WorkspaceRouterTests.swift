@@ -13,7 +13,8 @@ private actor Said {
 }
 
 private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails: String? = nil,
-                     notRepositories: Set<String> = []) -> RecordingToolCaller {
+                     notRepositories: Set<String> = [], renames: [String: String] = [:],
+                     discardFails: String? = nil) -> RecordingToolCaller {
     RecordingToolCaller(reply: { name, args in
         guard case .object(let a) = args else { return .object([:]) }
         func s(_ k: String) -> String { if case .string(let v)? = a[k] { v } else { "" } }
@@ -26,8 +27,13 @@ private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails
             return .object(["branch": .string(mainBranch), "files": .array(files)])
         case "git_worktree_add":
             if let addFails { throw WorkspaceWriteError(description: addFails) }
-            return .object(["path": .string("/h/ws/\(s("project"))/\(s("slug"))/\((s("root") as NSString).lastPathComponent)"),
-                            "branch": .string(s("branch")), "head": .string("abc")])
+            // wakil-git picks the next free names (newName); `renames` stands in for what it found taken.
+            let slug = renames[s("slug")] ?? s("slug"), branch = renames[s("branch")] ?? s("branch")
+            return .object(["path": .string("/h/ws/\(s("project"))/\(slug)/\((s("root") as NSString).lastPathComponent)"),
+                            "slug": .string(slug), "branch": .string(branch), "head": .string("abc"), "created": .bool(true)])
+        case "git_worktree_discard":
+            if let discardFails { throw WorkspaceWriteError(description: discardFails) }
+            return .object([:])
         case "git_take_from_main":
             return .object(["path": .string("/h/ws/\(s("project"))/\(s("slug"))/\((s("root") as NSString).lastPathComponent)"),
                             "carried": .bool(true), "head": .string("abc")])
@@ -52,11 +58,23 @@ private final class IdCounter: @unchecked Sendable {
     }
 }
 
+/// Whether the record's next save fails, and how (the walk's sticky read failure).
+private final class SaveSwitch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failure: String?
+    func fail(_ why: String?) { lock.lock(); failure = why; lock.unlock() }
+    func check() throws {
+        lock.lock(); defer { lock.unlock() }
+        if let failure { throw WorkspaceWriteError(description: failure) }
+    }
+}
+
 private func router(
-    git: RecordingToolCaller, states: [String: ConversationState] = [:], said: Said, titles: [String: String] = [:]
+    git: RecordingToolCaller, states: [String: ConversationState] = [:], said: Said, titles: [String: String] = [:],
+    saves: SaveSwitch = SaveSwitch()
 ) async -> WorkspaceRouter {
     let store = WorkspaceStore()
-    await store.use(load: { WorkspacesFile() }, save: { _ in })
+    await store.use(load: { WorkspacesFile() }, save: { _ in try saves.check() })
     await store.ensure(org: "initech")
     let r = WorkspaceRouter(store: store, git: git)
     let counter = IdCounter()
@@ -139,6 +157,7 @@ private func asAgent<T: Sendable>(_ conversation: String, _ body: @Sendable () a
     #expect(add.arguments == .object([
         "root": .string("/p/core"), "project": .string("estate"), "slug": .string("fix-otp-guard-order"),
         "branch": .string("fix-otp-guard-order"), "create": .bool(true), "from": .string("HEAD"),
+        "newName": .bool(true), "takenSlugs": .array([]), "takenBranches": .array([]),
     ]))
     let w = try #require(await r.store.workspace(ofConversation: "c1"))
     #expect(w.name == "Fix OTP guard order")
@@ -439,4 +458,126 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     let names = await git.calls.map(\.name)
     #expect(names.contains("git_worktree_prune"))
     #expect(names.contains("git_worktree_add"))
+}
+
+// MARK: the walk: no orphan copies, no name collisions
+
+private let unsaved = "workspaces.json: CancellationError() — nothing was saved over it"
+
+/// Step 0 made a copy and then could not save the record (the walk's sticky read failure): the copy
+/// and the branch it made are taken back, the conversation stays in Main, and the refusal says so
+/// whole (Rule 8). Nothing was written in the copy yet, so nothing is lost.
+@Test func step0ACopyWhoseRecordCannotBeSavedIsTakenBackWithItsBranch() async throws {
+    let git = fakeGit()
+    let said = Said()
+    let saves = SaveSwitch()
+    saves.fail(unsaved)
+    let r = await router(git: git, said: said, saves: saves)
+    await #expect {
+        try await asAgent("c1") { try await r.routePath("/p/core/a.go", action: "editor_save") }
+    } throws: { error in
+        let text = "\(error)"
+        return text.contains("taken back") && text.contains(unsaved) && text.contains("core")
+    }
+    let discard = try #require(await git.calls.first { $0.name == "git_worktree_discard" })
+    #expect(discard.arguments == .object([
+        "root": .string("/p/core"), "project": .string("estate"), "slug": .string("fix-otp-guard-order"),
+        "branch": .string("fix-otp-guard-order"),
+    ]))
+    #expect(await r.store.all().isEmpty)
+    #expect(await r.store.workspace(ofConversation: "c1") == nil)
+    #expect(await r.store.holders().isEmpty)
+    #expect(await said.moves.isEmpty)
+    #expect(await said.lines.map(\.1) == [.recordFailed(repo: "core", reason: unsaved, leftAt: nil)])
+    // Once the record saves again, the next write starts the workspace afresh.
+    saves.fail(nil)
+    #expect(try await asAgent("c1") { try await r.routePath("/p/core/a.go", action: "editor_save") }
+        == "/h/ws/estate/fix-otp-guard-order/core/a.go")
+}
+
+/// A copy that cannot be taken back either (something was written in it) is left where it is, and
+/// the refusal names where.
+@Test func aCopyThatCannotBeTakenBackIsNamedWhole() async throws {
+    let git = fakeGit(discardFails: "fatal: contains modified files")
+    let said = Said()
+    let saves = SaveSwitch()
+    saves.fail(unsaved)
+    let r = await router(git: git, said: said, saves: saves)
+    await #expect {
+        try await asAgent("c1") { try await r.routePath("/p/core/a.go", action: "editor_save") }
+    } throws: { error in
+        let text = "\(error)"
+        return text.contains("/h/ws/estate/fix-otp-guard-order/core") && text.contains("contains modified files")
+    }
+    #expect(await r.store.all().isEmpty)
+}
+
+@Test func aBranchOffWhoseRecordCannotBeSavedIsTakenBack() async throws {
+    let git = fakeGit()
+    let saves = SaveSwitch()
+    let r = await router(git: git, states: ["c1": .working], said: Said(), titles: ["c1": "backend"], saves: saves)
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let parent = try #require(await r.store.workspace(ofConversation: "c1"))
+    await r.store.move("c2", root: "root-c2", to: parent.id)
+    saves.fail(unsaved)
+    await #expect(throws: WorkspaceWriteError.self) {
+        try await asAgent("c2") { try await r.routePath("/p/core/a", action: "editor_save") }
+    }
+    let discard = try #require(await git.calls.first { $0.name == "git_worktree_discard" })
+    guard case .object(let a) = discard.arguments else { Issue.record("no args"); return }
+    #expect(a["branch"] == .string("backend--c2"))
+    #expect(await r.store.all().map(\.id) == [parent.id])
+    #expect(await r.store.workspace(ofConversation: "c2")?.id == parent.id)
+}
+
+@Test func aLazilyMadeCheckoutWhoseRecordCannotBeSavedIsTakenBack() async throws {
+    let git = fakeGit()
+    let saves = SaveSwitch()
+    let r = await router(git: git, said: Said(), saves: saves)
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    saves.fail(unsaved)
+    await #expect(throws: WorkspaceWriteError.self) {
+        try await asAgent("c1") { try await r.routePath("/p/web/b", action: "editor_save") }
+    }
+    let discard = try #require(await git.calls.first { $0.name == "git_worktree_discard" })
+    guard case .object(let a) = discard.arguments else { Issue.record("no args"); return }
+    #expect(a["root"] == .string("/p/web"))
+    #expect(a["slug"] == .string("fix-otp-guard-order"))
+    let w = try #require(await r.store.workspace(ofConversation: "c1"))
+    #expect(w.checkouts.map(\.repo) == ["/p/core"])
+    #expect(await r.store.holder(of: WorkspaceHold(workspace: w.id, repo: "/p/web")) == nil)
+}
+
+/// A new workspace's names are minted by wakil-git, stepping past the record's and the repo's
+/// (`newName`); the workspace records the ones it used. Two conversations with the same title get
+/// two workspaces.
+@Test func twoConversationsWithTheSameTitleGetTwoWorkspacesWithTheNextFreeNames() async throws {
+    let git = fakeGit(renames: ["fix-otp-guard-order": "fix-otp-guard-order-2"])
+    let r = await router(git: git, said: Said())
+    await r.store.add(Workspace(id: "old", name: "Fix OTP guard order", slug: "fix-otp-guard-order", project: "estate",
+                                environment: "staging", branch: "fix-otp-guard-order"))
+    let path = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    #expect(path == "/h/ws/estate/fix-otp-guard-order-2/core/a")
+    let add = try #require(await git.calls.first { $0.name == "git_worktree_add" })
+    guard case .object(let a) = add.arguments else { Issue.record("no args"); return }
+    #expect(a["newName"] == .bool(true))
+    #expect(a["takenSlugs"] == .array([.string("fix-otp-guard-order")]))
+    #expect(a["takenBranches"] == .array([.string("fix-otp-guard-order")]))
+    let w = try #require(await r.store.workspace(ofConversation: "c1"))
+    #expect(w.slug == "fix-otp-guard-order-2")
+    #expect(w.branch == "fix-otp-guard-order-2")
+    #expect(w.checkouts.first?.branch == "fix-otp-guard-order-2")
+}
+
+/// A lazily made checkout asks for the workspace's branch, stepping past it only where another
+/// folder holds it (`freeBranch`), and records the branch it got.
+@Test func aLazilyMadeCheckoutRecordsTheBranchItGot() async throws {
+    let git = fakeGit()
+    let r = await router(git: git, said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    _ = try await asAgent("c1") { try await r.routePath("/p/web/b", action: "editor_save") }
+    let add = try #require(await git.calls.last { $0.name == "git_worktree_add" })
+    guard case .object(let a) = add.arguments else { Issue.record("no args"); return }
+    #expect(a["freeBranch"] == .bool(true))
+    #expect(a["newName"] == nil)
 }
