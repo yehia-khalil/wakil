@@ -962,6 +962,9 @@ public final class WindowModel {
     /// that account, and it lives in `WakilApp` rather than `WakilKit`.
     /// Still writable only here — `setProvider` remains the one path.
     public private(set) var providerId: String
+    /// Workspaces, piece 2: each repo's drafting conversation and its proposal (decision 13),
+    /// drawn by the Running settings (`WindowModel+RecipeDrafts.swift`).
+    public internal(set) var recipeDraftBook = RecipeDraftBook()
     /// How many of a resumed session's transcript entries are rebuilt into
     /// `thoughts`. Passed straight through to `read_session`'s `limit`, so
     /// the app and the Go read agree on how much of a long session's
@@ -9977,6 +9980,8 @@ public final class WindowModel {
         retainAgentPlace()
         // Ticket noticing: its hand-off ends with it.
         if agent.handoff != nil { await endHandOff(of: agent) }
+        // Workspaces, piece 2: a drafting conversation closed drafts nothing more.
+        if let key = recipeDraftBook.key(ofConversation: agent.id) { recipeDraftBook.end(key) }
         onConversationClosed?(agent.id)
     }
 
@@ -11009,6 +11014,8 @@ public final class WindowModel {
             markUnseen(failed: isError, for: agent)
             // A handed agent's turn ending may have pushed or drafted: its ticket is read again.
             if agent.handoff != nil { Task { [weak self] in await self?.handOffTurnEnded(agent) } }
+            // Workspaces, piece 2: a drafting conversation that answered without a proposal says so.
+            recipeDraftBook.turnEnded(conversation: agent.id)
         }
         // Names: the first clean exchange — its reply's start, then the one ask.
         switch event {

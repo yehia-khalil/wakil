@@ -756,9 +756,13 @@ an agent's write finds its checkout.
   `RunningActions.swift` (`running_*`, operator-only), `RunningSettings.swift` (the Running settings'
   decisions: groups, a field's source, an edit as an override, Draft all and Detect proposals).
   `App/WorkspaceRunTerminals.swift` is the window's `RunTerminals` (panes in the workspace's view).
+  `RecipeDrafting.swift` (decision 13's drafting conversation and Try's fix: `RecipeDraftBook`, the
+  briefs, `savingDraft`, and `running_draft_propose` — agent-reachable, `.control`, only the
+  conversation Wakil started for that repo — through `RecipeDraftLookup`);
+  `App/WindowModel+RecipeDrafts.swift` starts that conversation off screen in Main and asks it for a fix.
 
 Uses: `Harness`, `MCP`, `Registry`.
-Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `WindowModelWorkspacesTests` (the window's side, in `App/WindowModel+Workspaces.swift`).
+Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `WindowModelWorkspacesTests` (the window's side, in `App/WindowModel+Workspaces.swift`), `RecipeDraftingTests`.
 
 ### Visual/ — design-language values
 

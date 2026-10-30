@@ -51,6 +51,9 @@ public struct WakilWiring: Sendable {
     /// Ticket noticing. The window's hand-off Start and Cancel, for `ticket_hand_off`; pointed at
     /// the window by `useActiveContext(of:)` once there is one.
     public let handOffLookup: TicketHandOffLookup
+    /// Workspaces, piece 2: where the drafting conversation's `running_draft_propose` lands — the
+    /// window's `recipeDraftBook`, pointed by `useActiveContext(of:)`.
+    public let recipeDrafts: RecipeDraftLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -293,6 +296,10 @@ public struct WakilWiring: Sendable {
             await model?.cancelHandOff(conversation)
         })
         handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
+        recipeDrafts.use { [weak model] conversation, proposal in
+            guard let model else { throw RecipeDraftError("running_draft_propose: no window is open to show the draft in") }
+            try await model.receiveRecipeDraft(conversation: conversation, proposal)
+        }
         // Workspaces, piece 1: the write rule asks the window about conversations and tells threads.
         model.useWorkspaces(workspaces)
         model.useRunner(runner)
@@ -567,6 +574,8 @@ public struct WakilWiring: Sendable {
         await workspaces.onArchive { [runner] w in await runner.archiving(w) }
         await registerRunActions(into: registry, runner: runner, organization: { await liveLookup.organization() })
         await registerRunningActions(into: registry, context: routed(.context, contextClient), runner: runner)
+        let recipeDrafts = RecipeDraftLookup()
+        await registerRecipeDraftActions(into: registry, drafts: recipeDrafts)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         await registerBrowserPasswordActions(
@@ -631,6 +640,7 @@ public struct WakilWiring: Sendable {
             agentLookup: agentLookup,
             liveLookup: liveLookup,
             handOffLookup: handOffLookup,
+            recipeDrafts: recipeDrafts,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,
