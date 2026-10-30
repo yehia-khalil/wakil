@@ -289,6 +289,10 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
             try? await store.save()
             return try await checkout(repo, conversation: c, facts: facts, action: action)
         }
+        // A Start another conversation (item 8) never takes over: it branches off at its first write.
+        if let mine, await store.mustBranchOff(c, root: facts.lineageRoot) {
+            return try await branchOffMarked(mine, repo: repo, conversation: c, facts: facts, action: action)
+        }
         var mainBranch: String?
         if mine != nil, mine?.checkout(of: repo)?.path == nil {
             mainBranch = await mainState(repo)?.branch
@@ -317,7 +321,10 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
             await hooks?.say(c, .tookOver(repo: repoName(r), from: name))
             return w.checkout(of: r)!.path!
         case .branchOff(let from, let tip):
-            return try await branchOff(mine!, repo: repo, tip: tip, holder: from, conversation: c, facts: facts)
+            let holderName = await hooks?.conversation(from)?.title ?? "another conversation"
+            return try await branchOff(mine!, repo: repo, tip: tip, conversation: c, facts: facts) { name, branch in
+                .branchedOff(name: name, repo: self.repoName(repo), branch: branch, holder: holderName)
+            }
         case .make(let start):
             return try await make(mine!, repo: repo, start: start, conversation: c, facts: facts)
         case .switchTakesOver, .switchBranchesOff:
@@ -409,9 +416,69 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         return path
     }
 
-    /// Step 1, a working holder: a child workspace (decision 9) on a new branch off the tip.
-    private func branchOff(_ parent: Workspace, repo: String, tip: String, holder: String, conversation c: String,
-                           facts: WorkspaceConversationFacts) async throws -> String {
+    /// A Start another conversation's first write (item 8): never the copy another holds, idle or
+    /// not. With a copy of `repo` in `parent`, a child workspace from that branch's last commit — its
+    /// SHA, so nothing uncommitted comes along — and the thread names the branch, the commit, the
+    /// holder (else the workspace) and the holder's uncommitted changes. With none, a child workspace
+    /// of its own, its copy made there from the repo's base. Either way the mark is then gone.
+    private func branchOffMarked(_ parent: Workspace, repo: String, conversation c: String,
+                                 facts: WorkspaceConversationFacts, action: String) async throws -> String {
+        if let co = parent.checkout(of: repo), let p = co.path, !co.inMain, !co.branch.isEmpty {
+            let state = await gitState(p)
+            let holderId = await store.holder(of: WorkspaceHold(workspace: parent.id, repo: repo))
+            var holder = parent.name.isEmpty ? parent.slug : parent.name
+            if let holderId, let title = await hooks?.conversation(holderId)?.title, !title.isEmpty { holder = title }
+            let holderName = holder
+            let path = try await branchOff(parent, repo: repo, tip: co.branch, from: state?.head,
+                                           conversation: c, facts: facts) { name, branch in
+                .branchedOffAt(name: name, repo: self.repoName(repo), branch: branch, from: co.branch, commit: state?.head,
+                               holder: holderName, uncommitted: state?.uncommitted)
+            }
+            await store.clearBranchOff(c, root: facts.lineageRoot)
+            try? await store.save()
+            return path
+        }
+        try await requireRepository(repo, action: action)
+        let all = await store.all()
+        let name = facts.title.isEmpty || facts.title == newConversationTitle ? "\(parent.name) (branch)" : facts.title
+        let slug = uniqueSlug(branchSlug(fallbackBranchName(key: parent.tickets.first, title: name)),
+                              taken: Set(all.filter { $0.project == parent.project }.map(\.slug)))
+        let child = Workspace(
+            id: newId(), name: name, slug: slug, project: parent.project, environment: parent.environment,
+            tickets: parent.tickets, parent: parent.id, created: ISO8601DateFormatter().string(from: Date()))
+        await store.add(child)
+        await store.move(c, root: facts.lineageRoot, to: child.id)
+        await store.clearBranchOff(c, root: facts.lineageRoot)
+        func undo() async {
+            await store.remove(child.id)
+            await store.move(c, root: facts.lineageRoot, to: parent.id)
+            await store.markBranchOff(c, root: facts.lineageRoot)
+        }
+        do {
+            try await store.save()
+        } catch {
+            await undo()
+            throw WorkspaceWriteError(description: "\(action): the workspace record could not be saved, so the change was "
+                + "not made:\n\(error)")
+        }
+        let path: String
+        do {
+            path = try await make(child, repo: repo, start: .base, conversation: c, facts: facts)
+        } catch {
+            await undo()
+            try? await store.save()
+            throw error
+        }
+        await hooks?.say(c, .branchedOffNoCopy(name: name, repo: repoName(repo), parent: parent.name))
+        await hooks?.moved(c, parent, await store.workspace(child.id) ?? child)
+        return path
+    }
+
+    /// Step 1, a working holder: a child workspace (decision 9) on a new branch off the tip — off
+    /// `from` (a commit) when given. `line` is what the thread says, from the child's name and branch.
+    private func branchOff(_ parent: Workspace, repo: String, tip: String, from: String? = nil, conversation c: String,
+                           facts: WorkspaceConversationFacts,
+                           line: @Sendable (String, String) -> WorkspaceLine) async throws -> String {
         let all = await store.all()
         let taken = recordedBranches(all)
         let asked = childBranchName(tip, conversation: c, taken: taken)
@@ -422,7 +489,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
             made = try await call("git_worktree_add", [
                 "root": .string(repo), "project": .string(parent.project),
                 "slug": .string(uniqueSlug(branchSlug(asked), taken: takenSlugs)),
-                "branch": .string(asked), "create": .bool(true), "from": .string(tip),
+                "branch": .string(asked), "create": .bool(true), "from": .string(from ?? tip),
                 "newName": .bool(true), "takenSlugs": names(takenSlugs), "takenBranches": names(taken),
             ])
         } catch {
@@ -448,8 +515,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
             await self.store.move(c, root: facts.lineageRoot, to: parent.id)
             for h in held { await self.store.hold(h, by: c, root: facts.lineageRoot) }
         }
-        let holderName = await hooks?.conversation(holder)?.title ?? "another conversation"
-        await hooks?.say(c, .branchedOff(name: name, repo: repoName(repo), branch: branch, holder: holderName))
+        await hooks?.say(c, line(name, branch))
         await hooks?.moved(c, parent, child)
         return child.checkout(of: repo)?.path ?? ""
     }
@@ -650,8 +716,14 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
 
     /// Main's folder of `repo`: its branch (nil when detached) and how many files it has changes in.
     func mainState(_ repo: String) async -> (branch: String?, uncommitted: Int)? {
+        await gitState(repo).map { ($0.branch, $0.uncommitted) }
+    }
+
+    /// A folder's branch (nil when detached), its head's short SHA (nil when unborn or unread) and
+    /// how many files it has changes in.
+    func gitState(_ root: String) async -> (branch: String?, head: String?, uncommitted: Int)? {
         guard let git,
-              let r = try? await callCheckedTool(git, tool: "git_status", arguments: .object(["root": .string(repo)]),
+              let r = try? await callCheckedTool(git, tool: "git_status", arguments: .object(["root": .string(root)]),
                                                  action: "git_status", timeout: MCPClient.readReplyTimeout)
         else { return nil }
         var value = r
@@ -662,7 +734,9 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         if case .array(let files)? = o["files"] {
             for f in files { if case .object(let fo) = f, case .string(let p)? = fo["path"] { paths.insert(p) } }
         }
-        return (branch, paths.count)
+        let head = o["head"].flatMap { if case .string(let s) = $0, !s.isEmpty { s } else { nil } }
+            ?? o["detached"].flatMap { if case .string(let s) = $0, !s.isEmpty { s } else { nil } }
+        return (branch, head, paths.count)
     }
 
     nonisolated func string(_ v: JSONValue, _ key: String) -> String? {

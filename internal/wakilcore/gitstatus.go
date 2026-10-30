@@ -22,8 +22,9 @@ type GitFile struct {
 // changed files, and the operation stopped part-way in it (nil when none is).
 type GitStatus struct {
 	Root     string    `json:"root"`
-	Branch   string    `json:"branch"`   // "" when detached
-	Detached string    `json:"detached"` // short SHA when detached
+	Branch   string    `json:"branch"`         // "" when detached
+	Detached string    `json:"detached"`       // short SHA when detached
+	Head     string    `json:"head,omitempty"` // the head's short SHA; "" on an unborn branch
 	Upstream string    `json:"upstream"`
 	Ahead    int       `json:"ahead"`
 	Behind   int       `json:"behind"`
@@ -42,6 +43,9 @@ func ParseGitStatus(root string, porcelain []byte) GitStatus {
 		switch {
 		case strings.HasPrefix(e, "# branch.oid "):
 			oid = strings.TrimPrefix(e, "# branch.oid ")
+			if len(oid) >= 7 && oid != "(initial)" {
+				st.Head = oid[:7]
+			}
 		case strings.HasPrefix(e, "# branch.head "):
 			if h := strings.TrimPrefix(e, "# branch.head "); h != "(detached)" {
 				st.Branch = h

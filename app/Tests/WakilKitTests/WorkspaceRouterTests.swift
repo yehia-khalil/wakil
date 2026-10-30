@@ -24,7 +24,7 @@ private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails
         switch name {
         case "git_status":
             let files: [JSONValue] = (0..<uncommitted).map { .object(["path": .string("f\($0)"), "group": .string("changed")]) }
-            return .object(["branch": .string(mainBranch), "files": .array(files)])
+            return .object(["branch": .string(mainBranch), "head": .string("2d1ac2e"), "files": .array(files)])
         case "git_worktree_add":
             if let addFails { throw WorkspaceWriteError(description: addFails) }
             if missingBases.contains(s("base")) {
@@ -791,4 +791,91 @@ private let unsaved = "workspaces.json: CancellationError() — nothing was save
     // Joining again changes nothing and says nothing.
     await r.join("c1", workspace: w.id)
     #expect(await said.lines.filter { $0.1 == .moved(name: "INI-142 Login") }.count == 2)
+}
+
+// MARK: - Start another (item 8, 2026-10-30)
+
+/// A Start another conversation joins the ticket's workspace marked to branch off: its first write
+/// never takes over the copy there, even from an idle holder. It branches off into a child workspace
+/// from the parent branch's last commit (by its SHA, so nothing uncommitted comes along), and the
+/// thread names the branch, the commit, the holder and its uncommitted changes.
+@Test func aStartAnotherConversationBranchesOffAnIdleHoldersCopyAtItsLastCommit() async throws {
+    let git = fakeGit(uncommitted: 3)
+    let said = Said()
+    let r = await router(git: git, states: ["c1": .idle], said: said,
+                         titles: ["c1": "Work toward Next.", "c2": "INI-142 · Work toward Next. #2"])
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let parent = try #require(await r.store.workspace(ofConversation: "c1"))
+    let parentBranch = try #require(parent.checkout(of: "/p/core")?.branch)
+    await r.join("c2", workspace: parent.id, branchOff: true)
+    #expect(await r.store.workspace(parent.id)?.branchOff == ["root-c2"], "kept in the record, for a resume")
+    let path = try await asAgent("c2") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let child = try #require(await r.store.workspace(ofConversation: "c2"))
+    #expect(child.parent == parent.id)
+    #expect(path == "/h/ws/estate/\(child.slug)/core/a")
+    #expect(await r.store.holder(of: WorkspaceHold(workspace: parent.id, repo: "/p/core")) == "c1", "never taken over")
+    let add = try #require(await git.calls.last { $0.name == "git_worktree_add" })
+    guard case .object(let a) = add.arguments else { Issue.record("no args"); return }
+    #expect(a["from"] == .string("2d1ac2e"))
+    #expect(child.branch == "\(parentBranch)--c2")
+    #expect(await said.lines.last?.1 == .branchedOffAt(
+        name: "INI-142 · Work toward Next. #2", repo: "core", branch: "\(parentBranch)--c2", from: parentBranch,
+        commit: "2d1ac2e", holder: "Work toward Next.", uncommitted: 3))
+    // Branched off once: the mark is gone, and its next write stays in its own copy.
+    #expect(await r.store.workspace(parent.id)?.branchOff == [])
+    _ = try await asAgent("c2") { try await r.routePath("/p/core/b", action: "editor_save") }
+    #expect(await git.calls.filter { $0.name == "git_worktree_add" }.count == 2)
+}
+
+/// The mark is kept in the record by lineage root, so a Start another conversation resumed into the
+/// workspace after a relaunch still branches off at its first write.
+@Test func aResumedStartAnotherConversationStillBranchesOff() async throws {
+    let git = fakeGit(uncommitted: 0)
+    let said = Said()
+    let r = await router(git: git, said: said, titles: ["c9": "Second look"])
+    await r.store.add(Workspace(id: "w", name: "INI-142 Login", slug: "ini-142-login", project: "estate", environment: "staging",
+                                tickets: ["INI-142"], branch: "ini-142-login",
+                                checkouts: [WorkspaceCheckout(repo: "/p/core", path: "/h/ws/estate/ini-142-login/core",
+                                                              branch: "ini-142-login")],
+                                conversations: ["root-c1", "root-c9"], branchOff: ["root-c9"]))
+    _ = try await asAgent("c9") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let child = try #require(await r.store.workspace(ofConversation: "c9"))
+    #expect(child.parent == "w")
+    #expect(await said.lines.last?.1 == .branchedOffAt(
+        name: "Second look", repo: "core", branch: "ini-142-login--c9", from: "ini-142-login", commit: "2d1ac2e",
+        holder: "INI-142 Login", uncommitted: 0))
+}
+
+/// A repo the workspace has no copy of: the Start another conversation still works in a child of its
+/// own, its copy made there from the repo's base — the parent's record gains nothing it would hold.
+@Test func aStartAnotherConversationWritingARepoTheWorkspaceHasNoCopyOfGetsAChildOfItsOwn() async throws {
+    let git = fakeGit()
+    let said = Said()
+    let r = await router(git: git, said: said, titles: ["c2": "INI-142 · Login #2"])
+    let w = await r.crewWorkspace(ticket: "INI-142", name: "INI-142 Login", organization: "initech", project: "estate",
+                                  environment: "staging")
+    await r.join("c2", workspace: w.id, branchOff: true)
+    let path = try await asAgent("c2") { try await r.routePath("/p/web/b", action: "editor_save") }
+    let child = try #require(await r.store.workspace(ofConversation: "c2"))
+    #expect(child.parent == w.id)
+    #expect(child.tickets == ["INI-142"])
+    #expect(path.hasPrefix("/h/ws/estate/\(child.slug)/web"))
+    #expect(await r.store.workspace(w.id)?.checkouts.isEmpty == true)
+    #expect(await said.lines.map(\.1).contains(.branchedOffNoCopy(name: "INI-142 · Login #2", repo: "web", parent: "INI-142 Login")))
+}
+
+@Test func theBranchOffLineNamesTheCommitAndTheHoldersUncommittedChanges() {
+    let line = WorkspaceLine.branchedOffAt(name: "AQ247-141 · Work toward Next. #2", repo: "api", branch: "b--c2",
+                                           from: "AQ247-141-work-toward-next", commit: "2d1ac2e",
+                                           holder: "Work toward Next.", uncommitted: 3)
+    #expect(line.text == "Branched off AQ247-141-work-toward-next at 2d1ac2e. ‘Work toward Next.’ has 3 uncommitted "
+        + "changes in its copy that are not in yours. This conversation works in workspace ‘AQ247-141 · Work toward "
+        + "Next. #2’, a copy of api on `b--c2`.")
+    #expect(WorkspaceLine.branchedOffAt(name: "n", repo: "api", branch: "b", from: "f", commit: "abc1234", holder: "h",
+                                        uncommitted: 1).text.contains("‘h’ has 1 uncommitted change in its copy that is not in yours."))
+    #expect(WorkspaceLine.branchedOffAt(name: "n", repo: "api", branch: "b", from: "f", commit: "abc1234", holder: "h",
+                                        uncommitted: 0).text.contains("‘h’ has no uncommitted changes in its copy."))
+    #expect(WorkspaceLine.branchedOffAt(name: "n", repo: "api", branch: "b", from: "f", commit: nil, holder: "h",
+                                        uncommitted: nil).text.hasPrefix("Branched off f at its last commit. Wakil could not "
+                                            + "read ‘h’'s copy, so it cannot say what is uncommitted there."))
 }

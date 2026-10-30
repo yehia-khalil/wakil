@@ -38,7 +38,9 @@ type WorkspaceCheckout struct {
 }
 
 // Workspace is one piece of work. Conversations are lineage roots; View is the key its canvas is
-// filed under; Parent is the workspace a branch-off came from.
+// filed under; Parent is the workspace a branch-off came from. BranchOff are the lineage roots of
+// its conversations that branch off at their first write, whoever holds the copy (a Start another,
+// item 8), kept so a resumed one still does.
 type Workspace struct {
 	ID            string              `json:"id"`
 	Name          string              `json:"name"`
@@ -50,6 +52,7 @@ type Workspace struct {
 	Branch        string              `json:"branch,omitempty"`
 	Checkouts     []WorkspaceCheckout `json:"checkouts"`
 	Conversations []string            `json:"conversations"`
+	BranchOff     []string            `json:"branchOff,omitempty"`
 	View          string              `json:"view,omitempty"`
 	Archived      bool                `json:"archived,omitempty"`
 	Created       string              `json:"created,omitempty"`

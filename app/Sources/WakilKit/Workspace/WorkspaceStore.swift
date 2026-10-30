@@ -13,6 +13,9 @@ public actor WorkspaceStore {
     /// Live conversation id → workspace id. A conversation not here is in Main, unless its lineage
     /// root is listed by a workspace (a resumed conversation goes back to its workspace).
     private var members: [String: String] = [:]
+    /// Live conversations that branch off at their first write (a Start another, item 8), before
+    /// their lineage root is known; the record keeps it by root (`Workspace.branchOff`).
+    private var branchOffMarks: Set<String> = []
     private var loader: (@Sendable () async throws -> WorkspacesFile)?
     private var saver: (@Sendable (WorkspacesFile) async throws -> Void)?
     /// Why the record could not be read, whole; nil when it was.
@@ -91,6 +94,7 @@ public actor WorkspaceStore {
         file = WorkspacesFile()
         holds = [:]
         members = [:]
+        branchOffMarks = []
         loadFailure = nil
         revision += 1
     }
@@ -177,7 +181,35 @@ public actor WorkspaceStore {
     public func release(_ conversation: String) {
         for (hold, holder) in holds where holder == conversation { holds[hold] = nil }
         members[conversation] = nil
+        branchOffMarks.remove(conversation)
         revision += 1
+    }
+
+    /// Marks `conversation` to branch off at its first write, whoever holds the copy (item 8): in
+    /// memory, and by its lineage root in its workspace's record once it has one.
+    public func markBranchOff(_ conversation: String, root: String?) {
+        branchOffMarks.insert(conversation)
+        guard let root, !root.isEmpty, let id = members[conversation] else { return }
+        update(id) { w in
+            if !w.branchOff.contains(root) { w.branchOff.append(root) }
+        }
+    }
+
+    /// Whether `conversation` (lineage root `root`) branches off at its next write: marked this
+    /// session, or listed by root in the workspace it is in (a resume after a relaunch).
+    public func mustBranchOff(_ conversation: String, root: String?) -> Bool {
+        if branchOffMarks.contains(conversation) { return true }
+        guard let root, !root.isEmpty, let w = workspace(ofConversation: conversation, root: root) else { return false }
+        return w.branchOff.contains(root)
+    }
+
+    /// It branched off: the mark is gone, in memory and in the record.
+    public func clearBranchOff(_ conversation: String, root: String?) {
+        branchOffMarks.remove(conversation)
+        guard let root, !root.isEmpty else { return }
+        for w in file.workspaces where w.branchOff.contains(root) {
+            update(w.id) { $0.branchOff.removeAll { $0 == root } }
+        }
     }
 
     /// Whether `conversation` holds any checkout (decision 6: Move is for one that holds none).

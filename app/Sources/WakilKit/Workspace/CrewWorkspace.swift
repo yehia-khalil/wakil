@@ -38,13 +38,18 @@ extension WorkspaceRouter {
     /// crew member at its start (it holds nothing yet), or a proposer in Main whose teammate the
     /// operator started (it holds nothing in Main, so nothing is stranded — decision 6). Its thread
     /// says so and its view follows, once; joining again only records a root it has since got.
-    public func join(_ conversation: String, workspace id: String) async {
+    ///
+    /// `branchOff` (a Start another, item 8): it holds no copy, and its first write branches off into
+    /// a child workspace whoever holds the copy — marked in the record by its lineage root, so a
+    /// resume keeps it.
+    public func join(_ conversation: String, workspace id: String, branchOff: Bool = false) async {
         guard let w = await store.workspace(id) else { return }
         let facts = await hooks?.conversation(conversation)
         let member = await store.isMember(conversation)
         let current = await store.workspaceId(ofConversation: conversation)
         let already = member && current == id
         await store.move(conversation, root: facts?.lineageRoot, to: id)
+        if branchOff { await store.markBranchOff(conversation, root: facts?.lineageRoot) }
         try? await store.save()
         guard !already else { return }
         await hooks?.say(conversation, .moved(name: w.name))

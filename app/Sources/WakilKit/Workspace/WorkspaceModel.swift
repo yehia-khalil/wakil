@@ -64,7 +64,8 @@ public struct WorkspaceCheckout: Codable, Sendable, Equatable, Hashable {
 
 /// One piece of work in one project and environment (the glossary's *workspace*). `conversations`
 /// are lineage roots, newest last; `view` the key its canvas is filed under; `parent` the workspace
-/// a branch-off came from (decision 9).
+/// a branch-off came from (decision 9); `branchOff` the lineage roots of its conversations that branch
+/// off at their first write, whoever holds the copy (a Start another, item 8 — kept for a resume).
 public struct Workspace: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var id: String
     public var name: String
@@ -76,14 +77,15 @@ public struct Workspace: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var branch: String?
     public var checkouts: [WorkspaceCheckout]
     public var conversations: [String]
+    public var branchOff: [String]
     public var view: String?
     public var archived: Bool
     public var created: String?
 
     public init(id: String, name: String, slug: String, project: String, environment: String,
                 tickets: [String] = [], parent: String? = nil, branch: String? = nil,
-                checkouts: [WorkspaceCheckout] = [], conversations: [String] = [], view: String? = nil,
-                archived: Bool = false, created: String? = nil) {
+                checkouts: [WorkspaceCheckout] = [], conversations: [String] = [], branchOff: [String] = [],
+                view: String? = nil, archived: Bool = false, created: String? = nil) {
         self.id = id
         self.name = name
         self.slug = slug
@@ -94,13 +96,15 @@ public struct Workspace: Codable, Sendable, Equatable, Hashable, Identifiable {
         self.branch = branch
         self.checkouts = checkouts
         self.conversations = conversations
+        self.branchOff = branchOff
         self.view = view
         self.archived = archived
         self.created = created
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, slug, project, environment, tickets, parent, branch, checkouts, conversations, view, archived, created
+        case id, name, slug, project, environment, tickets, parent, branch, checkouts, conversations, branchOff, view, archived
+        case created
     }
 
     public init(from decoder: Decoder) throws {
@@ -115,6 +119,7 @@ public struct Workspace: Codable, Sendable, Equatable, Hashable, Identifiable {
         branch = try c.decodeIfPresent(String.self, forKey: .branch).flatMap { $0.isEmpty ? nil : $0 }
         checkouts = try c.decodeIfPresent([WorkspaceCheckout].self, forKey: .checkouts) ?? []
         conversations = try c.decodeIfPresent([String].self, forKey: .conversations) ?? []
+        branchOff = try c.decodeIfPresent([String].self, forKey: .branchOff) ?? []
         view = try c.decodeIfPresent(String.self, forKey: .view)
         archived = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
         created = try c.decodeIfPresent(String.self, forKey: .created)
