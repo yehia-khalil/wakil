@@ -409,6 +409,9 @@ private let orgIndependent: Set<String> = [
     // 3b-ix: how long the composer keeps the keyboard after a fast-path action — the operator's
     // hand on the composer, `paletteShowing`'s shape, and over in 1.5 s whatever the org.
     "composerHoldsKeyboardUntil",
+    // New conversation here's hold (Rule 3): the screen it opened, and the focus-request count it
+    // began under — `composerHoldsKeyboardUntil`'s shape, ended by an org switch's change of screen.
+    "composerKeyboardPin",
 ]
 
 /// **A stable reference whose CONTENTS are org-scoped and must be torn

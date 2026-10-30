@@ -7346,8 +7346,21 @@ public final class WindowModel {
     /// editor's own take is retried for up to a second while its web view joins the window.
     public internal(set) var composerHoldsKeyboardUntil: ContinuousClock.Instant?
     public var composerHoldsKeyboard: Bool {
-        composerHoldsKeyboardUntil.map { ContinuousClock.now < $0 } ?? false
+        if let until = composerHoldsKeyboardUntil, ContinuousClock.now < until { return true }
+        switch composerKeyboardPin {
+        case .opening: return true
+        case .on(let screen, let requests): return screen == screenKey && requests == keyboardFocusRequests
+        case nil: return false
+        }
     }
+
+    /// Rule 3, New conversation here: the screen it opened gives the composer the keyboard, and
+    /// a pane appearing there (the view's focused editor, its terminal) stands down — while the
+    /// view comes in (`opening`), then for as long as that screen is on and no pane is asked for
+    /// (a focus request moves `keyboardFocusRequests`). A state, not a timer: the e2e run found
+    /// the view's terminal drawing after the timer, and taking the keys.
+    enum ComposerKeyboardPin: Equatable { case opening, on(screen: String, focusRequests: Int) }
+    @ObservationIgnored var composerKeyboardPin: ComposerKeyboardPin?
 
     public func paletteKey(_ mode: PaletteMode) {
         paletteKeySerial += 1
@@ -9955,9 +9968,10 @@ public final class WindowModel {
         if screenConversations[place] != nil { await showLanding(in: place) }
         composerFocusForced = true
         defer { composerFocusForced = false }
-        // Rule 3: the composer keeps the keyboard while the view comes in — a focused pane there (an
-        // editor appearing) stands down rather than taking it (the e2e run found it in Monaco).
-        composerHoldsKeyboardUntil = .now + Self.fastPathKeyboardHold
+        // Rule 3: the composer keeps the keyboard while the view comes in and after — a pane there
+        // (its focused editor, its terminal) stands down until one is asked for.
+        composerKeyboardPin = .opening
+        defer { composerKeyboardPin = .on(screen: screenKey, focusRequests: keyboardFocusRequests) }
         await enterConversation()
         guard let w, let agent = currentAgent, let router = workspaceRouter else { return }
         await router.store.move(agent.id, root: agent.lineageRoot, to: w.id)
@@ -10265,6 +10279,8 @@ public final class WindowModel {
         let now = screenKey
         guard let told = toldScreenKey, told != now else { return }
         toldScreenKey = now
+        // New conversation here's hold is its screen's: another screen's panes are not held.
+        if case .on(let screen, _) = composerKeyboardPin, screen != now { composerKeyboardPin = nil }
         // *Start in* is the home's, for the send typed there: another screen pre-sets it again.
         homeStartIn = nil
         if isSameScreenRenamed(from: told, to: now) {

@@ -410,7 +410,8 @@ extension WakilWindow {
                     folderTag: { model.folderTag(for: $0) },
                     isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                     keyboardFocusRequests: model.keyboardFocusRequests,
-                    keyboardReturns: model.keyboardReturns)
+                    keyboardReturns: model.keyboardReturns,
+                    keyboardHeld: { model.composerHoldsKeyboard })
             case "api":
                 // It takes `dispatch` now: the Send control presses the
                 // same registry the agent speaks to, which is what makes

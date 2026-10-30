@@ -487,9 +487,11 @@ struct WindowModelWorkspaceViewsTests {
     }
 
     /// Rule 3: New conversation here's composer takes the keyboard, and keeps it while the
-    /// workspace's view comes in — its focused editor stands down (`composerHoldsKeyboard`) rather
-    /// than taking the keys as it appears (the e2e run found focus in Monaco, not the composer).
-    @Test func newConversationHereFocusesTheComposerOverTheViewsFocusedPane() async throws {
+    /// workspace's view comes in — a pane appearing there (its focused editor, its terminal)
+    /// stands down (`composerHoldsKeyboard`) rather than taking the keys. Held by the screen, not
+    /// a timer: the e2e run found focus in the view's terminal, which drew after any timer, until a
+    /// pane is asked for or the screen changes.
+    @Test func newConversationHereHoldsTheKeyboardUntilAPaneIsAskedFor() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)
         let model = w.model
@@ -504,7 +506,36 @@ struct WindowModelWorkspaceViewsTests {
         await model.newConversationHere("w1")
 
         #expect(told.contains(true), "the composer is handed the keyboard")
-        #expect(model.composerHoldsKeyboard, "the view's focused pane does not take it as it appears")
+        #expect(model.composerHoldsKeyboard, "the view's panes do not take it as they appear")
+        #expect(model.composerHoldsKeyboardUntil == nil, "held by the screen, not by a timer")
+
+        let view = try #require(model.currentAgent?.layoutScope)
+        let shell = await ScopeRouting.$home.withValue(view) {
+            await w.layout.open(kind: "terminal", title: "core", terminalPath: "/p/core")
+        }
+        await model.refreshLayout()
+        #expect(await model.focusPane(id: shell.id))
+        #expect(!model.composerHoldsKeyboard, "a pane asked for takes the keyboard")
+        await model.shutdown()
+    }
+
+    /// The hold is the screen New conversation here opened: another screen ends it.
+    @Test func newConversationHeresHoldEndsWithItsScreen() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        first.workspace = ws
+
+        await model.newConversationHere("w1")
+        #expect(model.composerHoldsKeyboard)
+
+        await model.openWorkspaceView("w1")
+        await model.newConversation()
+        #expect(!model.composerHoldsKeyboard, "another screen's panes are not held")
         await model.shutdown()
     }
 
