@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"git clone -q --bare ../e2e-portal ../e2e-shared.git && printf %s \"$(cd .. && pwd)/e2e-shared.git\" | pbcopy && echo copied"}}
 {"do":{"press":"Return"}}

@@ -11,15 +11,15 @@
 {"do":{"click":"window.closeConversation.keep"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
 {"expect":{"tree":"contains","text":"hold a turn open here"}}
-{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
 {"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
 {"do":{"hotkey":"cmd+shift+w"}}
 {"expect":{"tree":"contains","text":"Close this conversation? The agent is still working; what it is doing now stops."}}
 {"do":{"click":"window.closeConversation.close"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"expect":{"frame":"landing.row.open:terminal","inside":"window"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"frame":"landing","inside":"window"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
-{"expect":{"tree":"absent","text":"your folders · asking and reading"}}
+{"expect":{"tree":"absent","text":"IN MAIN"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
 {"expect":{"frame":"landing.earlier","inside":"window"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}

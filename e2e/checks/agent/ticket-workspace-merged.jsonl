@@ -11,11 +11,11 @@
 {"expect":{"tree":"contains","text":"wrote the merged note"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the merged note’"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"contains","text":"1 PR merged — this work is done"}}
 {"expect":{"frame":"landing.archive.offer:0","inside":"window"}}
 {"do":{"click":"landing.archive.offer:0"}}
 {"expect":{"journal":{"contains":"\"action\":\"workspace_archive\""}}}
 {"expect":{"tree":"contains","text":"1 archived workspace"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"absent","text":"1 PR merged — this work is done"}}

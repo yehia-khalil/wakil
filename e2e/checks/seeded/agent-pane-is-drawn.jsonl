@@ -1,5 +1,5 @@
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"dispatch":{"action":"term_open","params":{}}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
-{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
 {"expect":{"tree":"contains","text":"zsh"}}

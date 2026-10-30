@@ -11,7 +11,7 @@
 {"expect":{"tree":"contains","text":"typed into \"Guest name\""}}
 {"expect":{"tree":"contains","text":"agent allowed"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
+{"expect":{"frame":"landing.main","minWidth":40}}
 {"expect":{"tree":"absent","text":"typed the guest name"}}
 {"expect":{"tree":"absent","text":"agent allowed"}}
 {"do":{"focus":"window.composer"}}
@@ -30,7 +30,7 @@
 {"expect":{"tree":"contains","text":"did not allow the agent on 127.0.0.1:"}}
 {"expect":{"tree":"absent","text":"agent allowed"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
+{"expect":{"frame":"landing.main","minWidth":40}}
 {"do":{"click":"landing.row.running:1"}}
 {"expect":{"tree":"contains","text":"typed the guest name"}}
 {"expect":{"tree":"contains","text":"agent allowed"}}

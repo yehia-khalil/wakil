@@ -8,10 +8,14 @@
 {"expect":{"tree":"contains","text":"e2e-project-two"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
 {"do":{"resize":{"width":1000,"height":888}}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture-two"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"absent","text":"STAGING"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","clear":"window.contextLine"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held"}}
 {"do":{"press":"Return"}}

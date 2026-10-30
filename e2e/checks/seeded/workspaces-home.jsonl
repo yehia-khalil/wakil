@@ -1,17 +1,15 @@
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"expect":{"tree":"contains","text":"A conversation is one agent and its thread."}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"absent","text":"Wakil works in projects."}}
 {"expect":{"tree":"absent","text":"you are here"}}
-{"expect":{"tree":"contains","text":"Open a pane:"}}
-{"expect":{"tree":"absent","text":"CONTINUE · NEWEST FIRST"}}
-{"expect":{"frame":"landing.title","minWidth":40}}
-{"expect":{"frame":"landing.project.e2e-project.open","minWidth":20}}
+{"expect":{"tree":"absent","text":"Open a pane:"}}
+{"expect":{"tree":"absent","text":"NEEDS YOU"}}
+{"expect":{"tree":"contains","text":"quiet projects —"}}
+{"expect":{"frame":"landing.quiet","minWidth":40}}
+{"expect":{"frame":"landing.project.e2e-project","minWidth":20}}
 {"expect":{"frame":"window.composer.startIn","minWidth":20}}
-{"do":{"click":"window.composer.startIn"}}
-{"expect":{"tree":"contains","text":"e2e-project · qa"}}
-{"do":{"press":"Escape"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"do":{"resize":{"width":1000,"height":888}}}
-{"expect":{"frame":"landing.project.e2e-project.open","inside":"window"}}
-{"expect":{"frame":"landing.row.open:terminal","inside":"window"}}
-{"expect":{"frame":"landing.help","clear":"landing.project.e2e-project.open"}}
-{"expect":{"frame":"landing.help","maxHeight":80}}
+{"expect":{"frame":"landing.quiet","inside":"window"}}
+{"expect":{"frame":"landing.project.e2e-project","inside":"window"}}
+{"expect":{"frame":"landing.project.e2e-git","inside":"window"}}
+{"expect":{"frame":"landing.project.e2e-project","clear":"landing.project.e2e-git"}}
+{"expect":{"frame":"landing.quiet","maxHeight":80}}

@@ -27,7 +27,10 @@
 {"expect":{"label":"landing.row.running:0","contains":"Held Billing"}}
 {"expect":{"tree":"absent","text":"Dropped Name"}}
 {"expect":{"frame":"landing.row.running:0","inside":"window"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held"}}
 {"do":{"press":"Return"}}

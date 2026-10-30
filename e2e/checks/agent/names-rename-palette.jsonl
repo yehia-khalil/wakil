@@ -28,7 +28,7 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
+{"expect":{"frame":"landing.main","minWidth":40}}
 {"expect":{"label":"landing.row.running:0","contains":"Billing refund"}}
 {"expect":{"tree":"absent","text":"Fixture Named Conversation"}}
 {"do":{"click":"landing.row.running:0"}}
@@ -46,6 +46,6 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"your folders · asking and reading"}}
+{"expect":{"frame":"landing.main","minWidth":40}}
 {"expect":{"label":"landing.row.running:0","contains":"Fixture Named Conversation"}}
 {"expect":{"tree":"absent","text":"Billing refund"}}

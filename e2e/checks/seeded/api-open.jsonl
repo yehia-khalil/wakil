@@ -1,7 +1,7 @@
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
 {"expect":{"pane":"api-1","field":"kind","equals":"api"}}
-{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
 {"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
 {"expect":{"pane":"api-1","field":"environment","equals":"staging"}}
 {"expect":{"pane":"api-1","field":"credentialed","equals":"true"}}

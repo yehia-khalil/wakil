@@ -2,4 +2,4 @@
 {"dispatch":{"action":"workspace_new_conversation","params":{"workspace":"w"},"refuses":"only the operator can run this"}}
 {"dispatch":{"action":"workspace_open","params":{"workspace":"nope"},"refuses":"there is no workspace nope"}}
 {"dispatch":{"action":"workspace_new_conversation","params":{"workspace":"nope"},"refuses":"there is no workspace nope"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}

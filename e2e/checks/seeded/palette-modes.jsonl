@@ -1,4 +1,4 @@
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"do":{"hotkey":"cmd+k"}}
 {"expect":{"tree":"contains","text":"RUN A COMMAND"}}
 {"expect":{"tree":"contains","text":"Placeholder: run an action…"}}
@@ -22,4 +22,4 @@
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"press":"Escape"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}

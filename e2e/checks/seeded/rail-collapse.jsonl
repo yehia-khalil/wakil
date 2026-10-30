@@ -1,5 +1,8 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"expect":{"frame":"rail.terminal-1","inside":"window"}}
 {"expect":{"tree":"absent","text":"Value: 1 pane, terminal active"}}

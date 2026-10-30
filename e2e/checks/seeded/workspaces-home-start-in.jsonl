@@ -1,15 +1,25 @@
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"expect":{"tree":"contains","text":"in e2e-project · staging ▾"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"in e2e-project · staging"}}
+{"do":{"type":{"into":"window.composer","text":"kept while choosing"}}}
 {"do":{"click":"window.composer.startIn"}}
-{"expect":{"tree":"contains","text":"e2e-project · qa"}}
-{"do":{"press":"Down"}}
-{"do":{"press":"Down"}}
-{"do":{"press":"Return"}}
-{"expect":{"tree":"contains","text":"in e2e-project · qa ▾"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"START IN · MAIN OF"}}
+{"expect":{"tree":"contains","text":"Sets where Return sends. The home stays."}}
+{"expect":{"frame":"window.composer.startIn.plane","inside":"window"}}
+{"do":{"click":"window.composer.startIn.e2e-project/qa"}}
+{"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
+{"expect":{"tree":"contains","text":"in e2e-project · qa"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"contains","text":"kept while choosing"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"absent","text":"STAGING"}}
 {"expect":{"tree":"absent","text":"⌘K ACTIONS"}}
-{"expect":{"tree":"contains","text":"Open a pane:"}}
+{"expect":{"tree":"absent","text":"Open a pane:"}}
+{"do":{"click":"window.composer.startIn"}}
+{"expect":{"tree":"contains","text":"START IN · MAIN OF"}}
+{"do":{"press":"Up"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"in e2e-project · staging"}}
+{"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
 {"do":{"resize":{"width":700,"height":700}}}
 {"expect":{"frame":"window.composer.hint","inside":"window"}}
 {"expect":{"frame":"window.composer.startIn","inside":"window"}}

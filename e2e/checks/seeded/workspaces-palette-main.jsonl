@@ -1,9 +1,9 @@
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"type":{"into":"palette.query","text":"your folders"}}}
 {"expect":{"frame":"palette.row.workspace:main:e2e-fixture/e2e-project/staging","inside":"window"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
 {"expect":{"journal":{"contains":"\"action\":\"workspace_open\""}}}

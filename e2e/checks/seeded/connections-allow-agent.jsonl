@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"printf '%s\\n' '#!/usr/bin/python3' 'import sys,json' 'T=[[\"wiki_read\",{\"readOnlyHint\":True}],[\"wiki_write\",{\"readOnlyHint\":False,\"destructiveHint\":False}],[\"wiki_drop\",{\"readOnlyHint\":False,\"destructiveHint\":True}]]' 'for l in sys.stdin:' ' m=json.loads(l)' ' if \"id\" not in m: continue' ' p=m.get(\"params\") or {}' ' k=m.get(\"method\")' ' r={\"protocolVersion\":p.get(\"protocolVersion\",\"2025-06-18\"),\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"e2e-wiki\",\"version\":\"1\"}} if k==\"initialize\" else {\"tools\":[{\"name\":n,\"inputSchema\":{\"type\":\"object\"},\"annotations\":a} for n,a in T]} if k==\"tools/list\" else {}' ' print(json.dumps({\"jsonrpc\":\"2.0\",\"id\":m[\"id\"],\"result\":r}),flush=True)' > \"$HOME/../bin/e2e-mcp\" && chmod +x \"$HOME/../bin/e2e-mcp\" && echo made"}}
 {"do":{"press":"Return"}}

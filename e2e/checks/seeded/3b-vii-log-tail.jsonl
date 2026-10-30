@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"yes x | head -c 3000000 > ~/../e2e-project/big.log && printf '[2026-10-18 13:33:20] local.ERROR: boom\\n#0 /a.php(1): f()\\n' >> ~/../e2e-project/big.log && echo big-written"}}
 {"do":{"press":"Return"}}

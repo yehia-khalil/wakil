@@ -11,12 +11,12 @@
 {"dispatch":{"action":"workspace_run","params":{"repo":"e2e-api"}}}
 {"expect":{"journal":{"contains":"\"action\":\"workspace_run\""}}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"contains","text":"e2e-api web running on :"}}
 {"expect":{"tree":"contains","text":"Stop"}}
 {"do":{"click":"landing.row.running:0"}}
-{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
 {"dispatch":{"action":"workspace_stop","params":{}}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"absent","text":"e2e-api web running on :"}}
