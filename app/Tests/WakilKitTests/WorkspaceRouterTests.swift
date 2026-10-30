@@ -12,10 +12,14 @@ private actor Said {
     func move(_ c: String, _ from: String?, _ to: String) { moves.append((c, from, to)) }
 }
 
-private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails: String? = nil) -> RecordingToolCaller {
+private func fakeGit(mainBranch: String = "main", uncommitted: Int = 2, addFails: String? = nil,
+                     notRepositories: Set<String> = []) -> RecordingToolCaller {
     RecordingToolCaller(reply: { name, args in
         guard case .object(let a) = args else { return .object([:]) }
         func s(_ k: String) -> String { if case .string(let v)? = a[k] { v } else { "" } }
+        if notRepositories.contains(s("root")) {
+            throw WorkspaceWriteError(description: "\(name): not a git repository")
+        }
         switch name {
         case "git_status":
             let files: [JSONValue] = (0..<uncommitted).map { .object(["path": .string("f\($0)"), "group": .string("changed")]) }
@@ -80,6 +84,49 @@ private func asAgent<T: Sendable>(_ conversation: String, _ body: @Sendable () a
     #expect(try await r.routePath("/p/core/a.go", action: "editor_save") == "/p/core/a.go")
     #expect(try await r.routeRoot("/p/core", action: "editor_changes_commit") == "/p/core")
     #expect(await git.calls.isEmpty)
+}
+
+/// A conversation whose agent never started (no harness, no start in flight) holds no checkout and
+/// is moved nowhere: no agent made the write. The seeded e2e checks dispatch on such a place's
+/// shown socket, and their writes — like the operator's — land where they were aimed
+/// (amendment 2026-10-30).
+@Test func aConversationWhoseAgentNeverStartedRunsNoRule() async throws {
+    let git = fakeGit()
+    let store = WorkspaceStore()
+    await store.use(load: { WorkspacesFile() }, save: { _ in })
+    let r = WorkspaceRouter(store: store, git: git)
+    await r.install(WorkspaceRouterHooks(
+        conversation: { id in
+            WorkspaceConversationFacts(id: id, lineageRoot: id, title: "", organization: "initech", project: "estate",
+                                       environment: "staging", mainRoots: ["/p/core"], agentRuns: false)
+        },
+        states: { [:] }))
+    #expect(try await asAgent("c1") { try await r.routePath("/p/core/a.go", action: "editor_save") } == "/p/core/a.go")
+    #expect(try await asAgent("c1") { try await r.routeRoot("/p/core", action: "editor_changes_stage") } == "/p/core")
+    let sw = try await asAgent("c1") { try await r.routeSwitch(root: "/p/core", branch: "topic", action: "editor_changes_switch") }
+    #expect(sw == RoutedSwitch(root: "/p/core", branch: "topic"))
+    #expect(await asAgent("c1") { await r.callerCheckouts() } == nil)
+    #expect(await git.calls.isEmpty)
+    #expect(await store.all().isEmpty)
+}
+
+/// A root that is not a git repository has no copy to make, and no agent writes in Main (decision 7):
+/// the agent's write there is refused whole, naming why, before any workspace is made
+/// (amendment 2026-10-30).
+@Test func anAgentsWriteInARootThatIsNotARepositoryIsRefusedNamingDecision7() async throws {
+    let git = fakeGit(notRepositories: ["/p/core"])
+    let said = Said()
+    let r = await router(git: git, said: said)
+    await #expect {
+        try await asAgent("c1") { try await r.routePath("/p/core/notes.txt", action: "editor_save") }
+    } throws: { error in
+        let text = "\(error)"
+        return text.contains("editor_save: core is not a git repository") && text.contains("decision 7")
+    }
+    #expect(await git.calls.allSatisfy { $0.name != "git_worktree_add" })
+    #expect(await r.store.all().isEmpty)
+    #expect(await r.store.workspace(ofConversation: "c1") == nil)
+    #expect(await said.moves.isEmpty)
 }
 
 @Test func step0AnAgentInMainGetsAWorkspaceAndItsWriteLandsInTheCopy() async throws {

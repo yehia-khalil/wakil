@@ -79,7 +79,10 @@ green, the work committed.
    **That socket is the on-screen place's** (`ScreenChannel`, re-chosen after every
    switch), so a dispatch acts *as that place's agent*: `ctx_set_project` or
    `ctx_set_environment` sent this way is refused (an agent cannot move its own place).
-   Switch with a `do` step instead.
+   Switch with a `do` step instead. **No agent runs behind a seeded dispatch**, so the
+   workspaces write rule does not move it: its writes land in Main's folder, where the
+   parity click's do. A check that wants an agent's write to start a workspace belongs in
+   `agent/` (`workspaces-first-change.jsonl`).
 
    **An operator-only action goes over the operator channel.** The agent socket refuses
    operator-only actions (`ActionError.operatorOnly`), so the staged fixture (bundle id

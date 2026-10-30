@@ -434,6 +434,17 @@ Calls the build made where the umbrella left room, or where code forced a refine
 - **Branch name draft** waits 4 s for the ✨ quick task, only when Branches instructions exist and
   commit drafts are on; otherwise the fallback name.
 
+### Amendment 2026-10-30 — piece 1's e2e run
+
+- **The rule applies to a conversation whose agent runs** (a harness, or a session start in flight).
+  A place's conversation minted by a pane or a row, with no agent ever started, holds nothing and
+  made no write: a dispatch naming it lands where it was aimed, as the operator's does. The seeded
+  e2e checks dispatch as exactly such a conversation, so their parity halves still meet in Main's
+  folder; `e2e/checks/agent/` checks, whose scripted agent runs, see the rule.
+- **A root that is not a git repository has no copy**, and no agent writes in Main (decision 7): an
+  agent's write there is refused whole, naming decision 7 and asking for the operator's hand or a
+  `git init`, before any workspace is made. The operator's own writes there are unchanged.
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).

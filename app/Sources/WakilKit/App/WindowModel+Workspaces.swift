@@ -15,14 +15,16 @@ extension WindowModel {
         Task { await router.install(hooks) }
     }
 
-    /// What the write rule needs of conversation `id`; nil when it is not live.
+    /// What the write rule needs of conversation `id`; nil when it is not live. `agentRuns` is false
+    /// for one no agent was started in (a place's reserved conversation the e2e harness dispatches as).
     func workspaceFacts(_ id: String) async -> WorkspaceConversationFacts? {
         guard let agent = conversations[id] else { return nil }
         let roots = agent.place == place ? mainGitRootPaths : await mainRootPaths(forCaller: agent.caller)
         return WorkspaceConversationFacts(
             id: agent.id, lineageRoot: agent.lineageRoot, title: agent.title, ticket: agent.handoff?.key,
             organization: agent.place.organization, project: agent.place.project,
-            environment: agent.place.environment, mainRoots: roots, firstMessage: agent.firstMessage)
+            environment: agent.place.environment, mainRoots: roots, firstMessage: agent.firstMessage,
+            agentRuns: agent.runsOrStarts)
     }
 
     /// Every live conversation's state, for the rule's idle/working test.

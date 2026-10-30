@@ -15,9 +15,13 @@ public struct WorkspaceConversationFacts: Sendable, Equatable {
     public let mainRoots: [String]
     /// Its first message, for the branch name's draft.
     public let firstMessage: String?
+    /// Whether its agent runs (a harness, or a session start in flight). One that never started made
+    /// no write: a dispatch naming it runs no rule (amendment 2026-10-30).
+    public let agentRuns: Bool
 
     public init(id: String, lineageRoot: String?, title: String, ticket: String? = nil, organization: String,
-                project: String, environment: String, mainRoots: [String], firstMessage: String? = nil) {
+                project: String, environment: String, mainRoots: [String], firstMessage: String? = nil,
+                agentRuns: Bool = true) {
         self.id = id
         self.lineageRoot = lineageRoot
         self.title = title
@@ -27,6 +31,7 @@ public struct WorkspaceConversationFacts: Sendable, Equatable {
         self.environment = environment
         self.mainRoots = mainRoots
         self.firstMessage = firstMessage
+        self.agentRuns = agentRuns
     }
 }
 
@@ -100,8 +105,17 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         return c
     }
 
+    /// The agent's conversation and what the window knows of it, when the write rule applies: an
+    /// agent's dispatch from a conversation whose agent runs. Nil for the operator's (call 12) and
+    /// for a dispatch naming a conversation no agent was ever started in — it holds nothing and no
+    /// agent made the write, so it lands where it was aimed (amendment 2026-10-30).
+    private func agentFacts() async -> (String, WorkspaceConversationFacts)? {
+        guard let c = agentConversation(), let facts = await hooks?.conversation(c), facts.agentRuns else { return nil }
+        return (c, facts)
+    }
+
     public func routeRoot(_ root: String, action: String) async throws -> String {
-        guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return root }
+        guard let (c, facts) = await agentFacts() else { return root }
         await store.ensure(org: facts.organization)
         return try await serially {
             guard let repo = try await self.repo(of: root, conversation: c, facts: facts, action: action) else { return root }
@@ -110,7 +124,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     }
 
     public func routePath(_ path: String, action: String) async throws -> String {
-        guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return path }
+        guard let (c, facts) = await agentFacts() else { return path }
         await store.ensure(org: facts.organization)
         return try await serially {
             guard let repo = try await self.repo(of: path, conversation: c, facts: facts, action: action) else { return path }
@@ -120,9 +134,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     }
 
     public func routeSwitch(root: String, branch: String, action: String) async throws -> RoutedSwitch {
-        guard let c = agentConversation(), let facts = await hooks?.conversation(c) else {
-            return RoutedSwitch(root: root, branch: branch)
-        }
+        guard let (c, facts) = await agentFacts() else { return RoutedSwitch(root: root, branch: branch) }
         await store.ensure(org: facts.organization)
         return try await serially {
             guard let repo = try await self.repo(of: root, conversation: c, facts: facts, action: action) else {
@@ -138,7 +150,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     public func callerCheckoutRoots() async -> [String] { await callerCheckouts() ?? [] }
 
     public func callerCheckouts() async -> [String]? {
-        guard let c = agentConversation(), let facts = await hooks?.conversation(c) else { return nil }
+        guard let (c, facts) = await agentFacts() else { return nil }
         return await store.workspace(ofConversation: c, root: facts.lineageRoot)?.checkouts.compactMap(\.path) ?? []
     }
 
@@ -215,7 +227,12 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         let input = WriteRuleInput(
             conversation: c, workspace: mine, repo: repo, holders: await store.holders(),
             states: await hooks?.states() ?? [:], mainBranch: mainBranch)
-        switch decideWrite(input) {
+        let decision = decideWrite(input)
+        switch decision {
+        case .startWorkspace, .make: try await requireRepository(repo, action: action)
+        default: break
+        }
+        switch decision {
         case .startWorkspace:
             return try await startWorkspace(repo, conversation: c, facts: facts)
         case .use(let r):
@@ -237,6 +254,21 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         case .switchTakesOver, .switchBranchesOff:
             // Only a switch asks the rule with a target; `switchIn` handles it.
             return mine!.checkout(of: repo)!.path!
+        }
+    }
+
+    /// A copy is a git worktree, so a root that is not a repository has none to make; and no agent
+    /// writes in Main (decision 7). The write is refused whole before any workspace is made
+    /// (amendment 2026-10-30). Any other failure of the read is left to the worktree add to report.
+    private func requireRepository(_ repo: String, action: String) async throws {
+        guard let git else { return }
+        do {
+            _ = try await callCheckedTool(git, tool: "git_status", arguments: .object(["root": .string(repo)]),
+                                          action: "git_status", timeout: MCPClient.readReplyTimeout)
+        } catch where "\(error)".contains("not a git repository") {
+            throw WorkspaceWriteError(description: notARepositoryRefusal(action: action, repo: repoName(repo)))
+        } catch {
+            return
         }
     }
 
@@ -454,6 +486,13 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
     }
 
     nonisolated func repoName(_ repo: String) -> String { (repo as NSString).lastPathComponent }
+}
+
+/// An agent's write in a project root that is not a git repository (amendment 2026-10-30), whole.
+func notARepositoryRefusal(action: String, repo: String) -> String {
+    "\(action): \(repo) is not a git repository, so Wakil cannot make a workspace copy of it, and no agent "
+        + "writes in the operator's own folder (decision 7). Ask the operator to make this change, or to make "
+        + "\(repo) a git repository first."
 }
 
 /// A drafted branch name made safe to hand git: spaces to "-", nothing that starts a flag; nil

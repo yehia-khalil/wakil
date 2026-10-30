@@ -128,6 +128,23 @@ struct WindowModelWorkspacesTests {
         await model.shutdown()
     }
 
+    /// The write rule applies to a conversation whose agent runs. A place's conversation minted by a
+    /// pane, with no agent ever started (the seeded e2e checks' dispatches name it), is not one; a sent
+    /// message starts it (amendment 2026-10-30).
+    @Test func aConversationWithNoAgentStartedIsNotAWriterForTheRule() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.markSessionStarted()
+        let idle = try #require(model.currentAgent)
+        #expect(await model.workspaceFacts(idle.id)?.agentRuns == false)
+        #expect(await model.send("fix the guard"))
+        let agent = try #require(model.currentAgent)
+        #expect(await model.workspaceFacts(agent.id)?.agentRuns == true)
+        await model.shutdown()
+    }
+
     @Test func twoConversationsInOneWorkspaceShareItsView() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)
