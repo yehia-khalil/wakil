@@ -4,6 +4,7 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.project:e2e-git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"workspace_start","params":{"repo":"e2e-api","base":"main"},"refuses":"only an agent's conversation starts its own copy"}}
 {"do":{"type":{"into":"window.composer","text":"start the copy from main"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"started the copy from main"}}

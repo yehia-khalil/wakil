@@ -478,6 +478,7 @@ workspace_archive	its parity (workspaces, piece 1): operator-only, and the contr
 workspace_restore	its parity (workspaces, piece 1): workspace_archive's case.
 workspace_bring_home	its parity (workspaces, piece 1): workspace_archive's case.
 workspace_set_environment	its parity (workspaces, piece 1): workspace_archive's case.
+workspace_start	its parity (workspaces, piece 1, decision 10 refined): an agent's choice of its copy's base — the operator has no control that starts a copy (their writes land where they are aimed). agent/workspaces-start-from-base.jsonl drives it through the scripted agent, and dispatches it from the operator's channel to read its refusal.
 conversation_move	its parity (workspaces, piece 1): workspace_archive's case — Move to workspace… is the card's and ⌘P's, piece 3's.
 editor.folderTag	a Text (workspaces, piece 1): the editor header's `workspace copy` / `Main · your folder` tag, with no press action. Read, not pressed — agent/workspaces-first-change.jsonl asserts `workspace copy` once the agent's first change carried the editor into the copy.
 pane.<…>.folderTag	a Text (workspaces, piece 1): a terminal header's folder tag, editor.folderTag's case. Read, not pressed — agent/workspaces-first-change.jsonl opens a terminal in the workspace's view and asserts its shell is in the copy (`IN-THE-COPY`); the tag's words are the editor's, `checkoutTag`, pinned by WindowModelWorkspacesTests.
