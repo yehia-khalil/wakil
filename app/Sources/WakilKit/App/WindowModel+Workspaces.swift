@@ -97,6 +97,40 @@ extension WindowModel {
         }
     }
 
+    /// What `agent`'s map reads (spec, "The agent sees real paths"): its workspace from the record,
+    /// with holders and states; for one in Main, Main's folders, the conversations there and the
+    /// project's workspaces.
+    func workspaceMapInput(for agent: PlaceAgent) async -> WorkspaceMapInput {
+        let place = agent.place
+        let listings = await workspaceRouter?.listing(project: place.project) ?? []
+        let own = agent.workspace.map { w in
+            listings.first { $0.workspace.id == w.id } ?? WorkspaceListing(workspace: w, holders: [:], live: [:])
+        }
+        let roots = place == self.place ? mainGitRootPaths : await mainRootPaths(forCaller: agent.caller)
+        var branches: [String: String] = [:]
+        if place == self.place {
+            for r in gitRoots where roots.contains(r.root) { branches[r.root] = r.branch }
+        }
+        let rows = liveConversationRows(in: place)
+        var mainLive: [String: ConversationState] = [:]
+        for row in rows where conversations[row.id]?.workspace == nil { mainLive[row.id] = row.state }
+        return WorkspaceMapInput(
+            conversation: agent.id, project: place.project, environment: place.environment, own: own,
+            mainRoots: roots, mainBranches: branches, workspaces: listings, mainLive: mainLive,
+            titles: Dictionary(rows.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a }))
+    }
+
+    /// The map block `agent`'s next turn carries after its words: on its session's first turn, and
+    /// whenever the map changed since it was last sent; nil otherwise, with no project (no folders
+    /// to map), and in a window the write rule is not wired into (no record: `useWorkspaces`).
+    func workspaceMapUpdate(for agent: PlaceAgent) async -> String? {
+        guard workspaceRouter != nil, !agent.place.project.isEmpty else { return nil }
+        let map = workspaceMapText(await workspaceMapInput(for: agent))
+        guard map != agent.sentWorkspaceMap else { return nil }
+        agent.sentWorkspaceMap = map
+        return workspaceMapHeader + "\n" + map
+    }
+
     /// The workspace on screen: the shown conversation's (nil: Main). The context line names it.
     public var workspaceOnScreen: Workspace? { currentAgent?.workspace }
 

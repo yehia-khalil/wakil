@@ -37,6 +37,9 @@ public final class PlaceAgent {
     /// 3a-iii-b: the composed instructions this session last received — at launch, or in a turn
     /// since. nil until the session's first turn records it.
     var launchedInstructions: String?
+    /// Workspaces, piece 1: the map (`workspaceMapText`) this session last received; nil before its
+    /// first turn, so that turn carries it.
+    var sentWorkspaceMap: String?
     /// The organisation's connections revision (`AgentConnectionsBox.revision`) the live session
     /// launched at; nil before one. Behind the box's means a connection changed since: the next
     /// message restarts the agent (spec amendment 2026-10-26, `WindowModel.send`).

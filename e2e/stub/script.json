@@ -165,6 +165,10 @@
       "match": "write the workspace note",
       "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/ws-note.txt", "kind": "file" } },
       "reply": "wrote the workspace note"
+    },
+    {
+      "match": "where do you work",
+      "reply": "map says: {map}"
     }
   ]
 }

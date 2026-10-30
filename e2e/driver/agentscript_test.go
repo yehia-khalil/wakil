@@ -138,6 +138,32 @@ func TestTheFirstMatchingRuleWins(t *testing.T) {
 	}
 }
 
+// Workspaces, piece 1: the window appends the workspace map after the operator's words. A rule
+// matches the words only — a map naming another conversation's title must not trigger its rule —
+// and `{map}` reads the map's first line, nothing when the turn carried none.
+func TestARuleMatchesTheWordsAndReadsTheMapAfterThem(t *testing.T) {
+	path := writeScript(t, `{"rules":[
+	  {"match":"start the held agent","reply":"held"},
+	  {"match":"where do you work","reply":"map says: {map}"}
+	]}`)
+	script, err := LoadAgentScript(path)
+	if err != nil {
+		t.Fatalf("loading the script: %v", err)
+	}
+	prompt := "where do you work\n\n[Wakil: where you work. This map replaces any earlier one.]\n" +
+		"You are in Main of project api (staging).\nOther conversations in Main:\n- ‘start the held agent’ (working)"
+	rule, found := script.Rule(prompt)
+	if !found || rule.Reply != "map says: {map}" {
+		t.Fatalf("the words' rule answers, got %q", rule.Reply)
+	}
+	if got := MapLine(prompt); got != "You are in Main of project api (staging)." {
+		t.Fatalf("MapLine = %q", got)
+	}
+	if got := MapLine("where do you work"); got != "" {
+		t.Fatalf("a turn with no map reads %q", got)
+	}
+}
+
 // A frame with no `type` is one StreamJSON decodes as nothing, so a check
 // waiting on what it carries would wait on a frame that never arrived.
 func TestAnEmittedFrameWithNoTypeIsRefused(t *testing.T) {

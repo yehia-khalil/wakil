@@ -285,7 +285,7 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 		}
 	}
 
-	text := rule.Render(value)
+	text := strings.ReplaceAll(rule.Render(value), driver.MapPlaceholder, driver.MapLine(prompt))
 	if text == "" {
 		text = "done"
 	}

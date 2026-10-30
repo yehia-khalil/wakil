@@ -8505,6 +8505,8 @@ public final class WindowModel {
         // its parent was first launched with (the 3a-iii-b probe), which may predate the current
         // text — so its first turn carries the text as an update.
         if !keepsInstructions { agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil }
+        // A new or resumed session is sent its map again on its first turn.
+        agent.sentWorkspaceMap = nil
         agent.launchedConnectionsRevision = started.connectionsRevision
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
@@ -8762,6 +8764,10 @@ public final class WindowModel {
                 outgoing = update + "\n\n" + outgoing
                 agent.appendRow(label: "instructions", detail: "Instructions updated — the agent has the new ones from this turn.")
             }
+            // Workspaces, piece 1: where it works — its workspace's map, Main's with the project's
+            // workspaces — on its first turn and whenever it changed. After the words, as the
+            // identifier note is: the operator's words stay what a session is listed by.
+            if let map = await workspaceMapUpdate(for: agent) { outgoing += "\n\n" + map }
             try await harness.send(outgoing)
             // After the send succeeded: a turn that never went leaves no
             // `voice_turn` line, and no suspension sits before the
