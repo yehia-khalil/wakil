@@ -248,7 +248,8 @@ private func settle(until done: () -> Bool) async {
     let clock = Clock()
     let (composer, _, _) = model(steps: [.init(after: 0, event: .partial(settled: "open", volatile: ""))], clock: clock)
     composer.optionDown(); clock.t = 0.2; composer.tick()
-    await settle()
+    // Until "open" arrives nothing is heard, and a key then closes the mic (the test above).
+    await settle(until: { !composer.machine.settled.isEmpty })
     #expect(composer.otherInput() == true)
     #expect(composer.machine.isCapturing)
 }
