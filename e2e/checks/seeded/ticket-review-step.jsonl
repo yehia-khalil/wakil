@@ -17,9 +17,10 @@
 {"expect":{"pane":"editor-1","field":"cursor.line","equals":"3"}}
 {"dispatch":{"action":"review_step","params":{"pane":"editor-1","delta":1}}}
 {"expect":{"pane":"editor-1","field":"cursor.line","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
-{"dispatch":{"action":"editor_goto","params":{"pane":"editor-1","line":3}}}
-{"expect":{"pane":"editor-1","field":"cursor.line","equals":"3"}}
+{"dispatch":{"action":"editor_goto","params":{"pane":"editor-1","line":2}}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"2"}}
 {"dispatch":{"action":"review_step","params":{"pane":"editor-1","delta":1,"from":"T_2"}}}
 {"expect":{"pane":"editor-1","field":"cursor.line","equals":"1"}}
 {"expect":{"pane":"editor-1","field":"active","equals":"0"}}

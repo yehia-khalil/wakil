@@ -30,5 +30,7 @@
 {"expect":{"tree":"contains","text":"Tokens live in the Keychain"}}
 {"expect":{"frame":"editor.ticket.add:notDone","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.line:decisions:d1","inside":"editor.ticket","minWidth":60}}
+{"do":{"focus":"editor.ticket.line:decisions:d1"}}
+{"expect":{"focus":"editor.ticket.line:decisions:d1"}}
 {"expect":{"frame":"editor.ticket.remove:decisions:d1","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.remove:decisions:d1","clear":"editor.ticket.line:decisions:d1"}}
