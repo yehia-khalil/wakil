@@ -67,19 +67,17 @@ extension WorkspaceRouter {
         return await store.loadFailure
     }
 
-    private func named(_ id: String) async throws -> Workspace {
-        guard let w = await store.workspace(id) else {
-            throw WorkspaceWriteError(description: "There is no workspace \(id)")
-        }
-        return w
-    }
-
     /// The workspace `id` names: its id, else its slug when one workspace of the organisation has it
-    /// (a slug is unique within a project, and is the folder name the operator sees).
-    private func named(idOrSlug id: String) async throws -> Workspace {
+    /// (a slug is unique within a project, and is the folder name the operator sees). Every
+    /// operator action that names a workspace takes either (workspace_set_environment's rule).
+    public func workspace(idOrSlug id: String) async -> Workspace? {
         if let w = await store.workspace(id) { return w }
         let bySlug = await store.all().filter { $0.slug == id }
-        guard bySlug.count == 1, let w = bySlug.first else {
+        return bySlug.count == 1 ? bySlug.first : nil
+    }
+
+    private func named(_ id: String) async throws -> Workspace {
+        guard let w = await workspace(idOrSlug: id) else {
             throw WorkspaceWriteError(description: "There is no workspace \(id)")
         }
         return w
@@ -95,6 +93,7 @@ extension WorkspaceRouter {
     public func archive(_ id: String, confirmed: Bool) async throws -> Workspace {
         try await serially {
             let w = try await self.named(id)
+            let id = w.id
             let states = await self.hooks?.states() ?? [:]
             for c in await self.store.members(of: id) {
                 if states[c] == .working {
@@ -127,7 +126,8 @@ extension WorkspaceRouter {
     /// snapshot put back (`CheckoutStart.existingBranch`).
     public func restore(_ id: String) async throws -> Workspace {
         try await serially {
-            _ = try await self.named(id)
+            let found = try await self.named(id)
+            let id = found.id
             await self.store.update(id) { $0.archived = false }
             try await self.store.save()
             return try await self.named(id)
@@ -140,6 +140,7 @@ extension WorkspaceRouter {
     public func bringHome(_ id: String, repo: String) async throws -> Workspace {
         try await serially {
             let w = try await self.named(id)
+            let id = w.id
             guard let co = w.checkout(of: repo) ?? w.checkouts.first(where: { $0.repoName == repo }) else {
                 throw WorkspaceWriteError(description: "‘\(w.name)’ has no copy of \(repo)")
             }
@@ -186,7 +187,7 @@ extension WorkspaceRouter {
         let (w, old) = try await serially { () -> (Workspace, String) in
             let clean = environment.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { throw WorkspaceWriteError(description: "workspace_set_environment: name an environment") }
-            let found = try await self.named(idOrSlug: id)
+            let found = try await self.named(id)
             await self.store.update(found.id) { $0.environment = clean }
             try await self.store.save()
             return (try await self.named(found.id), found.environment)
@@ -217,7 +218,7 @@ extension WorkspaceRouter {
                 guard !w.archived else { throw WorkspaceWriteError(description: "‘\(w.name)’ is archived; restore it first") }
                 target = w
             }
-            await self.store.move(conversation, root: facts.lineageRoot, to: id)
+            await self.store.move(conversation, root: facts.lineageRoot, to: target?.id)
             try? await self.store.save()
             if let target {
                 await self.hooks?.say(conversation, .moved(name: target.name))

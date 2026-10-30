@@ -351,6 +351,23 @@ private func gitWithSnapshot() -> RecordingToolCaller {
                                         "ref": .string("refs/wakil/snapshots/fix-otp-guard-order/core")]))
 }
 
+/// Every operator action that names a workspace takes its id or its slug, the folder name the
+/// operator sees (workspace_set_environment's rule): archive and restore by the slug act on the id.
+@Test func archiveAndRestoreTakeTheWorkspacesSlug() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, states: ["c1": .idle], said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    let slug = try #require(await r.store.workspace(id)?.slug)
+    #expect(slug != id)
+    #expect(await r.workspace(idOrSlug: slug)?.id == id)
+    #expect(try await r.archive(slug, confirmed: false).id == id)
+    #expect(await r.store.workspace(id)?.archived == true)
+    #expect(try await r.restore(slug).id == id)
+    #expect(await r.store.workspace(id)?.archived == false)
+    await #expect(throws: WorkspaceWriteError.self) { try await r.archive("no-such-slug", confirmed: false) }
+}
+
 @Test func archiveIsRefusedWhileAConversationInItWorksAndAsksWhenOneWaits() async throws {
     let git = gitWithSnapshot()
     let r = await router(git: git, states: ["c1": .working], said: Said(), titles: ["c1": "backend"])

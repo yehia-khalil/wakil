@@ -71,7 +71,7 @@ public func registerWorkspaceActions(
 
     await registry.register(Action(
         name: "workspace_archive",
-        description: "Archive a workspace (decision 11): refused while a conversation in it is working; with one waiting "
+        description: "Archive a workspace (its id or slug; decision 11): refused while a conversation in it is working; with one waiting "
             + "on the operator, refused unless confirm. Each copy with uncommitted work is snapshotted "
             + "(refs/wakil/snapshots/<workspace>/<repo>) and every copy removed; branches stay. workspace_restore brings it back.",
         kind: .mutate, audience: .operatorOnly,
@@ -87,7 +87,7 @@ public func registerWorkspaceActions(
 
     await registry.register(Action(
         name: "workspace_restore",
-        description: "Restore an archived workspace: listed again; each copy is re-made at its next write with its snapshot put back.",
+        description: "Restore an archived workspace (its id or slug): listed again; each copy is re-made at its next write with its snapshot put back.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["workspace": text], required: ["workspace"]),
         handler: { params in
@@ -98,7 +98,7 @@ public func registerWorkspaceActions(
 
     await registry.register(Action(
         name: "workspace_bring_home",
-        description: "Bring to Main: switch Main's folder of repo (its path or folder name) to the workspace's branch, the "
+        description: "Bring to Main: switch Main's folder of repo (its path or folder name) to the workspace's (its id or slug) branch, the "
             + "copy's uncommitted work coming along; the copy is snapshotted and removed first. Refused while a working "
             + "conversation holds that repo. An agent's next change to it takes the branch back into a new copy.",
         kind: .mutate, audience: .operatorOnly,
@@ -127,7 +127,7 @@ public func registerWorkspaceActions(
 
     await registry.register(Action(
         name: "conversation_move",
-        description: "Move to workspace… (decision 6): put a live conversation in another workspace of its project, or in "
+        description: "Move to workspace… (decision 6): put a live conversation in another workspace of its project (its id or slug), or in "
             + "Main (workspace \"main\"), while it holds no copy; one holding a copy is not moved, so no change is stranded.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["conversation": text, "workspace": text], required: ["conversation", "workspace"]),
