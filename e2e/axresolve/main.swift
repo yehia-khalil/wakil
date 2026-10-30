@@ -141,10 +141,23 @@ struct Failure: Encodable {
 func emit(_ reply: Reply) -> Never {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let data = (try? encoder.encode(reply)) ?? Data("{\"ok\":false}".utf8)
-    FileHandle.standardOutput.write(data)
+    if let data = try? encoder.encode(reply) {
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+        exit(reply.ok ? 0 : 1)
+    }
+    // JSON has no NaN or infinity, so an element reporting one makes the whole reply unencodable
+    // (night run 2026-10-29: ticket-narrow's `{"ok":false}` with no payload). Name it instead.
+    let bad = (reply.elements ?? [])
+        .filter { ![$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
+        .map(\.identifier)
+    let message = bad.isEmpty
+        ? "the reply could not be encoded"
+        : "\(bad.joined(separator: ", ")) reports a frame that is not a finite number"
+    let refusal = Reply(ok: false, error: Failure(code: "non_finite_frame", message: message))
+    FileHandle.standardOutput.write((try? encoder.encode(refusal)) ?? Data("{\"ok\":false}".utf8))
     FileHandle.standardOutput.write(Data("\n".utf8))
-    exit(reply.ok ? 0 : 1)
+    exit(1)
 }
 
 func fail(_ code: String, _ message: String) -> Never {
