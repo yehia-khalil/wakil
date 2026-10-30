@@ -384,6 +384,27 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     await #expect(throws: WorkspaceWriteError.self) { try await r.setEnvironment(id, to: " ") }
 }
 
+/// Decision 28: the window hears of the change once the record is saved, with the environment it
+/// had, so its data panes follow; setting the environment it already has tells it nothing. The
+/// workspace is named by its id or its slug.
+@Test func anEnvironmentChangeTellsTheWindowWhatItWas() async throws {
+    let git = gitWithSnapshot()
+    let r = await router(git: git, said: Said())
+    _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
+    let id = try #require(await r.store.workspace(ofConversation: "c1")?.id)
+    let heard = Said()
+    await r.install(WorkspaceRouterHooks(
+        conversation: { facts($0) }, states: { [:] },
+        environmentChanged: { w, from in await heard.move("env", from, w.environment) }))
+    _ = try await r.setEnvironment(id, to: "qa")
+    _ = try await r.setEnvironment(id, to: "qa")
+    // Named by its slug, the folder name the operator sees.
+    let slug = try #require(await r.store.workspace(id)?.slug)
+    #expect(try await r.setEnvironment(slug, to: "staging").id == id)
+    let moves = await heard.moves
+    #expect(moves.map { "\($0.1 ?? "")→\($0.2)" } == ["staging→qa", "qa→staging"])
+}
+
 @Test func aResumedConversationGoesBackToItsWorkspaceByItsLineageRoot() async throws {
     let git = gitWithSnapshot()
     let said = Said()

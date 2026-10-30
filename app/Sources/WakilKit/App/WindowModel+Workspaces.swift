@@ -11,7 +11,8 @@ extension WindowModel {
             states: { [weak self] in await self?.conversationStates() ?? [:] },
             say: { [weak self] conversation, line in await self?.sayWorkspace(conversation, line) },
             moved: { [weak self] conversation, from, to in await self?.workspaceMoved(conversation, from: from, to: to) },
-            branchName: { [weak self] request in await self?.draftBranchName(request) })
+            branchName: { [weak self] request in await self?.draftBranchName(request) },
+            environmentChanged: { [weak self] w, from in await self?.workspaceDataPanesFollow(w, from: from) })
         Task { await router.install(hooks) }
     }
 

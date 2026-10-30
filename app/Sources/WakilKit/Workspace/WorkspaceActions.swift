@@ -88,8 +88,9 @@ public func registerWorkspaceActions(
 
     await registry.register(Action(
         name: "workspace_set_environment",
-        description: "Change the environment a workspace belongs to (decision 28): its record and the conversations started "
-            + "in it from now; running conversations keep the environment they started in.",
+        description: "Change the environment a workspace (its id or slug) belongs to (decision 28): its record, its view's "
+            + "data panes and the conversations started in it from now; running conversations keep the environment they "
+            + "started in.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["workspace": text, "environment": text], required: ["workspace", "environment"]),
         handler: { params in

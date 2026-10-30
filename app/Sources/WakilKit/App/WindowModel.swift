@@ -9680,6 +9680,43 @@ public final class WindowModel {
         await showLanding(in: target.place)
     }
 
+    /// Workspaces, piece 1 (decision 28): workspace `w`'s environment changed from `old`, so its
+    /// view's data panes — database and api — leave the view in `old` for the view in the new one,
+    /// frame and subject as they were, and their rows and replies, which describe `old`, are let go.
+    /// Each subject re-runs in the new environment when that view is shown (now, if it is on
+    /// screen). The running conversations keep `old` and the view's other panes (Decision 41's pin).
+    func workspaceDataPanesFollow(_ w: Workspace, from old: String) async {
+        guard old != w.environment, !organization.isEmpty else { return }
+        let root = workspaceCanvasRoot(w)
+        let from = LayoutScope(organization: organization, project: w.project, environment: old, lineageRoot: root)
+        let to = LayoutScope(organization: organization, project: w.project, environment: w.environment, lineageRoot: root)
+        await loadOffScreen(from)
+        await loadOffScreen(to)
+        loadedLayoutScopes.formUnion([from, to])
+        let data = await ScopeRouting.$home.withValue(from) { await layout.snapshot() }.panes.filter {
+            PaneKinds.is($0.kind, DataSurfacePaneKind.self) || PaneKinds.is($0.kind, ApiPaneKind.self)
+        }
+        guard !data.isEmpty else { return }
+        for pane in data {
+            await ScopeRouting.$home.withValue(from) {
+                try? await layout.close(id: pane.id)
+                await panes.drop(paneId: pane.id)
+            }
+            _ = await ScopeRouting.$home.withValue(to) { await layout.carry(pane) }
+        }
+        for scope in [from, to] where scope != layoutScope {
+            await persistLayout(await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }, for: scope)
+        }
+        if to == layoutScope {
+            await readLayoutSnapshot()
+            await restorePaneContents()
+        } else {
+            scopesAwaitingRestore.insert(to)
+        }
+        await refreshLayout()
+        await refreshPanes()
+    }
+
     /// Workspaces, piece 1 (decision 22, call 9): the terminals step 0 carried into workspace `w`'s
     /// view `view` stay in Main's view — the canvas `place`'s Landing draws over, which the next
     /// conversation started there takes — each shell, history and frame as it was; a new terminal

@@ -74,6 +74,17 @@ extension WorkspaceRouter {
         return w
     }
 
+    /// The workspace `id` names: its id, else its slug when one workspace of the organisation has it
+    /// (a slug is unique within a project, and is the folder name the operator sees).
+    private func named(idOrSlug id: String) async throws -> Workspace {
+        if let w = await store.workspace(id) { return w }
+        let bySlug = await store.all().filter { $0.slug == id }
+        guard bySlug.count == 1, let w = bySlug.first else {
+            throw WorkspaceWriteError(description: "There is no workspace \(id)")
+        }
+        return w
+    }
+
     private func title(_ conversation: String) async -> String {
         await hooks?.conversation(conversation)?.title ?? "a conversation"
     }
@@ -169,16 +180,19 @@ extension WorkspaceRouter {
 
     /// Decision 28: a workspace belongs to one environment; the operator changes it from its view's
     /// header. Running conversations keep the environment they started in (Decision 41's pin); the
-    /// next conversation started in the workspace, and its data panes, follow the record.
+    /// next conversation started in the workspace, and its data panes, follow the record
+    /// (`WorkspaceRouterHooks.environmentChanged`, once the record is saved).
     public func setEnvironment(_ id: String, to environment: String) async throws -> Workspace {
-        try await serially {
+        let (w, old) = try await serially { () -> (Workspace, String) in
             let clean = environment.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { throw WorkspaceWriteError(description: "workspace_set_environment: name an environment") }
-            _ = try await self.named(id)
-            await self.store.update(id) { $0.environment = clean }
+            let found = try await self.named(idOrSlug: id)
+            await self.store.update(found.id) { $0.environment = clean }
             try await self.store.save()
-            return try await self.named(id)
+            return (try await self.named(found.id), found.environment)
         }
+        if old != w.environment { await hooks?.environmentChanged(w, old) }
+        return w
     }
 
     /// Move to workspace… (decision 6): only while the conversation holds no checkout; `to` nil

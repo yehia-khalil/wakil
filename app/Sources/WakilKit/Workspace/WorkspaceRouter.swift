@@ -55,14 +55,18 @@ public struct WorkspaceRouterHooks: Sendable {
     public var moved: @Sendable (_ conversation: String, _ from: Workspace?, _ to: Workspace) async -> Void
     /// A drafted branch name (the ✨ quick task); nil falls back to `fallbackBranchName`.
     public var branchName: @Sendable (BranchNameRequest) async -> String?
+    /// A workspace's environment changed (decision 28) from `from`: its data panes follow it.
+    public var environmentChanged: @Sendable (_ workspace: Workspace, _ from: String) async -> Void
 
     public init(
         conversation: @escaping @Sendable (String) async -> WorkspaceConversationFacts?,
         states: @escaping @Sendable () async -> [String: ConversationState],
         say: @escaping @Sendable (String, WorkspaceLine) async -> Void = { _, _ in },
         moved: @escaping @Sendable (String, Workspace?, Workspace) async -> Void = { _, _, _ in },
-        branchName: @escaping @Sendable (BranchNameRequest) async -> String? = { _ in nil }
+        branchName: @escaping @Sendable (BranchNameRequest) async -> String? = { _ in nil },
+        environmentChanged: @escaping @Sendable (Workspace, String) async -> Void = { _, _ in }
     ) {
+        self.environmentChanged = environmentChanged
         self.conversation = conversation
         self.states = states
         self.say = say

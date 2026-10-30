@@ -164,6 +164,40 @@ struct WindowModelWorkspacesTests {
         await model.shutdown()
     }
 
+    /// Decision 28: a workspace's environment changed, so its view's data panes go to the view in the
+    /// new environment, where their subjects re-run; the running conversation keeps its own view in
+    /// the old one, its other panes with it.
+    @Test func aWorkspacesDataPanesFollowItsEnvironment() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("fix the guard"))
+        let agent = try #require(model.currentAgent)
+        await model.workspaceViewFollows(agent.id, from: nil, to: ws)
+        let staging = try #require(agent.layoutScope)
+        for kind in ["db", "api"] {
+            _ = try await w.registry.dispatch(
+                name: "pane_open", params: .object(["kind": .string(kind)]), origin: .ui,
+                caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        }
+        _ = await w.layout.open(kind: "editor", title: "a.go")
+        await model.refreshLayout()
+        let data = model.layoutSnapshot.panes.filter { $0.kind == "db" || $0.kind == "api" }.map(\.id)
+        #expect(data.count == 2)
+
+        var moved = ws
+        moved.environment = "qa"
+        await model.workspaceDataPanesFollow(moved, from: "staging")
+
+        #expect(!model.layoutSnapshot.panes.contains { data.contains($0.id) }, "they left the view on screen")
+        #expect(model.layoutSnapshot.panes.contains { $0.kind == "editor" }, "the other panes stay")
+        let qa = LayoutScope(organization: staging.organization, project: staging.project, environment: "qa",
+                             lineageRoot: staging.lineageRoot)
+        #expect(await snapshot(w.layout, in: qa).panes.map(\.id).sorted() == data.sorted())
+        await model.shutdown()
+    }
+
     /// The first write moves the view mid-dispatch: the rest of that dispatch was homed on the
     /// canvas it left (`ScopeRouting.home`), so `editor_create`'s tab opened on a canvas no screen
     /// shows any more (e2e workspaces-first-change, 2026-10-30). The carried canvas takes them.
