@@ -355,6 +355,27 @@ struct WindowModelWorkspaceViewsTests {
         await model.shutdown()
     }
 
+    /// A pane opened on the home makes Main's view a second slot over the home's own canvas; the
+    /// door goes back to that one, the panes as the operator left them (decision 23), not to an
+    /// older, empty slot.
+    @Test func mainsDoorGoesBackToTheNewestViewSlot() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: []))
+        await model.openWorkspaceView(nil)
+        let older = try #require(model.currentAgent)
+        await model.newConversation()
+        model.markSessionStarted()
+        let newer = try #require(model.currentAgent)
+        #expect(newer.id != older.id && newer.isViewSlot)
+        await model.newConversation()
+        await model.openWorkspaceView(nil)
+        #expect(model.currentAgent?.id == newer.id)
+        await model.shutdown()
+    }
+
     /// Piece 1's step 0 leaves the terminals in Main's view (decision 22): with Main's view open as a
     /// slot, that is the slot's canvas — what the project's **Open** goes back to — not the canvas the
     /// home reserves for its next conversation.

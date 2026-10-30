@@ -9900,7 +9900,9 @@ public final class WindowModel {
             let target = place ?? self.place
             await goTo(target)
             guard self.place.project == target.project else { return }
-            if let slot = liveConversations(in: self.place).first(where: { $0.workspace == nil && $0.isViewSlot }) {
+            // The newest slot: a pane opened on the home makes another over the home's canvas, and
+            // the door goes back to the panes as the operator left them (decision 23).
+            if let slot = liveConversations(in: self.place).last(where: { $0.workspace == nil && $0.isViewSlot }) {
                 await switchToConversation(slot.id)
                 return
             }
@@ -9924,7 +9926,7 @@ public final class WindowModel {
     /// **Open** goes back to — else the canvas the home reserves for `place`'s next conversation,
     /// which Open adopts when it opens the view (`openViewSlot`).
     func mainViewScope(of place: Place) -> LayoutScope {
-        if let slot = liveConversations(in: place).first(where: { $0.workspace == nil && $0.isViewSlot }),
+        if let slot = liveConversations(in: place).last(where: { $0.workspace == nil && $0.isViewSlot }),
            let scope = slot.layoutScope {
             return scope
         }
