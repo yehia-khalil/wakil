@@ -80,8 +80,14 @@ struct TicketHandOffPopover: View {
             text = state.brief
             draft.text = state.brief
             typed = false
-            // Only the operator's own open takes the keyboard (Rules 3 and 6).
-            if state.focus { briefFocused = true }
+        }
+        .task {
+            // Only the operator's own open takes the keyboard (Rules 3 and 6) — a beat after the
+            // popover appears: focus set as it appears is dropped (BranchPicker's, 3a-iii's sheet fix),
+            // which left the keyboard in the editor (piece 5's e2e run).
+            guard state.focus else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            briefFocused = true
         }
         .onChange(of: state.brief) { _, now in
             // The store's brief — Reset's, an agent's edit — reaches the field unless the operator is typing.

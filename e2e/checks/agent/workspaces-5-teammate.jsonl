@@ -22,6 +22,6 @@
 {"expect":{"tree":"absent","text":"suggests a teammate for e2e-portal:"}}
 {"expect":{"tree":"contains","text":"proposed a portal teammate"}}
 {"expect":{"journal":{"contains":"\"action\":\"conversation_teammate_start\""}}}
-{"do":{"click":"window.agentChip.e2e-fixture/e2e-git/staging#2"}}
+{"dispatch":{"action":"session_switch","params":{"conversation":"e2e-portal · propose a portal teammate"}}}
 {"expect":{"tree":"contains","text":"portal teammate started on the form"}}
 {"expect":{"tree":"contains","text":"› propose a portal teammate"}}

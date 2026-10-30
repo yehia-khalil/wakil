@@ -2413,7 +2413,12 @@ public func registerEditorActions(
                         s.tabs[i].diffState?.error = reviewHeadMissing(sha: t.headSHA, line: line, git: e)
                     }
                 }),
-            roots: roots, organization: organization, handOff: handOff)
+            roots: roots, organization: organization, handOff: handOff,
+            // Workspaces piece 5: one per repo never offers a root git says is no repository (decision 7).
+            notRepositories: {
+                let states = await gitStatus?.roots ?? []
+                return Set(states.filter { $0.error?.contains("not a git repository") == true }.map(\.root))
+            })
     }
 }
 

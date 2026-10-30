@@ -86,7 +86,8 @@ func registerTicketActions(
     into registry: ActionRegistry, store: EditorTicketStore, panes: PaneStore, layout: LayoutStore?,
     editor: EditorTicketHooks, roots: @escaping @Sendable () async -> [String],
     organization: @escaping @Sendable () async -> String? = { nil },
-    handOff: TicketHandOffLookup? = nil
+    handOff: TicketHandOffLookup? = nil,
+    notRepositories: @escaping @Sendable () async -> Set<String> = { [] }
 ) async {
     @Sendable func mirror() async {
         let rs = await roots()
@@ -959,7 +960,8 @@ func registerTicketActions(
                 }
                 let rows = (await store.lastInFlight()).map { $0.waitingOnYou + $0.inFlight } ?? []
                 for row in rows where row.key == key && own.contains(row.root) { touched.insert(row.root) }
-                crewRepos = handOffCrewRepos(roots: own, subject: subject.root, touched: touched)
+                crewRepos = handOffCrewRepos(roots: own, subject: subject.root, touched: touched,
+                                             notRepositories: await notRepositories())
             }
             var shown = TicketHandOffState(
                 key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source, brief: kept?.text ?? subject.brief,

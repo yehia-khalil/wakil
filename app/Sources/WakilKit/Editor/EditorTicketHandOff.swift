@@ -727,12 +727,15 @@ public struct TicketHandOffCrewRepo: Sendable, Equatable, Hashable {
     public var name: String { (root as NSString).lastPathComponent }
 }
 
-/// The repos one per repo offers: every root of the project, in order; the subject's repo and each
-/// repo the ticket's branches and PRs touch (`touched`) pre-ticked. None when the project has one
-/// repo: one per repo is then one.
-public func handOffCrewRepos(roots: [String], subject: String, touched: Set<String>) -> [TicketHandOffCrewRepo] {
-    guard roots.count > 1 else { return [] }
-    return roots.map { TicketHandOffCrewRepo(root: $0, ticked: $0 == subject || touched.contains($0)) }
+/// The repos one per repo offers: every root of the project that is a git repository, in order; the
+/// subject's repo and each repo the ticket's branches and PRs touch (`touched`) pre-ticked. A root in
+/// `notRepositories` is left out: an agent never writes there (decision 7; piece 1's amendment). None
+/// when the project has one repository: one per repo is then one.
+public func handOffCrewRepos(roots: [String], subject: String, touched: Set<String>,
+                             notRepositories: Set<String> = []) -> [TicketHandOffCrewRepo] {
+    let repos = roots.filter { !notRepositories.contains($0) }
+    guard repos.count > 1 else { return [] }
+    return repos.map { TicketHandOffCrewRepo(root: $0, ticked: $0 == subject || touched.contains($0)) }
 }
 
 // MARK: - The hand-off at work (walk 2026-10-28)

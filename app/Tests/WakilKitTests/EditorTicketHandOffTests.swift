@@ -1050,6 +1050,17 @@ private func quotedBlock(_ brief: String) -> [String] {
         #expect(repos.map(\.name) == ["api", "web", "core"])
     }
 
+    /// Decision 7 and piece 1's amendment: a folder that is not a git repository stays read-only for
+    /// agents, so one per repo never offers it; with one repository left there is no choice at all.
+    @Test func crewReposLeaveOutARootThatIsNotAGitRepository() {
+        let repos = handOffCrewRepos(roots: ["/p", "/p/api", "/p/portal"], subject: "/p/api", touched: [],
+                                     notRepositories: ["/p"])
+        #expect(repos.map(\.name) == ["api", "portal"])
+        #expect(repos.map(\.ticked) == [true, false])
+        #expect(handOffCrewRepos(roots: ["/p", "/p/api"], subject: "/p/api", touched: [], notRepositories: ["/p"]).isEmpty,
+                "one repository left: one per repo is one")
+    }
+
     @Test func thePopoverOffersOneAgentByDefaultAndTheTicketsReposTicked() async throws {
         let f = try await handOffFixture()
         try await f.openFromThread()
