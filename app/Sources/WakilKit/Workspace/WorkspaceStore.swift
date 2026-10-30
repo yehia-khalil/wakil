@@ -51,13 +51,16 @@ public actor WorkspaceStore {
     }
 
     /// Reads the record again. A failure is kept whole in `loadFailure`; the record in memory stays
-    /// what it was.
+    /// what it was. A read cancelled under its caller is no failure of the record: the organisation
+    /// is left unread, so the next `ensure` reads it again.
     @discardableResult
     public func reload() async -> String? {
         guard let loader else { return nil }
         do {
             file = try await loader()
             loadFailure = nil
+        } catch is CancellationError {
+            organization = nil
         } catch {
             loadFailure = "workspaces.json: \(error)"
         }
