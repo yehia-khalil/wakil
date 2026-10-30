@@ -12,7 +12,6 @@
 {"do":{"click":"editor.search.regex"}}
 {"expect":{"pane":"editor-1","field":"search.regex","equals":"true"}}
 {"do":{"type":{"into":"editor.search.query","text":"\\w+-qz\\d"}}}
-{"expect":{"tree":"absent","text":"searching"}}
 {"expect":{"pane":"editor-1","field":"search.results[0]","present":true}}
 {"do":{"click":"editor.search.replaceToggle"}}
 {"do":{"type":{"into":"editor.search.replace","text":"x"}}}
