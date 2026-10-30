@@ -128,6 +128,43 @@ struct WindowModelWorkspacesTests {
         await model.shutdown()
     }
 
+    /// The first write moves the view mid-dispatch: the rest of that dispatch was homed on the
+    /// canvas it left (`ScopeRouting.home`), so `editor_create`'s tab opened on a canvas no screen
+    /// shows any more (e2e workspaces-first-change, 2026-10-30). The carried canvas takes them.
+    @Test func aDispatchHomedOnTheCanvasStep0CarriedWritesIntoTheWorkspacesView() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("fix the guard"))
+        let agent = try #require(model.currentAgent)
+        let before = try #require(agent.layoutScope)
+        _ = try await w.registry.dispatch(
+            name: "pane_open", params: .object(["kind": .string("db")]), origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        let editor = "editor-x"
+
+        await model.workspaceViewFollows(agent.id, from: nil, to: ws)
+        let after = try #require(agent.layoutScope)
+        #expect(after != before)
+
+        await ScopeRouting.$home.withValue(before) {
+            await w.panes.updateEditor(paneId: editor, create: true) { s in
+                s.tabs = [EditorTab(subject: .file(path: "/h/ws/api/fix-otp/core/new.txt", root: "/h/ws/api/fix-otp/core"),
+                                    text: "", savedText: "", language: "text", diskState: .inSync, mtime: 1,
+                                    cursor: EditorPosition(line: 1, column: 1), selection: nil, visibleRange: nil,
+                                    scrollTop: 0, notice: nil, readOnly: false, saving: false, edits: 0, lastAgentEdit: nil)]
+                s.active = 0
+            }
+        }
+        #expect(await w.panes.editorSnapshot(in: after, paneId: editor).tabs.first?.path == "/h/ws/api/fix-otp/core/new.txt")
+        let homedLayout = await ScopeRouting.$home.withValue(before) { await w.layout.snapshot() }
+        #expect(homedLayout.panes.contains { $0.kind == "db" }, "the layout reads the carried canvas too")
+        // The canvas left behind is the carried one's from now on.
+        #expect(await w.panes.editorSnapshot(in: before, paneId: editor).tabs.isEmpty)
+        await model.shutdown()
+    }
+
     /// The write rule applies to a conversation whose agent runs. A place's conversation minted by a
     /// pane, with no agent ever started (the seeded e2e checks' dispatches name it), is not one; a sent
     /// message starts it (amendment 2026-10-30).
@@ -193,6 +230,23 @@ struct WindowModelWorkspaceRootsTests {
         agent.workspace = ws
         #expect(model.gitRootPaths == ["/h/ws/api/fix-otp/core", "/p/web"])
         #expect(model.mainGitRootPaths == ["/p/core", "/p/web"])
+        #expect(model.activeShellContext.rootPath == "/h/ws/api/fix-otp/core")
+        await model.shutdown()
+    }
+
+    /// A new terminal in a workspace's view opens in its copy (decision 22), even when the copy is
+    /// not of the project's first root: the first root here is a plain folder with no copy, and the
+    /// terminal opened in Main's folder of it (e2e workspaces-first-change, 2026-10-30).
+    @Test func aNewTerminalInAWorkspacesViewOpensInItsCopyWhateverRootComesFirst() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.setRootPathsForTesting(["/p/plain", "/p/core", "/p/web"])
+        #expect(await model.send("first job"))
+        let agent = try #require(model.currentAgent)
+        #expect(model.activeShellContext.rootPath == "/p/plain", "Main's view: the first root")
+        agent.workspace = ws
         #expect(model.activeShellContext.rootPath == "/h/ws/api/fix-otp/core")
         await model.shutdown()
     }

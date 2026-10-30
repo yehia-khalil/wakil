@@ -146,8 +146,17 @@ public final class WindowModel {
     /// repeat that fallback.
     /// `project` here is the registry key, since it becomes the shell's `WAKIL_PROJECT`.
     public var activeShellContext: (org: String, project: String, environment: String, rootPath: String) {
-        // Workspaces, piece 1: a new terminal opens in the view's copy of the first repo when it has one.
-        (org: organization, project: projectKey, environment: environment, rootPath: gitRootPaths.first ?? rootPath)
+        // Workspaces, piece 1 (decision 22): a new terminal in a workspace's view opens in its first
+        // copy, in the roots' order; in Main's view, or before any copy is made, in the first root.
+        (org: organization, project: projectKey, environment: environment, rootPath: shellRoot)
+    }
+
+    private var shellRoot: String {
+        let roots = gitRootPaths
+        if let w = currentAgent?.workspace, let copy = roots.first(where: { workspaceHolding($0, in: [w]) != nil }) {
+            return copy
+        }
+        return roots.first ?? rootPath
     }
 
     /// `activeShellContext` for a dispatch made for `caller`: what `term_open` and the api pane

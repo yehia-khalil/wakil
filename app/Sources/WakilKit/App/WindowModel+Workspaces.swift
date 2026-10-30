@@ -71,7 +71,12 @@ extension WindowModel {
         guard let after = agent.layoutScope, after != before else { return }
         guard currentAgent === agent else { return }
         await activateLayout(adoptingFrom: from == nil ? before : nil)
-        if from == nil { await repointEditorTabs(in: after, into: to) }
+        if from == nil, let before {
+            await repointEditorTabs(in: after, into: to)
+            // The write that moved it is still homed on the canvas it left: it lands in this one.
+            await panes.scopeCarried(from: before, to: after)
+            await layout.scopeCarried(from: before, to: after)
+        }
     }
 
     /// Every file tab of an editor pane in `scope` on a path in Main's folder of a repo `w` has a

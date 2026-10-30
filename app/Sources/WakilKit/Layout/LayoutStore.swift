@@ -257,7 +257,14 @@ public actor LayoutStore {
     /// The scope every implicit-current-scope method below reads and writes: the dispatching
     /// caller's own (`ScopeRouting.home`, background agents 3 of 4), else the one on screen. An
     /// agent working in a place the operator has left arranges that place's canvas, not this one.
-    private var scope: LayoutScope { ScopeRouting.home ?? screen }
+    private var scope: LayoutScope { ScopeRouting.home.map { carried[$0] ?? $0 } ?? screen }
+    /// `PaneStore.carried`'s twin: a canvas step 0 carried into a workspace's view.
+    private var carried: [LayoutScope: LayoutScope] = [:]
+    /// Workspaces, piece 1: `PaneStore.scopeCarried`'s twin.
+    public func scopeCarried(from: LayoutScope, to: LayoutScope) {
+        carried[to] = nil
+        if from != to { carried[from] = to }
+    }
     private var byScope: [LayoutScope: LayoutSnapshot]
     private var nextPaneNumber: Int
     /// Per scope, the panes in the order they last took focus, most recent last: what "the most
