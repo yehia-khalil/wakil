@@ -92,6 +92,15 @@ private let listed: JSONValue = {
     #expect(p == .object(["repos": .object(["core": .object(["doesntRun": .bool(true)])])]))
 }
 
+// Piece 2's e2e run: Go refuses a repo marked doesn't run that still names a recipe or an override,
+// so Doesn't run on a repo with overrides was refused whole. The patch carries the mark alone.
+@Test func doesntRunOnARepoWithOverridesSendsTheMarkAlone() throws {
+    let s = try RunningSettings.decode(listed)
+    #expect(s.repo("api")?.overrides != nil)
+    let p = try #require(s.savingRecipe(nil, doesntRun: true, of: "api"))
+    #expect(p == .object(["repos": .object(["api": .object(["doesntRun": .bool(true)])])]))
+}
+
 @Test func detectSavesUnderItsKindUnlessADifferentRecipeHasTheName() throws {
     let json = """
     {"repo":"web","kind":"vite","doesntRun":false,"recipe":{"processes":[{"name":"dev","command":"pnpm dev"}],

@@ -356,9 +356,10 @@ extension RunningSettings {
     public func savingRecipe(_ name: String?, doesntRun: Bool = false, of repo: String) -> JSONValue? {
         guard let row = self.repo(repo) else { return nil }
         var r = row
-        r.recipe = name
+        r.recipe = doesntRun ? nil : name
         r.doesntRun = doesntRun
-        return repoPatch(r, overrides: row.overrides ?? Recipe())
+        // Go refuses a repo marked doesn't run that names a recipe or an override: the mark goes alone.
+        return repoPatch(r, overrides: doesntRun ? Recipe() : row.overrides ?? Recipe())
     }
 
     /// Whether "Also write to .env" is on for `repo`.

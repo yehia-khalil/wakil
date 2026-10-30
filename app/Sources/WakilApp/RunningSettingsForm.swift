@@ -130,6 +130,7 @@ struct RunningSettingsForm: View {
                         .foregroundStyle(SettingsPalette.coolWhite.opacity(0.52))
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("settings.running.form.title")
                 recipeChoice(s, row)
                 HStack(spacing: 8) {
@@ -227,6 +228,9 @@ struct RunningSettingsForm: View {
                         }
                         .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
                         .fixedSize(horizontal: false, vertical: true)
+                        // .contain: without it the row's id lands on every child, Remove included,
+                        // and the row's own id names four elements (piece 2's e2e run).
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("settings.running.env.\(row.name)")
                     }
                     HStack(spacing: 6) {

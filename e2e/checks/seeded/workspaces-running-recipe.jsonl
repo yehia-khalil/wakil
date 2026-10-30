@@ -9,12 +9,23 @@
 {"expect":{"tree":"contains","text":"web: python3 -m http.server $WAKIL_PORT"}}
 {"do":{"type":{"into":"settings.running.field.build","text":"make build"}}}
 {"do":{"click":"settings.running.repo.e2e-project"}}
-{"expect":{"tree":"contains","text":"this repo only"}}
+{"expect":{"tree":"contains","text":"text this repo only"}}
 {"do":{"click":"settings.running.field.build.inherit"}}
-{"expect":{"tree":"absent","text":"this repo only"}}
+{"expect":{"tree":"absent","text":"text this repo only"}}
+{"expect":{"tree":"contains","text":"Build, Placeholder: One command."}}
 {"do":{"type":{"into":"settings.running.env.newName","text":"APP_ENV"}}}
 {"do":{"type":{"into":"settings.running.env.newValue","text":"local"}}}
 {"do":{"click":"settings.running.env.add"}}
+{"expect":{"tree":"contains","text":"text APP_ENV"}}
 {"expect":{"frame":"settings.running.env.APP_ENV","minWidth":1}}
 {"do":{"click":"settings.running.env.APP_ENV.remove"}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
 {"expect":{"tree":"absent","text":"APP_ENV"}}
+{"do":{"click":"settings.running.recipe.e2e-static"}}
+{"expect":{"tree":"contains","text":"e2e-project uses e2e-static"}}
+{"do":{"click":"settings.running.env.alsoWrite"}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"do":{"click":"settings.running.doesntRun"}}
+{"expect":{"tree":"contains","text":"e2e-project doesn't run"}}
+{"do":{"click":"settings.running.recipe.e2e-static"}}
+{"expect":{"tree":"contains","text":"e2e-project uses e2e-static"}}
