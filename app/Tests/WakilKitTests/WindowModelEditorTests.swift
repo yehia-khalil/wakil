@@ -83,6 +83,20 @@ func editorWindowWithFiles(
     return (model, files)
 }
 
+/// Holds `model`'s saved-tabs debounce until `open()`, in place of the real clock: a loaded run
+/// fired a 50ms debounce between two reports of a burst. Settle right after opening, before any
+/// await, so the write is still pending and `settleEditorTabsWrite` waits for it.
+@MainActor
+final class EditorTabsWriteGate {
+    private var isOpen = false
+    init(_ model: WindowModel) {
+        model.editorTabsSleep = { _ in
+            while !self.isOpen { try await Task.sleep(for: .milliseconds(1)) }
+        }
+    }
+    func open() { isOpen = true }
+}
+
 @Suite @MainActor struct WindowModelEditorTests {
     // 3b-iv: the tree's name field gets its refusal whole, thrown to it — not on the window's
     // status line — and a success lands as `dispatchFromSurface`'s does.
@@ -621,7 +635,7 @@ func editorWindowWithFiles(
 
     @Test func aBurstOfViewReportsUpdatesTheStoreEachTimeAndWritesTheSavedTabsOnceAfter() async throws {
         let (model, files) = await editorWindowWithFiles()
-        model.editorTabsDelay = .milliseconds(50)
+        let gate = EditorTabsWriteGate(model)
         await model.refreshContext()
         await files.put("/p/api/a.go", "one\ntwo\nthree")
         await model.dispatchFromSurface("editor_open", .object(["path": .string("/p/api/a.go")]))
@@ -638,6 +652,7 @@ func editorWindowWithFiles(
         // Not written yet: the report does not wait on the layout.
         #expect(model.layoutSnapshot.panes.first { $0.id == pane }?.editorTabs?.first?.cursor
                 != EditorPosition(line: 3, column: 2))
+        gate.open()
         await model.settleEditorTabsWrite(pane: pane)
         #expect(model.editorTabsWriteCount == writesBefore + 1)
         #expect(model.layoutSnapshot.panes.first { $0.id == pane }?.editorTabs
