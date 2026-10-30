@@ -389,6 +389,29 @@ struct HandOffSendToWindowTests {
         await w.model.shutdown()
     }
 
+    /// Start on a ticket (the umbrella): one hand-off is in the ticket's workspace, made if missing —
+    /// a record only, on the ticket's branch, named by the brief's first line — not in Main; a second
+    /// hand-off of the ticket finds the same one. A hand-off with no ticket key stays in Main.
+    @Test func aHandOffOnATicketIsInTheTicketsWorkspaceARecordOnly() async throws {
+        let w = try await Wired()
+        let id = try await w.model.startHandOff(handed())
+        let ws = try #require(await w.store.workspaceId(ofConversation: id))
+        let record = try #require(await w.store.workspace(ws))
+        #expect(record.tickets == ["INI-142"])
+        #expect(record.branch == "ini-142-login", "the ticket's branch, so a write takes it from Main (decision 8)")
+        #expect(record.name == "Work toward Next.")
+        #expect(record.checkouts.isEmpty, "a record only: each copy comes at its first write")
+        #expect(!(await w.store.holdsAny(id)))
+        let again = try await w.model.startHandOff(handed())
+        #expect(await w.store.workspaceId(ofConversation: again) == ws)
+        let pr = TicketHandOffRequest(key: nil, pr: 7, thread: nil, brief: "Fix the build.", harness: "claude-code",
+                                      provider: "test-provider", place: placeA, root: "/src/api", branch: "fix-build",
+                                      mayPush: false, repo: "api", title: "#7 · Fix the build.")
+        let main = try await w.model.startHandOff(pr)
+        #expect(await w.store.workspaceId(ofConversation: main) == nil, "no ticket: Main, as any conversation")
+        await w.model.shutdown()
+    }
+
     /// Start another: numbered, in the carrier's workspace, holding no copy, marked to branch off.
     @Test func startAnotherIsNumberedAndJoinsTheCarriersWorkspaceMarkedToBranchOff() async throws {
         let w = try await Wired()

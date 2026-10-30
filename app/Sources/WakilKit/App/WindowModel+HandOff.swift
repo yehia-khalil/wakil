@@ -37,6 +37,23 @@ extension WindowModel {
             branchOffIn = id
             await workspaceRouter?.join(agent.id, workspace: id, branchOff: true)
         }
+        // Start on a ticket (the umbrella, decisions 8 and 17): in that ticket's workspace, made if
+        // missing — a record only, each copy coming at its first write — not in Main. A hand-off
+        // with no ticket key (a PR's) stays in Main, as any conversation there.
+        var workspace = workspace
+        if workspace == nil, branchOffIn == nil, let key = r.key, !key.isEmpty, let router = workspaceRouter {
+            // Named by the brief's first line, the key kept apart: the card draws the key before it.
+            var name = r.title
+            if name.hasPrefix(key) {
+                name = String(name.dropFirst(key.count)).trimmingCharacters(in: .whitespaces)
+                if name.hasPrefix("·") { name = String(name.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            }
+            let w = await router.crewWorkspace(
+                ticket: key, name: name.isEmpty ? key : name, organization: r.place.organization,
+                project: r.place.project, environment: r.place.environment, branch: r.branch)
+            workspace = w.id
+            await router.join(agent.id, workspace: w.id)
+        }
         reserved?(agent.id)
         if let admit, !(await admit(agent.id)) {
             if conversation(id: agent.id) === agent { await endConversation(agent) }

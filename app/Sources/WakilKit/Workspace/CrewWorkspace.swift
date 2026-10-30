@@ -7,9 +7,11 @@ extension WorkspaceRouter {
     /// The workspace a crew starts in: the ticket's — an unarchived workspace of the project and
     /// environment carrying `ticket`, not a branch-off — else a new one, a **record only** (no copies:
     /// each comes at its first write, from the repo's base; the umbrella's "Start on a ticket"),
-    /// named `name`, its branch the fallback name (`<KEY>-<slug>`). Saved when made.
+    /// named `name`, its branch `branch` (a hand-off's: the ticket's own, so the first write takes it
+    /// from Main when Main's folder is on it, decision 8), else the fallback name (`<KEY>-<slug>`).
+    /// Saved when made.
     public func crewWorkspace(ticket: String?, name: String, organization: String, project: String,
-                              environment: String) async -> Workspace {
+                              environment: String, branch: String? = nil) async -> Workspace {
         await store.ensure(org: organization)
         let all = await store.all()
         if let ticket, !ticket.isEmpty, let found = all.last(where: {
@@ -23,7 +25,7 @@ extension WorkspaceRouter {
             title = String(title.dropFirst(ticket.count)).trimmingCharacters(in: .whitespaces)
             if title.hasPrefix("·") { title = String(title.dropFirst()).trimmingCharacters(in: .whitespaces) }
         }
-        let branch = fallbackBranchName(key: ticket, title: title)
+        let branch = branch.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackBranchName(key: ticket, title: title)
         let slug = uniqueSlug(branchSlug(branch), taken: Set(all.filter { $0.project == project }.map(\.slug)))
         let w = Workspace(
             id: newId(), name: name.isEmpty ? (ticket ?? "Work") : name, slug: slug, project: project,
