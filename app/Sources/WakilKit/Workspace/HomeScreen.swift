@@ -64,6 +64,9 @@ public struct HomeInput: Sendable {
     /// Each project's default environment, where known: a card in another environment tags it. The
     /// window's own project defaults to the window's environment.
     public var defaultEnvironments: [String: String]
+    /// Piece 5's pending teammate proposals, each keyed by its workspace's id or Main's
+    /// `main/<org>/<project>/<environment>` (`TeammateProposal.workspace`).
+    public var proposals: [TeammateProposal]
     /// Whether an environment of a project is production (Invariant 8).
     public var isProduction: @Sendable (_ project: String, _ environment: String) -> Bool
 
@@ -72,7 +75,7 @@ public struct HomeInput: Sendable {
                 past: [HomePastConversation] = [], filter: String? = nil,
                 branchPRs: [HomeBranch: [PullRequestState]] = [:], running: [String: String] = [:],
                 runningPorts: [String: [Int]] = [:], runningTones: [String: RunTone] = [:], recipeRepos: [String: Set<String>] = [:],
-                defaultEnvironments: [String: String] = [:],
+                defaultEnvironments: [String: String] = [:], proposals: [TeammateProposal] = [],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -89,6 +92,7 @@ public struct HomeInput: Sendable {
         self.runningTones = runningTones
         self.recipeRepos = recipeRepos
         self.defaultEnvironments = defaultEnvironments
+        self.proposals = proposals
         self.isProduction = isProduction
     }
 }
@@ -182,6 +186,9 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     public let prURL: String?
     /// What runs in it (piece 2's `runStatusLine`); nil when nothing does, so no **Stop**.
     public let running: String?
+    /// Piece 5: the teammates its conversations proposed, oldest first — in the expanded card, and as
+    /// *suggests a teammate* in NEEDS YOU.
+    public var proposals: [TeammateProposal] = []
     public var lines: [HomeConversationLine]
     public var children: [HomeCard]
     /// The parent's name, for a child drawn on its own (its parent archived or elsewhere).
@@ -255,6 +262,8 @@ public func homeRunningPorts(_ line: String) -> String {
 /// Main of a project, while a conversation is in it.
 public struct HomeMain: Sendable, Equatable {
     public var lines: [HomeConversationLine]
+    /// Piece 5: the teammates a conversation in Main proposed (`main/<org>/<project>/…`).
+    public var proposals: [TeammateProposal] = []
 }
 
 /// One project's section.
@@ -353,6 +362,35 @@ public struct HomeScreen: Sendable, Equatable {
         }
         sections.forEach { $0.cards.forEach(walk) }
         return out
+    }
+
+    /// The teammate proposals drawn, by id, in drawing order (Main's, then each card's): what numbers
+    /// their controls (`landing.teammate:<n>`), as a card's own id is generated.
+    public var teammateOffers: [String] {
+        var out: [String] = []
+        func walk(_ c: HomeCard) {
+            out += c.proposals.map(\.id)
+            c.children.forEach(walk)
+        }
+        for s in sections {
+            out += s.main?.proposals.map(\.id) ?? []
+            s.cards.forEach(walk)
+        }
+        return out
+    }
+
+    /// A drawn proposal by id: what a NEEDS YOU row's Start opens.
+    public func proposal(_ id: String) -> TeammateProposal? {
+        var found: TeammateProposal?
+        func walk(_ c: HomeCard) {
+            if let p = c.proposals.first(where: { $0.id == id }) { found = p }
+            c.children.forEach(walk)
+        }
+        for s in sections {
+            if let p = s.main?.proposals.first(where: { $0.id == id }) { found = p }
+            s.cards.forEach(walk)
+        }
+        return found
     }
 
     /// Every conversation line, in drawing order.
@@ -481,19 +519,20 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             $0.place.project == w.project && $0.workspace?.id != w.id && l.live[$0.id] == nil && holding[$0.id] == nil
         }.map { HomeMoveCandidate(id: $0.id, title: $0.title) }
         let parent = w.parent.flatMap { byId[$0] }
-        let need = homeWorkspaceNeed(w, mine: mine, rows: rows, latest: latest)
+        let proposals = input.proposals.filter { $0.workspace == w.id }
+        let need = homeWorkspaceNeed(w, mine: mine, rows: rows, proposals: proposals, latest: latest)
         if let need { needs.append(need) }
         let working = mine.contains { $0.state == .working }
         let production = input.isProduction(w.project, w.environment)
         let tag = production || (defaultEnvironment(w.project).map { $0 != w.environment } ?? false) ? w.environment : nil
-        return HomeCard(
+        var card = HomeCard(
             id: w.id, key: w.tickets.first, name: w.name, project: w.project, environment: w.environment,
             isProduction: production, environmentTag: tag, repos: repos, prs: homePRLine(rows),
             prURL: rows.flatMap(\.rows).first { !$0.url.isEmpty && $0.pr > 0 }?.url,
             running: input.running[w.id].flatMap { $0.isEmpty ? nil : $0 },
             lines: mine.map(line), children: [],
             branchedFrom: parent?.name, branchedOff: parent.map { $0.tickets.first ?? $0.name },
-            needCount: homeNeedCount(mine: mine, rows: rows),
+            needCount: homeNeedCount(mine: mine, rows: rows) + proposals.count,
             hue: need?.hue ?? (working ? .working : .idle), working: working,
             latest: latest, opens: mine.first?.id, moveCandidates: candidates,
             archiveAsks: mine.contains { $0.state == .waiting }, merged: homeMergedLine(w, input.branchPRs),
@@ -502,6 +541,8 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             noRecipe: input.recipeRepos[w.project].map { known in
                 !repos.contains { $0.made && !$0.inMain && (known.contains($0.repo) || known.contains($0.name)) }
             } ?? false)
+        card.proposals = proposals
+        return card
     }
     func ordered(_ cards: [HomeCard]) -> [HomeCard] {
         func rank(_ c: HomeCard) -> Int { c.needsYou ? 0 : c.working ? 1 : 2 }
@@ -533,9 +574,10 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         }
         let mainLive = live.filter { c in c.place.project == p && c.workspace == nil && !open.contains { $0.live[c.id] != nil } }
             .sorted { $0.lastActivity > $1.lastActivity }
-        needs += mainLive.compactMap(homeMainNeed)
+        let mainProposals = input.proposals.filter { $0.workspace.hasPrefix("main/\(org)/\(p)/") }
+        needs += homeMainNeeds(mainLive, proposals: mainProposals, project: p)
         let mainLines = mainLive.map(line).map { l in var l = l; l.inMain = true; return l }
-        let main = mainLines.isEmpty ? nil : HomeMain(lines: mainLines)
+        let main = mainLines.isEmpty && mainProposals.isEmpty ? nil : HomeMain(lines: mainLines, proposals: mainProposals)
         guard main != nil || !cards.isEmpty else {
             quiet.append(p)
             continue

@@ -97,3 +97,16 @@ lines (`wakilkit.md`, `flows.md`); the spec's piece 5 amendment.
    `agent/ticket-workspaces-5-one-per-repo.jsonl`: one by default (Rule 9), one per repo and back,
    each repo toggled, the agent's `agents` refused, the toggles' frames at the narrow window, Start
    — two handed agents, the popover closed, the view kept (Rule 6).
+
+## Phase H — on the restack (2026-10-30)
+
+1. **The proposal on the home.** Test: `aProposalIsDrawnOnItsWorkspacesCardAndInMainForOneMadeThere`
+   (`HomeScreenTests`), `theHomeDrawsAProposalMadeInMainInMainsBlock` (`CrewWindowTests`). Code:
+   `HomeInput.proposals`, `HomeCard.proposals`, `HomeMain.proposals`, `HomeScreen.teammateOffers`; the
+   home's `proposalLine` with a Start popover reusing `TeammateProposalRow` (focused, own identifiers).
+   Checks: `agent/workspaces-5-home-teammate.jsonl`, `-dismiss.jsonl`.
+2. **One per repo hides a root that is no git repository.** Test:
+   `crewReposLeaveOutARootThatIsNotAGitRepository`. Code: `handOffCrewRepos(notRepositories:)`, fed by
+   the git status's "not a git repository" roots. Check: `ticket-workspaces-5-one-per-repo.jsonl`.
+3. **The popover's brief focused** (Rule 3), a beat after it appears. Check: the same, step 18.
+

@@ -137,6 +137,18 @@ struct CrewWindowTests {
         await w.model.shutdown()
     }
 
+    /// The home draws a proposal (spec, piece 3's card): one made in Main, in Main's block.
+    @Test func theHomeDrawsAProposalMadeInMainInMainsBlock() async throws {
+        let w = try await Wired()
+        let (a, _) = try await w.backend()
+        let id = try await w.propose(a)
+        let screen = await w.model.readHomeScreen(projects: [a.place.project], past: [], filter: nil)
+        let main = screen.sections.first { $0.project == a.place.project }?.main
+        #expect(main?.proposals.map(\.id) == [id])
+        #expect(screen.teammateOffers == [id])
+        await w.model.shutdown()
+    }
+
     @Test func onlyTheOperatorStartsOrDismisses() async throws {
         let w = try await Wired()
         let (a, _) = try await w.backend()

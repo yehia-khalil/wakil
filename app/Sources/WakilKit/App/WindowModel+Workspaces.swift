@@ -315,7 +315,7 @@ extension WindowModel {
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,
             branchPRs: homeBranchPRs, running: homeRunLines, runningPorts: homeRunPorts, runningTones: homeRunTones,
-            recipeRepos: homeRecipeRepos, isProduction: judge)
+            recipeRepos: homeRecipeRepos, proposals: teammateProposals.all, isProduction: judge)
         return homeScreen(input)
     }
 

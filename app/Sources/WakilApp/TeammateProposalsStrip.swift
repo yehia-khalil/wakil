@@ -25,9 +25,16 @@ struct TeammateProposalsStrip: View {
     }
 }
 
-private struct TeammateProposalRow: View {
+struct TeammateProposalRow: View {
     let proposal: TeammateProposal
     let dispatch: (String, JSONValue) async -> JSONValue?
+    /// The home card's Start opens this row in a popover: the operator asked for it, so its brief
+    /// takes the keyboard (Rule 3). Over the thread an agent's proposal never does (Rule 6).
+    var focusOnAppear = false
+    /// Identifiers for the home card's popover (`landing.teammate:<n>.…`); nil: the strip's own.
+    var identifierBase: String? = nil
+    /// Told after Start or Dismiss went: the popover closes.
+    var done: () -> Void = {}
 
     @State private var text = ""
     @State private var starting = false
@@ -41,7 +48,7 @@ private struct TeammateProposalRow: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(Self.violet)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("window.teammates.line.\(proposal.repoName)")
+                .accessibilityIdentifier(identifierBase.map { "\($0).line" } ?? "window.teammates.line.\(proposal.repoName)")
             TextEditor(text: $text)
                 .font(.system(size: 11.5, design: .monospaced))
                 .scrollContentBackground(.hidden)
@@ -52,22 +59,31 @@ private struct TeammateProposalRow: View {
                 .disabled(starting)
                 .onChange(of: focused) { was, now in if was, !now { keep() } }
                 .accessibilityLabel("Teammate brief")
-                .accessibilityIdentifier("window.teammates.brief.\(proposal.repoName)")
+                .accessibilityIdentifier(identifierBase.map { "\($0).brief" } ?? "window.teammates.brief.\(proposal.repoName)")
             HStack(spacing: 8) {
                 Spacer()
                 Button("Dismiss") {
-                    Task { _ = await dispatch("conversation_teammate_dismiss", .object(["proposal": .string(proposal.id)])) }
+                    Task {
+                        _ = await dispatch("conversation_teammate_dismiss", .object(["proposal": .string(proposal.id)]))
+                        done()
+                    }
                 }
                 .disabled(starting)
                 .help("No teammate for \(proposal.repoName); it is not proposed again in this workspace")
-                .accessibilityIdentifier("window.teammates.dismiss.\(proposal.repoName)")
+                .accessibilityIdentifier(identifierBase.map { "\($0).popoverDismiss" } ?? "window.teammates.dismiss.\(proposal.repoName)")
                 Button(starting ? "Starting…" : "Start") { start() }
                     .buttonStyle(.borderedProminent).tint(Self.violet)
                     .disabled(starting)
-                    .accessibilityIdentifier("window.teammates.start.\(proposal.repoName)")
+                    .accessibilityIdentifier(identifierBase.map { "\($0).go" } ?? "window.teammates.start.\(proposal.repoName)")
             }
         }
         .onAppear { text = proposal.brief }
+        .task {
+            // A beat after appearing: focus set as a popover appears is dropped (BranchPicker's fix).
+            guard focusOnAppear else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            focused = true
+        }
         .onChange(of: proposal.brief) { _, now in if !focused { text = now } }
     }
 
@@ -85,6 +101,7 @@ private struct TeammateProposalRow: View {
         Task {
             _ = await dispatch("conversation_teammate_start", .object(["proposal": .string(proposal.id), "brief": .string(now)]))
             starting = false
+            done()
         }
     }
 }

@@ -31,6 +31,8 @@ struct Home: View {
     /// Which cards are expanded, kept across relaunch (Rule 6); `expansionTick` redraws after a toggle.
     @State private var expansion = HomeExpansionStore()
     @State private var expansionTick = 0
+    /// Piece 5: the proposal whose Start opened its brief in a popover, and where (`need:` or `line:`).
+    @State private var startingProposal: String?
 
     private let ink = Color(HomePalette.ink)
     private let action = Color(HomePalette.action)
@@ -49,7 +51,8 @@ struct Home: View {
             + model.homeRunLines.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
             + model.homeRunPorts.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
             + model.homeRunTones.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
-            + model.homeRecipeRepos.map { "\($0.key)=\($0.value.sorted())" }.sorted().joined(separator: ",")
+            + model.homeRecipeRepos.map { "\($0.key)=\($0.value.sorted())" }.sorted().joined(separator: ",") + "|"
+            + model.teammateProposals.all.map { "\($0.id):\($0.brief.count)" }.joined(separator: ",")
     }
 
     var body: some View {
@@ -164,12 +167,27 @@ struct Home: View {
         .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
     }
 
+    @ViewBuilder
     private func needAction(_ need: HomeNeed, n: Int) -> some View {
+        if case .teammate(let id) = need.action, let p = screen?.proposal(id) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                proposalStart(p, key: "need:\(p.id)", base: "landing.needs:\(n)")
+                    .accessibilityIdentifier("landing.needs:\(n).act")
+                proposalDismiss(p).accessibilityIdentifier("landing.needs:\(n).dismiss")
+            }
+            .fixedSize()
+        } else {
+            plainNeedAction(need, n: n)
+        }
+    }
+
+    private func plainNeedAction(_ need: HomeNeed, n: Int) -> some View {
         Button(need.action.label) {
             switch need.action {
             case .review(let c, let s), .open(let c, let s): Task { await model.openHomeLine(c, session: s) }
             case .openWorkspace(let w): Task { await model.openWorkspace(w) }
             case .link(let url): Task { await model.openLinkInWakil(url) }
+            case .teammate: break
             }
         }
         .buttonStyle(.plain)
@@ -229,6 +247,7 @@ struct Home: View {
                     VStack(alignment: .leading, spacing: 0) {
                         micro("Main").padding(.horizontal, 18).padding(.top, 11).padding(.bottom, 2)
                         ForEach(main.lines) { conversationLine($0, inset: 18) }
+                        ForEach(main.proposals) { proposalLine($0).padding(.horizontal, 18).padding(.vertical, 7) }
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("landing.main")
@@ -527,6 +546,7 @@ struct Home: View {
                 .padding(.leading, -19)
                 .padding(.trailing, -16)
             }
+            ForEach(card.proposals) { proposalLine($0) }
             HStack(alignment: .center, spacing: 18) {
                 Button { Task { await model.newConversation(inWorkspace: card.id) } } label: {
                     Label("New conversation here", systemImage: "plus")
@@ -676,6 +696,63 @@ struct Home: View {
             busy = nil
             revision += 1
         }
+    }
+
+    // MARK: - A teammate proposal (piece 5)
+
+    /// `● Suggests a teammate for web — <brief>`, whole, with **Start** — the brief in a popover,
+    /// editable, its field focused (Rule 3) — and **Dismiss**, which asks nothing (Rule 1: it destroys
+    /// nothing; it is not proposed again for that repo there). Numbered in drawing order
+    /// (`HomeScreen.teammateOffers`), as a card's own id is generated.
+    private func proposalLine(_ p: TeammateProposal) -> some View {
+        let n = screen?.teammateOffers.firstIndex(of: p.id) ?? 0
+        let words = homeProposalWords(p)
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            StateDot(state: .waiting)
+            (Text(words.lead).fontWeight(.medium).foregroundColor(amber)
+                + Text(words.rest).foregroundColor(ink.opacity(HomePalette.strong)))
+                .font(.system(size: 12.5))
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("landing.teammate:\(n)")
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                proposalStart(p, key: "line:\(p.id)", base: "landing.teammate:\(n)")
+                    .accessibilityIdentifier("landing.teammate:\(n).start")
+                proposalDismiss(p).accessibilityIdentifier("landing.teammate:\(n).dismiss")
+            }
+            .fixedSize()
+        }
+    }
+
+    /// Start: the proposal's brief in a popover (piece 5's own row), its field focused.
+    private func proposalStart(_ p: TeammateProposal, key: String, base: String) -> some View {
+        Button("Start") { startingProposal = key }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(action)
+            .popover(isPresented: Binding(get: { startingProposal == key },
+                                          set: { if !$0, startingProposal == key { startingProposal = nil } })) {
+                TeammateProposalRow(
+                    proposal: p,
+                    dispatch: { name, params in await model.dispatchFromSurfaceReply(name, params) },
+                    focusOnAppear: true, identifierBase: base,
+                    done: { startingProposal = nil; revision += 1 })
+                    .padding(12)
+                    .frame(width: 420)
+            }
+    }
+
+    private func proposalDismiss(_ p: TeammateProposal) -> some View {
+        Button("Dismiss") {
+            Task {
+                _ = await model.dispatchFromSurfaceReply("conversation_teammate_dismiss", .object(["proposal": .string(p.id)]))
+                revision += 1
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(ink.opacity(HomePalette.quiet))
     }
 
     // MARK: - A conversation line

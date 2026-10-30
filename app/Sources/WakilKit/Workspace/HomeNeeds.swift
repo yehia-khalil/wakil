@@ -19,6 +19,8 @@ public enum HomeNeedReason: Sendable, Equatable {
     case reviewRequested
     /// Review threads on its PRs wait on a reply.
     case comments(Int)
+    /// Piece 5: a conversation suggests a teammate — Start or Dismiss, right on the row.
+    case teammate
     /// A conversation finished a turn the operator has not seen.
     case done
 
@@ -31,6 +33,7 @@ public enum HomeNeedReason: Sendable, Equatable {
         case .checksFailing: 3
         case .reviewRequested: 4
         case .comments: 5
+        case .teammate: 6
         case .done: 7
         }
     }
@@ -43,6 +46,7 @@ public enum HomeNeedReason: Sendable, Equatable {
         case .checksFailing(let n): "checks failing \(n)"
         case .reviewRequested: "review requested"
         case .comments(let n): n == 1 ? "1 comment" : "\(n) comments"
+        case .teammate: "suggests a teammate"
         case .done: "done, unseen"
         }
     }
@@ -50,7 +54,7 @@ public enum HomeNeedReason: Sendable, Equatable {
     /// The reserved hue it is drawn in: amber waits, red failed, green done unseen.
     public var hue: ConversationState {
         switch self {
-        case .waiting, .messages, .reviewRequested, .comments: .waiting
+        case .waiting, .messages, .reviewRequested, .comments, .teammate: .waiting
         case .failed, .checksFailing: .failed
         case .done: .done
         }
@@ -60,7 +64,7 @@ public enum HomeNeedReason: Sendable, Equatable {
     var fromTicket: Bool {
         switch self {
         case .checksFailing, .reviewRequested, .comments: true
-        case .waiting, .messages, .failed, .done: false
+        case .waiting, .messages, .failed, .teammate, .done: false
         }
     }
 }
@@ -75,12 +79,15 @@ public enum HomeNeedAction: Sendable, Equatable {
     case openWorkspace(String)
     /// **checks ↗** / **review ↗**: the PR's page, in Wakil's browser (`browser_open`).
     case link(url: String)
+    /// Piece 5: **Start** (the brief, in a popover) and **Dismiss**, inline.
+    case teammate(proposal: String)
 
     public var label: String {
         switch self {
         case .review: "Review"
         case .open, .openWorkspace: "Open"
         case .link(let url): url.hasSuffix("/checks") ? "checks ↗" : "review ↗"
+        case .teammate: "Start"
         }
     }
 }
@@ -144,7 +151,8 @@ func homeConversationReason(_ state: ConversationState) -> HomeNeedReason? {
 
 /// A workspace's NEEDS YOU row: its conversations' reasons and its tickets', strongest first; nil
 /// when nothing in it needs the operator. `mine` is newest first.
-func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNeedsRow], latest: Date) -> HomeNeed? {
+func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNeedsRow],
+                       proposals: [TeammateProposal] = [], latest: Date) -> HomeNeed? {
     var reasons: [HomeNeedReason] = []
     var by: [Int: LiveConversation] = [:]
     var messages = 0
@@ -155,6 +163,7 @@ func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNe
     }
     if messages > 0 { reasons.append(.messages(messages)) }
     reasons += homeTicketReasons(rows)
+    if !proposals.isEmpty { reasons.append(.teammate) }
     reasons.sort { $0.rank < $1.rank }
     guard let first = reasons.first else { return nil }
     let url = rows.flatMap(\.rows).first { !$0.url.isEmpty && $0.pr > 0 }?.url
@@ -165,6 +174,7 @@ func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNe
         opens = .conversation(c.id, session: c.session)
     } else {
         switch first {
+        case .teammate: action = .teammate(proposal: proposals[0].id)
         case .checksFailing: action = url.map { .link(url: homeChecksURL($0)) } ?? .openWorkspace(w.id)
         default: action = url.map { .link(url: $0) } ?? .openWorkspace(w.id)
         }
@@ -174,13 +184,41 @@ func homeWorkspaceNeed(_ w: Workspace, mine: [LiveConversation], rows: [TicketNe
                     reasons: reasons, action: action, opens: opens, latest: latest)
 }
 
-/// A Main conversation's NEEDS YOU row; nil when its state needs nothing.
-func homeMainNeed(_ c: LiveConversation) -> HomeNeed? {
-    guard let r = homeConversationReason(c.state) else { return nil }
-    return HomeNeed(id: c.id, project: c.place.project, key: nil, title: c.title, workspace: nil,
-                    reasons: c.messagesWaiting > 0 ? [r, .messages(c.messagesWaiting)] : [r],
-                    action: r == .waiting ? .review(conversation: c.id, session: c.session) : .open(conversation: c.id, session: c.session),
-                    opens: .conversation(c.id, session: c.session), latest: c.lastActivity)
+/// A Main conversation's NEEDS YOU row; nil when nothing about it needs the operator. Its own
+/// proposals (piece 5) ride on it, Start and Dismiss when they are its strongest why.
+func homeMainNeed(_ c: LiveConversation, proposals: [TeammateProposal] = []) -> HomeNeed? {
+    var reasons: [HomeNeedReason] = []
+    if let r = homeConversationReason(c.state) { reasons.append(r) }
+    if c.messagesWaiting > 0 { reasons.append(.messages(c.messagesWaiting)) }
+    if !proposals.isEmpty { reasons.append(.teammate) }
+    reasons.sort { $0.rank < $1.rank }
+    guard let first = reasons.first else { return nil }
+    let action: HomeNeedAction = switch first {
+    case .waiting: .review(conversation: c.id, session: c.session)
+    case .teammate: .teammate(proposal: proposals[0].id)
+    default: .open(conversation: c.id, session: c.session)
+    }
+    return HomeNeed(id: c.id, project: c.place.project, key: nil, title: c.title, workspace: nil, reasons: reasons,
+                    action: action, opens: .conversation(c.id, session: c.session), latest: c.lastActivity)
+}
+
+/// Main's NEEDS YOU rows for one project: each conversation's, its proposals with it; a proposal
+/// whose proposer is no longer listed is a row of its own under the proposer's title.
+func homeMainNeeds(_ live: [LiveConversation], proposals: [TeammateProposal], project: String) -> [HomeNeed] {
+    var out = live.compactMap { c in homeMainNeed(c, proposals: proposals.filter { $0.from == c.id }) }
+    let listed = Set(live.map(\.id))
+    for p in proposals where !listed.contains(p.from) {
+        out.append(HomeNeed(id: p.id, project: project, key: nil, title: p.fromTitle, workspace: nil, reasons: [.teammate],
+                            action: .teammate(proposal: p.id), opens: .conversation(p.from, session: nil),
+                            latest: .distantPast))
+    }
+    return out
+}
+
+/// A proposal's line on the home, as the comp draws it: **Suggests a teammate** in amber, then
+/// `for web — <brief>`, whole.
+public func homeProposalWords(_ p: TeammateProposal) -> (lead: String, rest: String) {
+    ("Suggests a teammate", " for \(p.repoName) — \(p.brief)")
 }
 
 /// NEEDS YOU's order: strongest why first, then the newest, then by id.

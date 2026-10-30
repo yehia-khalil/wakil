@@ -1050,3 +1050,25 @@ Calls the build made where the piece above is silent (plan:
 - **Nothing to do** reads `done · nothing to do in <repo>` (its crew repo, else the repo it holds),
   else `done · nothing to do: <why>`, in `LiveConversation.stateWords` and `session_list`'s
   `nothingToDo`, until the operator's next message. **Close** is the existing close.
+
+## Amendment 2026-10-30 — piece 5 on the home, and one per repo's repos
+
+- **A proposal on the home** (piece 3's card): drawn on the card of the workspace it belongs to, and
+  in Main's block for one a conversation in Main made — the dashed violet dot, *‘backend’ suggests a
+  teammate for web: <brief>*, whole, then **Start** and **Dismiss**. Start opens the brief in a popover
+  under it, editable and focused (Rule 3: the operator asked for it), with its own Start and Dismiss;
+  Dismiss asks nothing (Rule 1). Controls are numbered in drawing order (`landing.teammate:<n>`,
+  Main's first, then each card's), as a card's id is generated. The strip over the thread stays for the
+  conversation on screen. A proposal does not count as *needs you*: it waits for the operator's choice
+  without blocking anything.
+- **One per repo offers git repositories only** (decision 7; piece 1's amendment): a root git reads as
+  no repository stays read-only for agents, so its toggle is not drawn and it is never ticked; with one
+  repository left there is no choice, as with one repo.
+- **Hand to agent's brief takes the keyboard a beat after the popover appears** (Rule 3): focus set as
+  it appeared was dropped and stayed in the editor (piece 5's e2e run).
+- Checks: `agent/workspaces-5-home-teammate.jsonl` (Start through the popover),
+  `agent/workspaces-5-home-teammate-dismiss.jsonl`; `agent/ticket-workspaces-5-one-per-repo.jsonl` now
+  expects e2e-api (ticked) and e2e-portal only, resizes before the popover opens, and reads the crew's
+  lines on the home; `agent/workspaces-5-teammate.jsonl` switches with `session_switch` (same-organisation
+  chips are gone).
+

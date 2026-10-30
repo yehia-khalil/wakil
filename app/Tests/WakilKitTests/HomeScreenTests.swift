@@ -354,3 +354,31 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
                                     workspaces: [WorkspaceListing(workspace: w, holders: [:], live: [:])], live: [inside]))
     #expect(card.sections[0].cards[0].needCount == 2, "the comp's ● 2: waiting, and its messages")
 }
+
+// Piece 5 on the home (spec, piece 3's card and piece 5): a teammate proposal is drawn on the card of
+// the workspace it belongs to — Main's block for one made in Main — numbered in drawing order.
+
+@Test func aProposalIsDrawnOnItsWorkspacesCardAndInMainForOneMadeThere() {
+    let a = ws("w1", "Login", repos: ["/p/api", "/p/web"])
+    let onCard = TeammateProposal(id: "teammate-1", from: "c1", fromTitle: "backend", workspace: "w1",
+                                  repo: "/p/web", brief: "write the form")
+    let inMain = TeammateProposal(id: "teammate-2", from: "c2", fromTitle: "asking", workspace: "main/initech/estate/staging",
+                                  repo: "/p/web", brief: "look at the portal")
+    let elsewhere = TeammateProposal(id: "teammate-3", from: "c3", fromTitle: "other", workspace: "main/initech/dashboard/staging",
+                                     repo: "/p/x", brief: "x")
+    let screen = homeScreen(HomeInput(
+        organization: "initech", project: "estate", environment: "staging", workspaces: [listing(a, live: ["c1": .idle])],
+        live: [conv("c1", "backend", workspace: a), conv("c2", "asking")], proposals: [onCard, inMain, elsewhere]))
+    let estate = screen.sections.first { $0.project == "estate" }
+    #expect(estate?.cards.first?.proposals.map(\.id) == ["teammate-1"])
+    #expect(estate?.main?.proposals.map(\.id) == ["teammate-2"])
+    #expect(screen.teammateOffers == ["teammate-2", "teammate-1"], "Main first, then the cards, as drawn")
+    #expect(teammateProposalLine(onCard) == "‘backend’ suggests a teammate for web: write the form")
+    // The comp: each proposal is a NEEDS YOU why, Start and Dismiss on the row, and counts on its card.
+    #expect(screen.needs.map(\.why) == ["suggests a teammate", "suggests a teammate"])
+    #expect(screen.needs.map(\.action) == [.teammate(proposal: "teammate-2"), .teammate(proposal: "teammate-1")])
+    #expect(screen.needs.first?.action.label == "Start")
+    #expect(estate?.cards.first?.needCount == 1 && estate?.cards.first?.hue == .waiting)
+    #expect(screen.proposal("teammate-1") == onCard)
+    #expect(homeProposalWords(onCard) == ("Suggests a teammate", " for web — write the form"))
+}
