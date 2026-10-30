@@ -319,11 +319,11 @@ func TestACallWithoutEchoWritesNoToolFrames(t *testing.T) {
 func TestACallsCwdTokenIsTheAgentsWorkingDirectory(t *testing.T) {
 	dir, _ := os.Getwd()
 	dir = underTempDir(dir, os.TempDir())
-	got := expandCwd(map[string]interface{}{"path": "{cwd}/note.txt", "kind": "file", "n": 1})
+	got := expandCwd(map[string]interface{}{"path": "{cwd}/note.txt", "kind": "file", "n": 1}, os.TempDir())
 	if got["path"] != dir+"/note.txt" || got["kind"] != "file" || got["n"] != 1 {
 		t.Fatalf("%v", got)
 	}
-	if expandCwd(nil) != nil {
+	if expandCwd(nil, "") != nil {
 		t.Fatal("nil params grew")
 	}
 }

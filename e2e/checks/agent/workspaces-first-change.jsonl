@@ -8,7 +8,7 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"wrote the workspace note"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
-{"expect":{"tree":"contains","text":"Your folder is untouched"}}
+{"expect":{"tree":"contains","text":"— a copy of e2e-api on"}}
 {"expect":{"tree":"contains","text":"› write the workspace note"}}
 {"expect":{"tree":"contains","text":"workspace copy"}}
 {"do":{"hotkey":"cmd+p"}}
@@ -19,10 +19,10 @@
 {"expect":{"tree":"contains","text":"workspace copy"}}
 {"do":{"keys":"git worktree list --porcelain | grep -c '^worktree '"}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"2"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"2"}}
 {"do":{"keys":"test -e ws-note.txt && echo IN-THE-COPY"}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"IN-THE-COPY"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"IN-THE-COPY"}}
 {"do":{"keys":"test -e \"$(git worktree list --porcelain | head -1 | cut -c10-)/ws-note.txt\" || echo MAIN-UNTOUCHED"}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"MAIN-UNTOUCHED"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"MAIN-UNTOUCHED"}}
