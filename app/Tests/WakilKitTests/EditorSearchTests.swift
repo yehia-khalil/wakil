@@ -49,13 +49,15 @@ private func m(_ root: String, _ path: String, _ line: Int) -> EditorSearchMatch
 @MainActor @Test func theDebounceRunsOnlyTheLastScheduledBodyAfterThePause() async throws {
     let d = EditorDebounce(delay: .milliseconds(30))
     var ran: [Int] = []
+    let started = ContinuousClock.now
     d.schedule { ran.append(1) }
     d.schedule { ran.append(2) }
-    try await Task.sleep(for: .milliseconds(120))
+    await d.settle()
     #expect(ran == [2])
+    #expect(ContinuousClock.now - started >= .milliseconds(30))
     d.schedule { ran.append(3) }
     d.cancel()
-    try await Task.sleep(for: .milliseconds(80))
+    await d.settle()
     #expect(ran == [2])
 }
 
