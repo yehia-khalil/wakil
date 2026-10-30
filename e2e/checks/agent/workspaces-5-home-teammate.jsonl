@@ -20,4 +20,5 @@
 {"expect":{"journal":{"contains":"\"action\":\"conversation_teammate_start\""}}}
 {"expect":{"tree":"absent","text":"Suggests a teammate for e2e-portal — "}}
 {"expect":{"tree":"absent","text":"— suggests a teammate"}}
+{"do":{"click":"landing.card:0.expand"}}
 {"expect":{"tree":"contains","text":"e2e-portal · propose a portal teammate"}}

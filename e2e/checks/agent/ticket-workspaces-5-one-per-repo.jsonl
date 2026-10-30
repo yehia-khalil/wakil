@@ -47,6 +47,7 @@
 {"expect":{"journal":{"contains":"\"action\":\"ticket_hand_off\""}}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.card:0.expand"}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-api"}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-portal"}}
 {"dispatch":{"action":"ticket_hand_off_open","params":{"key":"INI-142","root":"{fixtureRoot}/e2e-api","branch":"ini-142-login","from":"header"}}}
