@@ -127,3 +127,30 @@ func TestWorktreeAddOfANewWorkspaceStepsPastTakenNamesAndDiscardTakesItBack(t *t
 		t.Fatal("discard reached another checkout")
 	}
 }
+
+// A chosen base (workspace_start) reaches the add: the copy starts from it and the reply names what
+// it resolved to; a base the repo does not have is refused whole and leaves no folder.
+func TestWorktreeAddFromAChosenBaseOrRefusedWhole(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	cs := connectedClient(t)
+	add, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": root, "project": "proj", "slug": "hotfix",
+		"branch": "hotfix", "base": "main", "newName": true})
+	if fail != "" {
+		t.Fatal(fail)
+	}
+	if add["base"] != "main" || add["branch"] != "hotfix" || add["created"] != true {
+		t.Fatalf("add %v", add)
+	}
+	_, fail = callJSON(t, cs, "git_worktree_add", map[string]any{"root": root, "project": "proj", "slug": "other",
+		"branch": "other", "base": "production", "newName": true})
+	if !strings.Contains(fail, "There is no branch production") {
+		t.Fatalf("fail %q", fail)
+	}
+	org, _ := wakilcore.CurrentOrg()
+	p, _ := wakilcore.WorkspaceCheckoutPath(org, "proj", "other", filepath.Base(root))
+	if _, err := os.Stat(filepath.Dir(p)); !os.IsNotExist(err) {
+		t.Fatal("a refused base left a folder")
+	}
+}

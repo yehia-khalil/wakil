@@ -30,6 +30,7 @@ type worktreeAddArg struct {
 	FreeBranch    bool     `json:"freeBranch,omitempty" jsonschema:"a branch another worktree holds (or takenBranches names) gives way to the next free -2, -3; an existing free one is checked out as it is"`
 	TakenSlugs    []string `json:"takenSlugs,omitempty" jsonschema:"with newName: the slugs the record already uses in this project"`
 	TakenBranches []string `json:"takenBranches,omitempty" jsonschema:"with newName or freeBranch: the branches the record already names"`
+	Base          string   `json:"base,omitempty" jsonschema:"a base the agent chose (workspace_start): branch is a new one, minted as with newName, from origin/<base> when the remote has it, else the local branch; neither is refused and nothing is made"`
 }
 type worktreeAddResult struct {
 	Slug string `json:"slug"`
@@ -128,7 +129,7 @@ func addWorkspaceTools(s *mcp.Server) {
 			return nil, emptyResult{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_worktree_add", Description: "Writes. Makes a workspace's checkout of one of the project's roots: a git worktree at ~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder>, on branch (an existing one as it is; with create, a new one from from). With newName or freeBranch a taken name gives way to the next free one, and the reply's slug and branch are the ones used; otherwise a branch checked out elsewhere is refused naming where. created says the branch was made for it. git's own refusal is whole and leaves nothing behind."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_worktree_add", Description: "Writes. Makes a workspace's checkout of one of the project's roots: a git worktree at ~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder>, on branch (an existing one as it is; with create, a new one from from). With newName or freeBranch a taken name gives way to the next free one, and the reply's slug and branch are the ones used; otherwise a branch checked out elsewhere is refused naming where. created says the branch was made for it. With base, the new branch starts from that base (the remote's copy first) and the reply's base names what it resolved to; a base the repo does not have is refused whole. git's own refusal is whole and leaves nothing behind."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a worktreeAddArg) (*mcp.CallToolResult, worktreeAddResult, error) {
 			w, fail := mainRootWriter(a.Root)
 			if fail != nil {
@@ -157,7 +158,7 @@ func addWorkspaceTools(s *mcp.Server) {
 				return fail, worktreeAddResult{}, nil
 			}
 			r, err := w.WorktreeAdd(ctx, wakilcore.WorktreeAddOptions{Path: path, Branch: a.Branch, From: a.From, Create: a.Create,
-				FromIsBase: a.FromIsBase, NewBranch: a.NewName, FreeBranch: a.FreeBranch, TakenBranches: a.TakenBranches})
+				FromIsBase: a.FromIsBase, NewBranch: a.NewName, FreeBranch: a.FreeBranch, TakenBranches: a.TakenBranches, Base: a.Base})
 			if err != nil {
 				return mcpx.ToolErr("wakil-git", err), worktreeAddResult{}, nil
 			}

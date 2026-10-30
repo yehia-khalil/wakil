@@ -79,6 +79,10 @@ func (w *GitWriter) WorktreeList(ctx context.Context) ([]GitWorktree, error) {
 // to mint, so one the repo has, one another worktree has checked out or one in TakenBranches (the
 // record's) gives way to the next free `-2`, `-3`; with FreeBranch, only a branch another worktree
 // holds (or TakenBranches names) does, and an existing free one is checked out as it is.
+//
+// Base is one the agent chose (workspace_start, amendment 2026-10-30): Branch is a new branch,
+// minted as with NewBranch, from the remote's copy of Base (origin/<Base>) when there is one, else
+// the local branch. A Base that is neither is refused whole and nothing is made.
 type WorktreeAddOptions struct {
 	Path          string   `json:"path"`
 	Branch        string   `json:"branch"`
@@ -88,6 +92,7 @@ type WorktreeAddOptions struct {
 	NewBranch     bool     `json:"newBranch,omitempty"`
 	FreeBranch    bool     `json:"freeBranch,omitempty"`
 	TakenBranches []string `json:"takenBranches,omitempty"`
+	Base          string   `json:"base,omitempty"`
 }
 
 // WorktreeAddResult is where the checkout is, its branch and commit, whether the branch was made
@@ -99,6 +104,8 @@ type WorktreeAddResult struct {
 	Head    string `json:"head"`
 	Created bool   `json:"created,omitempty"`
 	Note    string `json:"note,omitempty"`
+	// Base is what a chosen base resolved to: origin/<base> or the local branch.
+	Base string `json:"base,omitempty"`
 }
 
 // FreeName is base, else base-2, base-3 … the first taken does not answer true for.
@@ -121,10 +128,23 @@ func (w *GitWriter) resolves(ctx context.Context, rev string) bool {
 // WorktreeAdd makes a checkout. A branch already checked out in another worktree is refused with a
 // BranchHeldError; git's own refusal otherwise comes back whole, and nothing is left at Path.
 func (w *GitWriter) WorktreeAdd(ctx context.Context, o WorktreeAddOptions) (WorktreeAddResult, error) {
-	for _, v := range []string{o.Branch, o.From} {
+	for _, v := range []string{o.Branch, o.From, o.Base} {
 		if err := notAFlag(v); err != nil {
 			return WorktreeAddResult{}, err
 		}
+	}
+	base := ""
+	if o.Base != "" {
+		switch {
+		case w.resolves(ctx, "refs/remotes/origin/"+o.Base):
+			base = "origin/" + o.Base
+		case w.localBranchExists(ctx, o.Base):
+			base = o.Base
+		default:
+			return WorktreeAddResult{}, UserError("There is no branch " + o.Base + " here nor on the remote (origin/" + o.Base +
+				"), so no copy was made. Name a base the repo has, or leave it out to start from the remote's default branch")
+		}
+		o.From, o.Create, o.NewBranch, o.FromIsBase = base, true, true, false
 	}
 	if o.Path == "" || !filepath.IsAbs(o.Path) {
 		return WorktreeAddResult{}, UserError("a checkout's path must be absolute: " + o.Path)
@@ -202,7 +222,7 @@ func (w *GitWriter) WorktreeAdd(ctx context.Context, o WorktreeAddOptions) (Work
 		return WorktreeAddResult{}, err
 	}
 	head, _ := (&GitRunner{Root: o.Path}).Run(ctx, "rev-parse", "HEAD")
-	return WorktreeAddResult{Path: o.Path, Branch: o.Branch, Head: strings.TrimSpace(string(head)), Created: created, Note: note}, nil
+	return WorktreeAddResult{Path: o.Path, Branch: o.Branch, Head: strings.TrimSpace(string(head)), Created: created, Note: note, Base: base}, nil
 }
 
 // WorktreeDiscard takes back a checkout just made for a record that could not be saved

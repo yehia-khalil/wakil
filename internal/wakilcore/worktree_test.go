@@ -398,3 +398,50 @@ func TestWorktreeDiscardRemovesTheCheckoutAndTheBranchItMade(t *testing.T) {
 		t.Fatal("the repository's own folder was discarded")
 	}
 }
+
+// A base the agent chose (workspace_start): the new branch starts from the remote's copy of it when
+// there is one, else the local branch; a base that is neither is refused and nothing is made. The
+// branch is still a name to mint, so a taken one steps to -2.
+func TestWorktreeAddFromAChosenBase(t *testing.T) {
+	repo, home, w := worktreeFixture(t)
+	ctx := context.Background()
+	// production exists locally at main's commit; the remote's production is a commit ahead.
+	gitIn(t, repo, "branch", "production")
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("two\n"), 0o644)
+	gitIn(t, repo, "commit", "-q", "-am", "ahead")
+	ahead := gitOut(t, repo, "rev-parse", "HEAD")
+	gitIn(t, repo, "reset", "-q", "--hard", "HEAD~1")
+	gitIn(t, repo, "update-ref", "refs/remotes/origin/production", ahead)
+
+	r, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "a"), Branch: "hotfix", Base: "production"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "hotfix" || !r.Created || r.Head != ahead || r.Base != "origin/production" {
+		t.Fatalf("from the remote's production: %+v, want head %s", r, ahead)
+	}
+	// A base only the repo has (no remote copy) is the local branch; a taken name steps to -2.
+	r, err = w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "b"), Branch: "hotfix", Base: "feature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branch != "hotfix-2" || r.Base != "feature" || r.Head != gitOut(t, repo, "rev-parse", "feature") {
+		t.Fatalf("from the local feature: %+v", r)
+	}
+	// A base that is nowhere: refused whole, naming it, and nothing at the path nor a branch made.
+	path := filepath.Join(home, "c")
+	_, err = w.WorktreeAdd(ctx, WorktreeAddOptions{Path: path, Branch: "fresh", Base: "staging"})
+	if err == nil || !strings.Contains(err.Error(), "staging") || !strings.Contains(err.Error(), "origin/staging") {
+		t.Fatalf("err %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatal("a refused base left a folder")
+	}
+	if w.localBranchExists(ctx, "fresh") {
+		t.Fatal("a refused base made a branch")
+	}
+	// A base that reads as a flag is refused like a branch that does.
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: filepath.Join(home, "d"), Branch: "x", Base: "-q"}); err == nil {
+		t.Fatal("a flag for a base was accepted")
+	}
+}
