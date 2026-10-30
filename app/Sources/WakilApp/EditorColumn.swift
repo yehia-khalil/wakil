@@ -260,6 +260,9 @@ struct EditorColumn: View {
     private func viewTab(_ view: EditorColumnView, _ name: String, _ id: String) -> some View {
         let count = view == .ticket ? RailTreatment.countSuffix(ticketCount) : nil
         let said = count.flatMap { _ in ticketCountLabel.map { "\(name), \($0)" } } ?? name
+        // What the count is made of is also the tab's value, so a reader of the tree (the e2e
+        // harness, which prints a value and not a description) sees it: `4 waiting on you: …`.
+        let value = count.flatMap { _ in ticketCountLabel } ?? ""
         return Button {
             focusWanted = view
             Task { await dispatch("editor_tree", ["view": .string(id), "shown": .bool(true)]) }
@@ -269,6 +272,7 @@ struct EditorColumn: View {
             .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
             .help(said)
             .accessibilityLabel(said)
+            .accessibilityValue(value)
             .accessibilityIdentifier("editor.column.\(id)")
     }
 

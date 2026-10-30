@@ -11,7 +11,7 @@
 {"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"app.txt"}}
 {"do":{"hotkey":"cmd+b"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
-{"expect":{"tree":"contains","text":"Ticket, "}}
+{"expect":{"tree":"contains","text":"waiting on you"}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"type":{"into":"palette.query","text":"e2e-project"}}}
@@ -21,4 +21,4 @@
 {"dispatch":{"action":"editor_new_scratch","params":{}}}
 {"do":{"hotkey":"cmd+b"}}
 {"expect":{"tree":"contains","text":"Untitled-1"}}
-{"expect":{"tree":"absent","text":"Ticket, "}}
+{"expect":{"tree":"absent","text":"waiting on you"}}
