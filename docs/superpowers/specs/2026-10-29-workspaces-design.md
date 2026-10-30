@@ -426,11 +426,13 @@ Calls the build made where the umbrella left room, or where code forced a refine
   copies; with none yet it is refused naming decision 7, and a named file starts the workspace.
 - **Views, as far as built**: a conversation in a workspace has the workspace's view (filed as
   `workspace-<view key>`), shared by the workspace's conversations; step 0 carries the canvas the
-  conversation was on into it when it is on screen, terminals included. **Main's view is still per
+  conversation was on into it when it is on screen, terminals excepted (amendment 2026-10-30, the
+  three items). **Main's view is still per
   conversation** (the conversations design's call 2b) until piece 3 gives Main's view a door with no
   conversation; an off-screen conversation moved by step 0 opens its new view empty.
 - **Environment** (decision 28): the workspace records the environment it started in;
-  `workspace_set_environment` (operator-only) changes it. Moving data panes with it is piece 3's.
+  `workspace_set_environment` (operator-only) changes it; its data panes follow (amendment
+  2026-10-30, the three items).
 - **Branch name draft** waits 4 s for the ✨ quick task, only when Branches instructions exist and
   commit drafts are on; otherwise the fallback name.
 
@@ -444,6 +446,33 @@ Calls the build made where the umbrella left room, or where code forced a refine
 - **A root that is not a git repository has no copy**, and no agent writes in Main (decision 7): an
   agent's write there is refused whole, naming decision 7 and asking for the operator's hand or a
   `git init`, before any workspace is made. The operator's own writes there are unchanged.
+
+### Amendment 2026-10-30 — piece 1's three remaining items
+
+- **Terminals at step 0** (decision 22, call 9). The terminals on the canvas step 0 carries do not
+  go with it: each one — its shell, history and frame — stays in **Main's view**, which in piece 1
+  is the canvas the place's Landing draws over (the id it reserves for its next conversation, so
+  the next conversation started there takes them; piece 3's Main view adopts that same canvas). In
+  each one's place the workspace's view opens its own terminal in the copy: same frame, links and
+  focus, a new id, at the old path translated into the copy, else the view's first copy. New
+  terminals in the view open in the copy (already built). An off-screen conversation's view opens
+  empty, as before.
+- **Data panes follow the environment** (decision 28). `workspace_set_environment` (which now takes
+  the workspace's id or its slug) tells the window once the record is saved. The view's database and
+  api panes leave the view in the old environment for the view in the new one, frame and subject
+  kept; their rows and replies, which describe the old environment, are dropped, and each subject
+  re-runs when the new view is shown (at once if it is on screen). A running conversation keeps its
+  environment (Decision 41's pin) and so its view there, editors and terminals included.
+- **The map in the instructions** ("The agent sees real paths"). Every conversation's turn carries
+  its map — on its session's first turn and whenever the map changed — as a block marked
+  *[Wakil: where you work. …]* **after** the operator's words, as the identifier note is, so the
+  words stay what a session is listed by (`firstPrompt` drops the block) and what the e2e stub
+  matches. A workspace's map: each repo's copy (path, branch, ports, holder) or Main's folder, and
+  the workspace's other conversations with their states and repos. **Main's map**: Main's folders
+  with their branches, the other conversations in Main, and the project's workspaces — each one's
+  copies, branches, ports and conversations — which it reads but never writes. Sent only by a window
+  the write rule is wired into; the launch prompt is unchanged (it is per project, the map per
+  conversation).
 
 ## Calls made for the operator
 

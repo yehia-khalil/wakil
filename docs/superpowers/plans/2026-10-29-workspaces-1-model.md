@@ -84,3 +84,20 @@ terminals left). Tags "Main · your folder" / "workspace copy"; the context line
 ## Phase H — charter: glossary, Decision 94, state.md
 
 ## Phase I — e2e checks written (not run), or `uncoverable.tsv` lines
+
+## Phase J — the three items left undone (amendment 2026-10-30)
+
+1. **Terminals at step 0.** `LayoutStore.leave(id:for:replacedWith:title:)` (a pane leaves for another
+   scope, a new one of its kind takes its place), `SnapGraph.rename`, `PaneStore.moveContents`,
+   `TerminalStore.rehome(only:)`; `WindowModel.leaveTerminalsInMain` from `workspaceViewFollows`.
+   Test: `step0LeavesTerminalsInMainsViewAndOpensTheViewsOwnInTheCopy`. E2E:
+   `agent/workspaces-step0-terminals.jsonl`.
+2. **Data panes follow the environment.** `WorkspaceRouterHooks.environmentChanged`, called by
+   `setEnvironment` after the save (id or slug); `WindowModel.workspaceDataPanesFollow`. Tests:
+   `anEnvironmentChangeTellsTheWindowWhatItWas`, `aWorkspacesDataPanesFollowItsEnvironment`. E2E:
+   `agent/workspaces-environment-data-panes.jsonl`.
+3. **The map in the instructions.** `workspaceMapText` (`Workspace/WorkspaceMap.swift`),
+   `WindowModel.workspaceMapUpdate` after the words in `send`; `firstPrompt` drops the block; the
+   stub matches the words and reads `{map}`. Tests: `WorkspaceMapTests`,
+   `WindowModelWorkspaceMapTests`, `TestGetSession_FirstPromptLeavesOutTheWorkspaceMap`,
+   `TestARuleMatchesTheWordsAndReadsTheMapAfterThem`. E2E: `agent/workspaces-map.jsonl`.
