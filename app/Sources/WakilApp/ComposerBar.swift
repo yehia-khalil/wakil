@@ -114,8 +114,11 @@ struct ComposerBar: View {
             .font(.system(size: 9, weight: .medium))
             .tracking(1.7)
             .foregroundStyle(landed ? violet.opacity(0.85) : coolWhite.opacity(0.50))
-            .lineLimit(1)
-            .fixedSize()
+            // Whole, never cut: one line when it fits (the usual case), else it wraps at word
+            // breaks and the field gives way — a rebound chord can be long.
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
             .accessibilityIdentifier("window.composer.hint")
     }
 

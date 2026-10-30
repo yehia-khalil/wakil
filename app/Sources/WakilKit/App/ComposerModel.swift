@@ -88,7 +88,8 @@ public final class ComposerModel {
     }
 
     public var bar: ComposerBarContent {
-        .make(machine: machine, landedUnsent: landedUnsent && !draft.isEmpty, draft: draft, caret: caret)
+        .make(machine: machine, landedUnsent: landedUnsent && !draft.isEmpty, draft: draft, caret: caret,
+              keymap: window.keymap)
     }
 
     public func optionDown() { run(machine.optionDown(at: now())) }

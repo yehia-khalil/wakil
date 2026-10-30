@@ -504,3 +504,11 @@ private final class HarnessesByPlace: @unchecked Sendable {
     await composer.submit()
     #expect(agent.lastTurnSource == .typed)
 }
+
+@MainActor
+@Test func theBarHintFollowsTheWindowsKeymap() {
+    let (composer, window, _) = model(steps: [], clock: Clock())
+    #expect(composer.bar == .draft(hint: "Hold ⌥ to speak · ⌘P open · ⌘K actions"))
+    window.keymap = Keymap(overrides: ["window.open": "⌃⌘O", "window.commands": "⌃⌘K"])
+    #expect(composer.bar == .draft(hint: "Hold ⌥ to speak · ⌃⌘O open · ⌃⌘K actions"))
+}

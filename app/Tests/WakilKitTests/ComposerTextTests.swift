@@ -87,7 +87,7 @@ import Testing
     _ = m.optionUp(at: 1); _ = m.tick(at: 4)
     #expect(ComposerBarContent.make(machine: m, landedUnsent: false)
             == .notice("Allow Wakil to use the microphone in the macOS prompt, then hold ⌥ again", draft: "",
-                       hint: ComposerBarContent.keysHint))
+                       hint: ComposerBarContent.keysHint(Keymap(overrides: [:]))))
 }
 
 // 3a-ii walk: a second hold hid what the first had landed, so the operator said it all again and it
@@ -134,4 +134,22 @@ import Testing
     let around = ComposerText.around("", in: "a\r\nb", at: 2)
     #expect(around.before == "a")
     #expect(around.after == "\r\nb")
+}
+
+// Shortcuts are rebindable (Decision 50): the idle hint names the chords in force, not ⌘P and ⌘K.
+
+@Test func theIdleHintNamesTheDefaultChords() {
+    #expect(ComposerBarContent.keysHint(Keymap(overrides: [:])) == "Hold ⌥ to speak · ⌘P open · ⌘K actions")
+}
+
+@Test func theIdleHintFollowsARebind() {
+    let keymap = Keymap(overrides: ["window.open": "⌃⌘O", "window.commands": "⌃⌘K"])
+    #expect(ComposerBarContent.keysHint(keymap) == "Hold ⌥ to speak · ⌃⌘O open · ⌃⌘K actions")
+    #expect(ComposerBarContent.make(machine: ListeningMachine(), landedUnsent: false, keymap: keymap)
+            == .draft(hint: "Hold ⌥ to speak · ⌃⌘O open · ⌃⌘K actions"))
+}
+
+@Test func theIdleHintDropsACommandWithNoChord() {
+    let keymap = Keymap(overrides: ["window.open": ""])
+    #expect(ComposerBarContent.keysHint(keymap) == "Hold ⌥ to speak · ⌘K actions")
 }
