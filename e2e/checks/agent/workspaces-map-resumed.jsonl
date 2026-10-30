@@ -1,0 +1,20 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"window.composer","text":"where do you work once resumed"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"map says: You are in Main of project e2e-git"}}
+{"do":{"hotkey":"cmd+shift+w"}}
+{"expect":{"tree":"absent","text":"map says: You are in Main of project e2e-git"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"work once resumed"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"where do you work once resumed"}}
+{"expect":{"tree":"absent","text":"This map replaces any earlier one"}}
+{"expect":{"tree":"absent","text":"You are in Main of project e2e-git"}}

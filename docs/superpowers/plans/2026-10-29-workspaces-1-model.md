@@ -101,3 +101,6 @@ terminals left). Tags "Main · your folder" / "workspace copy"; the context line
    stub matches the words and reads `{map}`. Tests: `WorkspaceMapTests`,
    `WindowModelWorkspaceMapTests`, `TestGetSession_FirstPromptLeavesOutTheWorkspaceMap`,
    `TestARuleMatchesTheWordsAndReadsTheMapAfterThem`. E2E: `agent/workspaces-map.jsonl`.
+4. **A resumed thread's rows leave the map out.** `blockEntries` drops the block from user entries
+   (`withoutWakilBlocks`, as `firstPrompt`). Test: `TestReadSession_UserRowsLeaveOutTheWorkspaceMap`.
+   E2E: `agent/workspaces-map-resumed.jsonl`.

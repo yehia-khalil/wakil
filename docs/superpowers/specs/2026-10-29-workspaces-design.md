@@ -467,7 +467,8 @@ Calls the build made where the umbrella left room, or where code forced a refine
   its map — on its session's first turn and whenever the map changed — as a block marked
   *[Wakil: where you work. …]* **after** the operator's words, as the identifier note is, so the
   words stay what a session is listed by (`firstPrompt` drops the block) and what the e2e stub
-  matches. A workspace's map: each repo's copy (path, branch, ports, holder) or Main's folder, and
+  matches. A resumed thread's operator rows drop it too (`session_read`'s user entries): the
+  operator's rows show only the operator's words. A workspace's map: each repo's copy (path, branch, ports, holder) or Main's folder, and
   the workspace's other conversations with their states and repos. **Main's map**: Main's folders
   with their branches, the other conversations in Main, and the project's workspaces — each one's
   copies, branches, ports and conversations — which it reads but never writes. Sent only by a window
