@@ -254,4 +254,40 @@ struct CrewWindowTests {
         #expect(briefs.contains { $0.contains("You work in web (/src/web)") && $0.contains("- ‘INI-142 · api’ works in api (/src/api).") })
         await w.model.shutdown()
     }
+    /// Rule 4, the window's side: a member the start no longer admits (Cancel landed) is ended
+    /// before its first message and stops the crew; none after it starts.
+    @Test func aCrewMemberNotAdmittedNeverStartsAndStopsTheRest() async throws {
+        let w = try await Wired()
+        func member(_ root: String) -> TicketHandOffRequest {
+            TicketHandOffRequest(
+                key: "INI-142", pr: nil, thread: nil, brief: "Add the login rate limit.", harness: "claude-code",
+                provider: "test-provider", place: placeA, root: root, branch: "", mayPush: false,
+                title: "INI-142 · Add the login rate limit.")
+        }
+        w.model.setRootPathsForTesting(roots + ["/src/core"])
+        let admitted = AdmitLog(allow: 1)
+        await #expect {
+            _ = try await w.model.startCrew([member("/src/api"), member("/src/web"), member("/src/core")],
+                                            admit: { await admitted.admit($0) })
+        } throws: { "\($0)".contains("cancelled") }
+        let asked = await admitted.asked
+        #expect(asked.count == 2, "the third member is never reserved")
+        #expect(w.model.conversation(id: asked[1]) == nil, "the refused member is ended")
+        #expect(w.model.conversation(id: asked[0]) != nil, "the caller ends the ones it admitted")
+        let harnesses = w.sessions.harnesses.in(placeA)
+        #expect(await waitUntil { harnesses.contains { !sends($0).isEmpty } })
+        #expect(harnesses.filter { !sends($0).isEmpty }.count == 1, "only the admitted member was sent its brief")
+        await w.model.shutdown()
+    }
+}
+
+/// Admits the first `allow` members asked about, and records each.
+private actor AdmitLog {
+    let allow: Int
+    var asked: [String] = []
+    init(allow: Int) { self.allow = allow }
+    func admit(_ id: String) -> Bool {
+        asked.append(id)
+        return asked.count <= allow
+    }
 }

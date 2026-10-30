@@ -302,9 +302,9 @@ public struct WakilWiring: Sendable {
             guard let model else { throw RecipeDraftError("running_draft_propose: no window is open to show the draft in") }
             try await model.receiveRecipeDraft(conversation: conversation, proposal)
         }
-        handOffLookup.use(crew: { [weak model] requests in
+        handOffLookup.use(crew: { [weak model] requests, admit in
             guard let model else { throw TicketHandOffError(description: "no window to start the crew in") }
-            return try await model.startCrew(requests)
+            return try await model.startCrew(requests, admit: admit)
         })
         // Workspaces piece 5: a proposed teammate's Start and Dismiss, and nothing to do.
         model.useCrew(crewLookup)

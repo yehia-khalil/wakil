@@ -1111,10 +1111,15 @@ func registerTicketActions(
                         place: request.place, root: r, branch: branch, mayPush: request.mayPush, repo: request.repo,
                         title: request.title))
                 }
+                // Rule 4: each member is reserved before it starts, so Cancel ends every one
+                // started so far and the next is not admitted.
                 let token = await store.beginHandOffStart()
                 do {
-                    let ids = try await handOff.startCrew(requests)
-                    _ = await store.finishHandOffStart(token, error: nil)
+                    let ids = try await handOff.startCrew(requests, admit: { id in await store.reserveHandOff(id, token: token) })
+                    if await store.finishHandOffStart(token, error: nil) == .cancelled {
+                        for id in ids { await handOff.cancel(id) }
+                        return .object(["cancelled": .bool(true)])
+                    }
                     for (i, id) in ids.enumerated() {
                         try? await registry.journalFollowUp(
                             action: action, params: .object(["key": key.map { .string($0) } ?? .null, "conversation": .string(id),
@@ -1124,7 +1129,9 @@ func registerTicketActions(
                     }
                     return .object(["conversations": .array(ids.map { .string($0) })])
                 } catch {
-                    _ = await store.finishHandOffStart(token, error: "\(error)")
+                    guard await store.finishHandOffStart(token, error: "\(error)") == .current else {
+                        return .object(["cancelled": .bool(true)])
+                    }
                     throw TicketActionError(description: "\(action): \(error)")
                 }
             }
@@ -1156,13 +1163,14 @@ func registerTicketActions(
     await registry.register(Action(
         name: "ticket_hand_off_cancel",
         description: "Cancel the Hand to agent popover: while a Start runs, stop it and end the conversation it "
-            + "reserved (the popover stays, its brief kept); else close the popover. The operator's only.",
+            + "reserved — for one per repo, every member started so far, and start no more (the popover stays, "
+            + "its brief and repos kept); else close the popover. The operator's only.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["pane": string]),
         handler: { _ in
             guard let s = await store.handOff() else { return .object(["handoff": .object(["open": .bool(false)])]) }
             if s.starting {
-                if let id = await store.cancelHandOffStart() { await handOff?.cancel(id) }
+                for id in await store.cancelHandOffStart() { await handOff?.cancel(id) }
             } else {
                 await store.closeHandOff()
             }

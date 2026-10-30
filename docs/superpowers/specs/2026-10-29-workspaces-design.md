@@ -1042,8 +1042,11 @@ Calls the build made where the piece above is silent (plan:
   repo and each repo where the ticket's branch is read or an In flight row of the key sits. Each
   member's brief is the operator's, then the record as the subject's read gives it for that repo
   (else the subject's), then *who holds what*. Titles are `<KEY> · <repo>`. A member that fails to
-  start stops the rest; those started stay and the error says how many. Cancel does not stop a crew
-  start already under way (Rule 4 holds for one agent only; recorded as not done).
+  start stops the rest; those started stay and the error says how many. **Cancel** during a crew
+  start withdraws it whole (Rule 4, as one agent's Cancel ends the conversation it reserved): each
+  member is reserved before its first message, so Cancel ends every member started so far and the
+  next is not admitted; the popover stays, its brief and repos kept. The crew's record-only workspace
+  stays, empty (amended 2026-10-30).
 - **Nothing to do** reads `done · nothing to do in <repo>` (its crew repo, else the repo it holds),
   else `done · nothing to do: <why>`, in `LiveConversation.stateWords` and `session_list`'s
   `nothingToDo`, until the operator's next message. **Close** is the existing close.

@@ -162,3 +162,5 @@ a handed proposer, else `startCrewConversation` — its brief followed by `crewB
 `conversation_teammate_dismiss` remembers the repo for that workspace. **One per repo** in Hand to
 agent sends `ticket_hand_off {agents: perRepo, repos}`, which reaches `WindowModel.startCrew` through
 `TicketHandOffLookup.startCrew`: one handed conversation per repo in the ticket's workspace.
+Each member is reserved in `EditorTicketStore` (`admit`) before its first message, so
+`ticket_hand_off_cancel` ends every member started so far and the next is not admitted.

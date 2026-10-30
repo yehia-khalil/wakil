@@ -690,8 +690,9 @@ public final class TicketHandOffLookup: @unchecked Sendable {
     }
 
     /// Workspaces piece 5: one per repo — the window starts one handed conversation per request in
-    /// the ticket's workspace (`WindowModel.startCrew`), and returns their ids.
-    public typealias Crew = @Sendable ([TicketHandOffRequest]) async throws -> [String]
+    /// the ticket's workspace (`WindowModel.startCrew`), and returns their ids. `admit` hears each
+    /// member's id before its first message goes: false (Cancel landed) ends it and stops the crew.
+    public typealias Crew = @Sendable ([TicketHandOffRequest], (@Sendable (String) async -> Bool)?) async throws -> [String]
     private var crewSource: Crew?
 
     public func use(crew: @escaping Crew) {
@@ -706,9 +707,10 @@ public final class TicketHandOffLookup: @unchecked Sendable {
         return crewSource
     }
 
-    public func startCrew(_ requests: [TicketHandOffRequest]) async throws -> [String] {
+    public func startCrew(_ requests: [TicketHandOffRequest],
+                          admit: (@Sendable (String) async -> Bool)? = nil) async throws -> [String] {
         guard let crew = installedCrew() else { throw TicketHandOffError(description: "no window to start the crew in") }
-        return try await crew(requests)
+        return try await crew(requests, admit)
     }
 }
 

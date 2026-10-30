@@ -189,8 +189,11 @@ extension WindowModel {
 
     /// One per repo (the Hand to agent popover): one handed conversation per request, all in the
     /// ticket's workspace (found by its key, else a record only), each told who holds what. A start
-    /// that fails stops the rest; the ones started stay, and the error names them.
-    public func startCrew(_ requests: [TicketHandOffRequest]) async throws -> [String] {
+    /// that fails stops the rest; the ones started stay, and the error names them. `admit` hears
+    /// each member's id before its first message: false (Cancel landed, Rule 4) ends that member
+    /// unsent and starts no more — the caller ends the ones admitted before it.
+    public func startCrew(_ requests: [TicketHandOffRequest],
+                          admit: (@Sendable (String) async -> Bool)? = nil) async throws -> [String] {
         guard let first = requests.first else { throw TicketHandOffError(description: "no repo is ticked") }
         let titles = requests.map { r in "\(r.key ?? r.title) · \((r.root as NSString).lastPathComponent)" }
         var workspace: String?
@@ -209,7 +212,7 @@ extension WindowModel {
                 harness: r.harness, provider: r.provider, place: r.place, root: r.root, branch: r.branch,
                 mayPush: r.mayPush, repo: r.repo, title: titles[i])
             do {
-                started.append(try await startHandOff(request, workspace: workspace, crewRepo: r.root))
+                started.append(try await startHandOff(request, admit: admit, workspace: workspace, crewRepo: r.root))
             } catch {
                 let done = started.isEmpty ? "" : " (\(started.count) of \(requests.count) started and still running)"
                 throw TicketHandOffError(description: "the agent for \((r.root as NSString).lastPathComponent) did not start\(done): \(error)")

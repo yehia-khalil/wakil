@@ -14,8 +14,10 @@ extension WindowModel {
     /// with May push off, and says why on its chip and in its thread. Returns its id.
     ///
     /// Workspaces piece 5: `workspace` puts it in a crew's workspace before its first message, so
-    /// its first write makes a copy there; `crewRepo` is the repo it was started for.
+    /// its first write makes a copy there; `crewRepo` is the repo it was started for; `admit` (one
+    /// per repo) hears its id before its first message — false (a Cancel landed) ends it unsent.
     public func startHandOff(_ r: TicketHandOffRequest, reserved: ((String) -> Void)? = nil,
+                             admit: (@Sendable (String) async -> Bool)? = nil,
                              workspace: String? = nil, crewRepo: String? = nil) async throws -> String {
         let agent = backgroundAgent(in: r.place, providerId: r.provider)
         agent.handoff = PlaceAgentHandoff(key: r.key, pr: r.pr, thread: r.thread, root: r.root, branch: r.branch, mayPush: r.mayPush)
@@ -27,6 +29,10 @@ extension WindowModel {
         agent.messageTitle = conversationTitle(r.title)
         agent.namingAsked = true
         reserved?(agent.id)
+        if let admit, !(await admit(agent.id)) {
+            if conversation(id: agent.id) === agent { await endConversation(agent) }
+            throw TicketHandOffError(description: "the hand-off was cancelled before it started")
+        }
         let scope = TurnScope(place: r.place, rootPath: r.root, providerId: r.provider, conversation: agent.id)
         guard await send(r.brief, scope: scope) else {
             let why = status.isEmpty ? "the agent did not start" : status

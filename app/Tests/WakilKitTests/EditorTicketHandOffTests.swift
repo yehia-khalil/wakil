@@ -27,9 +27,22 @@ private actor FakeHandOff {
     }
 
     var crews: [[TicketHandOffRequest]] = []
-    func crew(_ rs: [TicketHandOffRequest]) -> [String] {
+    /// A crew start holds at this member (after it was admitted) until Cancel or `release`.
+    var crewPark: Int?
+    func setCrewPark(_ i: Int?) { crewPark = i }
+    /// One per repo: each member is admitted (reserved) before it starts, as the window's is; a
+    /// member not admitted, or one Cancel ended, stops the crew.
+    func crew(_ rs: [TicketHandOffRequest], admit: (@Sendable (String) async -> Bool)?) async throws -> [String] {
         crews.append(rs)
-        return rs.indices.map { "crew-\($0)" }
+        var ids: [String] = []
+        for i in rs.indices {
+            let id = "crew-\(i)"
+            if let admit, !(await admit(id)) { throw TicketHandOffError(description: "the hand-off was cancelled before it started") }
+            if crewPark == i { await withCheckedContinuation { parked = $0 } }
+            if wasCancelled { throw TicketHandOffError(description: "the hand-off was cancelled before it started") }
+            ids.append(id)
+        }
+        return ids
     }
 
     func cancel(_ id: String) {
@@ -97,7 +110,7 @@ private func handOffFixture(defaults: JSONValue? = nil) async throws -> HandOffF
     let fake = FakeHandOff()
     let lookup = TicketHandOffLookup()
     lookup.use(start: { r, reserved in try await fake.start(r, reserved: reserved) }, cancel: { await fake.cancel($0) })
-    lookup.use(crew: { rs in await fake.crew(rs) })
+    lookup.use(crew: { rs, admit in try await fake.crew(rs, admit: admit) })
     lookup.use(context: {
         TicketHandOffContext(screen: screen, provider: "initech-work",
                              providers: [TicketHandOffProvider(id: "initech-work"), TicketHandOffProvider(id: "initech-spare")],
@@ -1081,6 +1094,42 @@ private func quotedBlock(_ brief: String) -> [String] {
         #expect(crew.allSatisfy { $0.brief.contains(handOffAddedByWakil) })
         #expect(await f.handOff.requests.isEmpty, "no single start")
         #expect(await f.store.handOff() == nil, "the popover closes after a Start")
+    }
+
+    /// Rule 4: Cancel while one per repo starts withdraws the whole start — every member it started
+    /// so far ends, none after starts — and the popover stays, its brief and repos kept.
+    @Test(.timeLimit(.minutes(1))) func cancelEndsAOnePerRepoStartAndStartsNoMore() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"),
+                                                       "repos": .array([.string("/p/api"), .string("/p/web")])])
+        let before = try await f.state()
+        await f.handOff.setCrewPark(1)
+        let params = before.startParams
+        let start = Task { try await f.dispatch("ticket_hand_off", params) }
+        while await f.store.handOff()?.conversation != "crew-1" { await Task.yield() }
+        #expect(try await f.state().starting)
+        try await f.dispatch("ticket_hand_off_cancel")
+        #expect(await f.handOff.cancelled == ["crew-0", "crew-1"], "both members it started end")
+        let reply = try await start.value
+        #expect(reply == .object(["cancelled": .bool(true)]))
+        let s = try await f.state()
+        #expect(!s.starting && s.error == nil && s.conversation == nil)
+        #expect(s.brief == before.brief && s.agents == .perRepo && s.crewRoots == ["/p/api", "/p/web"])
+    }
+
+    /// A Cancel that lands before a member is reserved: that member is not admitted, so it never
+    /// starts, and the ones before it end.
+    @Test(.timeLimit(.minutes(1))) func aMemberAfterCancelIsNotAdmitted() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"),
+                                                       "repos": .array([.string("/p/api"), .string("/p/web")])])
+        let token = await f.store.beginHandOffStart()
+        #expect(await f.store.reserveHandOff("crew-0", token: token))
+        #expect(await f.store.cancelHandOffStart() == ["crew-0"])
+        #expect(!(await f.store.reserveHandOff("crew-1", token: token)), "a member after Cancel is refused")
+        #expect(await f.store.finishHandOffStart(token, error: "cancelled") == .cancelled)
     }
 
     @Test func onePerRepoWithNoRepoTickedStartsNothing() async throws {
