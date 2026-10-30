@@ -265,7 +265,9 @@ struct Home: View {
             .accessibilityAction(.default) { Task { await model.openWorkspace(card.id) } }
             .accessibilityIdentifier("landing.card.\(card.id)")
             .accessibilityValue(card.needsYou ? "needs you" : "")
-            if let merged = card.merged { mergedOffer(card, merged, disabled: disabled) }
+            if let merged = card.merged {
+                mergedOffer(card, merged, offer: screen?.mergedOffers.firstIndex(of: card.id) ?? 0, disabled: disabled)
+            }
             VStack(alignment: .leading, spacing: 0) { ForEach(card.lines) { conversationLine($0) } }
             ForEach(card.children) { child in cardView(child, depth: depth + 1).padding(.leading, 18) }
         }
@@ -308,7 +310,7 @@ struct Home: View {
     /// Decision 11's offer, outside the card's combined element so its button is its own control:
     /// every PR merged, and **Archive** — the menu's own, asking only with a conversation waiting
     /// (Rule 1), disabled while a card action runs (Rule 5).
-    private func mergedOffer(_ card: HomeCard, _ merged: String, disabled: Bool) -> some View {
+    private func mergedOffer(_ card: HomeCard, _ merged: String, offer: Int, disabled: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("\(merged) — this work is done")
                 .font(.system(size: 11))
@@ -321,7 +323,7 @@ struct Home: View {
                 .foregroundStyle(violet)
                 .disabled(disabled)
                 // Numbered in drawing order (`HomeScreen.mergedOffers`): a card's own id is generated.
-                .accessibilityIdentifier("landing.archive.offer:\(screen?.mergedOffers.firstIndex(of: card.id) ?? 0)")
+                .accessibilityIdentifier("landing.archive.offer:\(offer)")
         }
         .padding(.horizontal, 18)
     }
