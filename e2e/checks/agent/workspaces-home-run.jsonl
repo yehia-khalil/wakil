@@ -8,12 +8,15 @@
 {"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"dispatch":{"action":"workspace_run","params":{"repo":"e2e-api"}}}
+{"expect":{"journal":{"contains":"\"action\":\"workspace_run\""}}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"expect":{"tree":"absent","text":"e2e-api web running on :"}}
-{"dispatch":{"action":"workspace_run","params":{"workspace":"write-the-workspace-note","repo":"e2e-api"}}}
-{"expect":{"journal":{"contains":"\"action\":\"workspace_run\""}}}
 {"expect":{"tree":"contains","text":"e2e-api web running on :"}}
 {"expect":{"tree":"contains","text":"Stop"}}
-{"dispatch":{"action":"workspace_stop","params":{"workspace":"write-the-workspace-note"}}}
+{"do":{"click":"landing.row.running:0"}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"dispatch":{"action":"workspace_stop","params":{}}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"expect":{"tree":"absent","text":"e2e-api web running on :"}}
