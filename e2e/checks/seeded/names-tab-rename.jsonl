@@ -31,9 +31,9 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Placeholder: Tab name"}}
 {"expect":{"focus":"palette.query"}}
-{"expect":{"tree":"contains","text":"Keep “Quarterly ledger”"}}
+{"expect":{"label":"palette.row.name","contains":"Keep “Quarterly ledger”"}}
 {"do":{"keys":"Budget review"}}
-{"expect":{"tree":"contains","text":"Rename to “Budget review”"}}
+{"expect":{"label":"palette.row.name","contains":"Rename to “Budget review”"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Budget review"}}
@@ -46,9 +46,9 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Placeholder: Tab name"}}
-{"expect":{"tree":"contains","text":"Keep “Budget review”"}}
+{"expect":{"label":"palette.row.name","contains":"Keep “Budget review”"}}
 {"do":{"press":"Backspace"}}
-{"expect":{"tree":"contains","text":"Clear name — back to “Page B”"}}
+{"expect":{"label":"palette.row.name","contains":"Clear name — back to “Page B”"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}

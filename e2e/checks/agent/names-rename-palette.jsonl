@@ -12,7 +12,7 @@
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"expect":{"journal":{"contains":"\"action\":\"conversation_named\""}}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"Fixture Named Conversation"}}
+{"expect":{"label":"landing.row.running:0","contains":"Fixture Named Conversation"}}
 {"do":{"click":"landing.row.running:0"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"do":{"hotkey":"cmd+k"}}
@@ -22,14 +22,14 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Placeholder: Conversation name"}}
 {"expect":{"focus":"palette.query"}}
-{"expect":{"tree":"contains","text":"Keep “Fixture Named Conversation”"}}
+{"expect":{"label":"palette.row.name","contains":"Keep “Fixture Named Conversation”"}}
 {"do":{"keys":"Billing refund"}}
-{"expect":{"tree":"contains","text":"Rename to “Billing refund”"}}
+{"expect":{"label":"palette.row.name","contains":"Rename to “Billing refund”"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"RUNNING"}}
-{"expect":{"tree":"contains","text":"Billing refund"}}
+{"expect":{"label":"landing.row.running:0","contains":"Billing refund"}}
 {"expect":{"tree":"absent","text":"Fixture Named Conversation"}}
 {"do":{"click":"landing.row.running:0"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
@@ -40,12 +40,12 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Placeholder: Conversation name"}}
 {"expect":{"focus":"palette.query"}}
-{"expect":{"tree":"contains","text":"Keep “Billing refund”"}}
+{"expect":{"label":"palette.row.name","contains":"Keep “Billing refund”"}}
 {"do":{"press":"Backspace"}}
-{"expect":{"tree":"contains","text":"Clear name — back to “Fixture Named Conversation”"}}
+{"expect":{"label":"palette.row.name","contains":"Clear name — back to “Fixture Named Conversation”"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"RUNNING"}}
-{"expect":{"tree":"contains","text":"Fixture Named Conversation"}}
+{"expect":{"label":"landing.row.running:0","contains":"Fixture Named Conversation"}}
 {"expect":{"tree":"absent","text":"Billing refund"}}

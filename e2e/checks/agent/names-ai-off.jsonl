@@ -19,10 +19,5 @@
 {"expect":{"tree":"contains","text":"second reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"RUNNING"}}
-{"expect":{"tree":"contains","text":"thread turn one"}}
-{"do":{"hotkey":"cmd+p"}}
-{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
-{"expect":{"tree":"contains","text":"Value: thread turn one"}}
-{"do":{"press":"Escape"}}
-{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"label":"landing.row.running:0","contains":"thread turn one"}}
 {"expect":{"tree":"absent","text":"Fixture Named Conversation"}}

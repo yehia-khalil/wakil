@@ -6,6 +6,6 @@
 {"expect":{"journal":{"contains":"\"action\":\"conversation_rename\""}}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"RUNNING"}}
-{"expect":{"tree":"contains","text":"Dispatched Name"}}
+{"expect":{"label":"landing.row.running:0","contains":"Dispatched Name"}}
 {"dispatch":{"action":"conversation_rename","params":{"conversation":"c-nowhere","name":"Zzz Elsewhere"},"refuses":"an agent renames only its own conversation"}}
 {"expect":{"tree":"absent","text":"Zzz Elsewhere"}}
