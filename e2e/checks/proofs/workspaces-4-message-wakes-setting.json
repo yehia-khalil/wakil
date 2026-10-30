@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/workspaces-4-message-wakes-setting.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T06:03:07.171225Z",
+  "checkBlob": "ec2b7ac56449651dbc07306d619ac91f178dde8b"
+}
