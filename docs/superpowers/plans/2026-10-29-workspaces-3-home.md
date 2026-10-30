@@ -152,3 +152,17 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
 - [x] G7 (on main too, landed on piece 1) The editor's Ticket label counts nothing in a project with no git
   repository (`ticketNeedsCount(_:roots:)`). Test: `EditorTicketNeedsTests`.
 
+## Phase H — the home, as the comp draws it (2026-10-30)
+
+- [x] H1 NEEDS YOU: rows, reasons, order, pairing, actions; pills count rows. Tests first: `HomeNeedsTests`.
+- [x] H2 Compact card: `● n`, the environment tag, ports and ▶, the child row; quiet projects; the
+  project count; Earlier's line; a ticket started; its status. Tests: `HomeNeedsTests`, `HomeScreenTests`.
+- [x] H3 Expansion kept across relaunch (`HomeExpansionStore`); the explainer on the first run only.
+- [x] H4 `HomePalette` and its floor (`HomePaletteTests`); Start in's groups, tags and keys
+  (`homeStartGroups`, `homeStartMove`).
+- [x] H5 `Home.swift` redrawn; `ComposerStartIn` as Wakil's plane; *Open a pane* and
+  `openMainView(withPane:)` removed; the context line's ORGANISATION at the 0.58 floor.
+- [x] H6 Checks: `landing.row.open:terminal` → ⌘P's new terminal row; *Work in …* → the `landing` frame
+  (and `STAGING` for its absence); `landing.project.<p>.open` → `landing.project.<p>`; the start-in and
+  home checks rewritten; `uncoverable.tsv` for the new ids.
+

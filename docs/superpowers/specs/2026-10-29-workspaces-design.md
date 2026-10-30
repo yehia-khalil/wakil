@@ -673,6 +673,41 @@ Approved by the operator's walk on 2026-10-30; the calls below are the build's.
   its key or branch. Repeated *Hand to agent* presses each start a conversation of the same title; the
   home lists each (the walk's two "AQ247-141 · Work toward Next." rows were two hand-offs, not a fork).
 
+### Amendment 2026-10-30 — the home, as the comp draws it
+
+The operator confirmed the home brief and approved the comp (impeccable, Operate mode, a refinement
+inside `design-language.md`); this is what was built from it.
+
+- **Needs first.** *NEEDS YOU* (drawn only when non-empty) lists one row per workspace, or per
+  conversation in Main, that needs the operator: every why it has, strongest first — waiting on you ›
+  failed › checks failing *n* › review requested › *n* comments › done, unseen — in its strongest
+  why's hue, with that why's one action (Review, Open, checks ↗, review ↗). The row opens what it is
+  about. A pill counts its project's rows; the filter narrows NEEDS YOU too (`HomeNeeds.swift`).
+- **The organisation's line only.** No *Work in …* title, no help line, no *Open a pane*: a pane opens
+  inside a project's view. **A project's name is the door to its Main view** (`workspace_open`); no
+  separate Open. Projects with nothing going on fold into one line that names them (`2 quiet projects —
+  web · portal`), each name the same door.
+- **Compact cards that expand in place.** One line: state dot · key and title · the environment tag
+  only when it differs from the project's default (production always, red) · `● n` · `:41200 ■` while
+  something runs · ▶ while nothing does and a copy exists · ⌄. Expanded (lifted, not a new slab): the
+  repos and their whole branches (`main · not copied` for one never copied), the PRs with checks ↗ and
+  what runs, every conversation, the child as a ↳ line, then New conversation here · ▶ Run… · ⋯. A
+  child is its own ↳ row under a closed parent. Expansion is the operator's, kept per workspace
+  across relaunch (`HomeExpansionStore`, Rule 6). Decision 11's merged offer and a Run error stand
+  under the compact row, open or not.
+- **Start in is Wakil's own plane**, not an NSMenu: rows grouped by project, *now* and *production*
+  tags, production red (Invariant 8); ↑ ↓ Return, Escape closes; a choice sets the target only and
+  gives the composer the keyboard back with the draft kept.
+- **The explainer shows on the first run only** (an organisation with no project), with *Add a
+  project* (`settings_open`).
+- **The colours read are asserted**: `HomePalette`, each over the void, a slab and an expanded card's
+  lift, ≥ 4.5:1 (`HomePaletteTests`). The working dot holds still under Reduce Motion (`ChipDot`).
+- *Calls:* checks failing reads `checks failing 2`, not the comp's `2/7`: the in-flight read carries
+  the failing checks' names, not the total. A ticket key in *Tickets* is not a ↗ link: the read
+  carries the PR's page, not the ticket's. ▶ shows for a copy on disk, not "a saved recipe": the home
+  reads no recipe, and Run on a repo with none says why, whole. *All tickets in ⌘P* left the home
+  (⌘P's `#` still lists them).
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).
