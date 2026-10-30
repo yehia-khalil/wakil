@@ -40,6 +40,10 @@ private let orgDerived: Set<String> = [
     // again. `invalidateForOrgChange` empties the one and cancels the other; the switch reads the
     // incoming org and starts the read again (WindowModelTicketNoticingTests.orgSwitchEmptiesNeedsAndReadsTheNewOrg).
     "ticketNeeds", "ticketPollTask",
+    // Workspaces, piece 3: the home's merged-PRs reads are the outgoing org's roots' branches, and the
+    // workspaces ⌘P's ticket rows know are its record's; `invalidateForOrgChange` empties all of them
+    // (a read landing after the switch is dropped by its organisation).
+    "homeBranchPRs", "homeBranchReadAt", "homeBranchReading", "knownWorkspaces",
     "project", "projectKey", "pmProjectKey", "settingsProjectWanted", "runningTryProgress", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.

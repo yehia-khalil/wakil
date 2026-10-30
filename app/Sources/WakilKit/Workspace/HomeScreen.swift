@@ -18,6 +18,17 @@ public struct HomePastConversation: Sendable, Equatable, Identifiable {
     }
 }
 
+/// A workspace branch whose PRs decision 11's offer reads: Main's root (the repository
+/// `ticket_branch` reads PRs from) and the branch.
+public struct HomeBranch: Sendable, Hashable {
+    public let root: String
+    public let branch: String
+    public init(root: String, branch: String) {
+        self.root = root
+        self.branch = branch
+    }
+}
+
 /// What the home is built from: the window reads it (`WindowModel.homeInput`).
 public struct HomeInput: Sendable {
     public var organization: String
@@ -38,14 +49,14 @@ public struct HomeInput: Sendable {
     public var filter: String?
     /// The PRs each workspace branch heads, by Main's root and the branch (`ticket_branch`, read by
     /// the window for `homeMergedReads`): what decision 11's Archive offer is decided on.
-    public var branchPRs: [TicketShownAt: [PullRequestState]]
+    public var branchPRs: [HomeBranch: [PullRequestState]]
     /// Whether an environment of a project is production (Invariant 8).
     public var isProduction: @Sendable (_ project: String, _ environment: String) -> Bool
 
     public init(organization: String, project: String, environment: String, projects: [String] = [],
                 workspaces: [WorkspaceListing] = [], live: [LiveConversation] = [], tickets: [TicketNeedsRow] = [],
                 past: [HomePastConversation] = [], filter: String? = nil,
-                branchPRs: [TicketShownAt: [PullRequestState]] = [:],
+                branchPRs: [HomeBranch: [PullRequestState]] = [:],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -272,11 +283,11 @@ public func homeTicketWorkspace(_ row: TicketNeedsRow, in workspaces: [Workspace
 
 /// The branches decision 11's offer reads: each open workspace's checkouts with a branch, by Main's
 /// root (the repository `ticket_branch` reads PRs from) and the branch, once each.
-public func homeMergedReads(_ workspaces: [Workspace]) -> [TicketShownAt] {
-    var out: [TicketShownAt] = []
+public func homeMergedReads(_ workspaces: [Workspace]) -> [HomeBranch] {
+    var out: [HomeBranch] = []
     for w in workspaces where !w.archived {
         for c in w.checkouts where !c.branch.isEmpty {
-            let at = TicketShownAt(root: c.repo, branch: c.branch)
+            let at = HomeBranch(root: c.repo, branch: c.branch)
             if !out.contains(at) { out.append(at) }
         }
     }
@@ -286,7 +297,7 @@ public func homeMergedReads(_ workspaces: [Workspace]) -> [TicketShownAt] {
 /// `2 PRs merged` when every PR `w`'s branches head is merged — each branch read, at least one PR
 /// among them — else nil (decision 11). A repo with no PR is not one of its PRs; a closed one is
 /// not merged.
-func homeMergedLine(_ w: Workspace, _ reads: [TicketShownAt: [PullRequestState]]) -> String? {
+func homeMergedLine(_ w: Workspace, _ reads: [HomeBranch: [PullRequestState]]) -> String? {
     var prs: [PullRequestState] = []
     for at in homeMergedReads([w]) {
         guard let read = reads[at] else { return nil }

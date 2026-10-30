@@ -223,11 +223,11 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
 
 @Test func aCardOffersArchiveOnceEveryPROfItsBranchesIsMerged() {
     let a = ws("w1", "Stop persisting logs", branch: "logs", repos: ["/p/api", "/p/web"])
-    func card(_ reads: [TicketShownAt: [PullRequestState]]) -> HomeCard {
+    func card(_ reads: [HomeBranch: [PullRequestState]]) -> HomeCard {
         homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
                              workspaces: [listing(a)], branchPRs: reads)).sections[0].cards[0]
     }
-    let api = TicketShownAt(root: "/p/api", branch: "logs"), web = TicketShownAt(root: "/p/web", branch: "logs")
+    let api = HomeBranch(root: "/p/api", branch: "logs"), web = HomeBranch(root: "/p/web", branch: "logs")
 
     #expect(card([:]).merged == nil, "nothing read: no offer")
     #expect(card([api: [pr(7, "merged")], web: []]).merged == "1 PR merged", "a repo with no PR is not one of its PRs")
@@ -240,7 +240,7 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
     let b = ws("w2", "Older", branch: "older", repos: ["/p/api"], created: "2026-01-01T00:00:00Z")
     let screen = homeScreen(HomeInput(
         organization: "initech", project: "estate", environment: "staging", workspaces: [listing(a), listing(b)],
-        branchPRs: [api: [pr(7, "merged")], web: [], TicketShownAt(root: "/p/api", branch: "older"): [pr(3, "open", head: "older")]]))
+        branchPRs: [api: [pr(7, "merged")], web: [], HomeBranch(root: "/p/api", branch: "older"): [pr(3, "open", head: "older")]]))
     #expect(screen.mergedOffers == ["w1"], "numbered in drawing order, only the cards offering")
 }
 
@@ -248,5 +248,5 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
     var a = ws("w1", "Logs", branch: "logs", repos: ["/p/api", "/p/web"])
     a.checkouts[1].branch = ""
     let gone = ws("w2", "Old", branch: "old", repos: ["/p/api"], archived: true)
-    #expect(homeMergedReads([a, gone]) == [TicketShownAt(root: "/p/api", branch: "logs")])
+    #expect(homeMergedReads([a, gone]) == [HomeBranch(root: "/p/api", branch: "logs")])
 }

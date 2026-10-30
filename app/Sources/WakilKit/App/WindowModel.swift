@@ -950,10 +950,10 @@ public final class WindowModel {
     public private(set) var ticketNeeds: InFlightState?
     /// Workspaces, piece 3 (decision 11): the PRs each open workspace's branch heads, by Main's root
     /// and the branch, as the home last read them (`readHomeMergedBranches`).
-    public internal(set) var homeBranchPRs: [TicketShownAt: [PullRequestState]] = [:]
+    public internal(set) var homeBranchPRs: [HomeBranch: [PullRequestState]] = [:]
     /// When each of those was read, and which are being read now (one read per branch at a time).
-    @ObservationIgnored var homeBranchReadAt: [TicketShownAt: Date] = [:]
-    @ObservationIgnored var homeBranchReading: Set<TicketShownAt> = []
+    @ObservationIgnored var homeBranchReadAt: [HomeBranch: Date] = [:]
+    @ObservationIgnored var homeBranchReading: Set<HomeBranch> = []
     /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.
     var screenLocked = false
     /// The 2-minute read while Wakil is in front and the screen unlocked (`updateTicketPoll`), its
@@ -2582,10 +2582,12 @@ public final class WindowModel {
         // the incoming org and starts the read again (`ticketOrganizationReady`).
         ticketNeeds = nil
         stopTicketPoll()
-        // The home's Archive offer read the outgoing org's branches.
+        // Workspaces, piece 3: the home's Archive offer read the outgoing org's branches, and ⌘P's
+        // ticket rows knew its workspaces.
         homeBranchPRs = [:]
         homeBranchReadAt = [:]
         homeBranchReading = []
+        knownWorkspaces = ("", [])
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
