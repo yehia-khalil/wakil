@@ -58,14 +58,24 @@ public enum ComposerBarContent: Sendable, Equatable {
     /// A sentence in place of the words; `draft` is what the line already holds, still drawn.
     case notice(String, draft: String, hint: String)
 
-    public static let keysHint = "Hold ⌥ to speak · ⌘P open · ⌘K actions"
+    /// The idle hint, naming the chords in force: Open… and Run a Command… as the operator has
+    /// them now (Decision 50). A command with no chord drops out rather than naming a key that
+    /// does nothing. ⌥ is the dictation key and is not rebindable.
+    public static func keysHint(_ keymap: Keymap) -> String {
+        var parts = ["Hold ⌥ to speak"]
+        if let open = keymap.chord("window.open") { parts.append("\(open.text) open") }
+        if let actions = keymap.chord("window.commands") { parts.append("\(actions.text) actions") }
+        return parts.joined(separator: " · ")
+    }
     public static let landedHint = "heard · Return sends · edit first"
     public static let releaseHint = "release to put it in the line"
 
     /// `draft` and `caret` are the line's: a hold draws over the field, and must keep what it holds
     /// in view.
     public static func make(machine: ListeningMachine, landedUnsent: Bool,
-                            draft: String = "", caret: Int = 0) -> ComposerBarContent {
+                            draft: String = "", caret: Int = 0,
+                            keymap: Keymap = Keymap(overrides: [:])) -> ComposerBarContent {
+        let keysHint = keysHint(keymap)
         guard machine.isListening else {
             if let standing = machine.standingNotice {
                 return .notice(sentence(for: standing), draft: draft, hint: keysHint)
