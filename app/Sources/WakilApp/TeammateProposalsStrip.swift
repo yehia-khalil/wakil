@@ -93,12 +93,17 @@ struct TeammateProposalRow: View {
         Task { _ = await dispatch("conversation_teammate_brief", .object(["proposal": .string(proposal.id), "brief": .string(now)])) }
     }
 
-    /// Start: exactly the field's text as the brief; not twice (Rule 5).
+    /// Start: exactly the field's text as the brief; not twice (Rule 5). `starting` turns on in the
+    /// task, after the press returns: a button that relabels and disables itself inside its own
+    /// action fails an accessibility press (AXError -25200) though the action ran — the popover's
+    /// Start, its brief focused, did (TicketHandOffPopover's Start changes nothing in its action
+    /// either). A second press before the task runs is refused by Go: the proposal is taken.
     private func start() {
         guard !starting else { return }
-        starting = true
         let now = text
         Task {
+            guard !starting else { return }
+            starting = true
             _ = await dispatch("conversation_teammate_start", .object(["proposal": .string(proposal.id), "brief": .string(now)]))
             starting = false
             done()

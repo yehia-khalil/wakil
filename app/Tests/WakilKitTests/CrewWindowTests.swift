@@ -191,6 +191,25 @@ struct CrewWindowTests {
         await w.model.shutdown()
     }
 
+    /// The home's card draws the teammate Start made beside its proposer (spec piece 3's card).
+    @Test func theHomesCardDrawsTheStartedTeammateBesideItsProposer() async throws {
+        let w = try await Wired()
+        let (a, _) = try await w.backend()
+        let id = try await w.propose(a)
+        let r = try await w.operator_("conversation_teammate_start", ["proposal": .string(id)])
+        guard case .object(let o) = r, case .string(let started)? = o["conversation"] else { Issue.record("no id"); return }
+        let ws = try #require(await w.store.workspaceId(ofConversation: a.id))
+        let ht = try #require(w.sessions.harnesses.in(placeA).last)
+        #expect(await waitUntil { !sends(ht).isEmpty })
+        ht.emit(.result(isError: false, text: nil))
+        #expect(await waitUntil { w.model.conversation(id: started)?.turnInFlight == false })
+        let screen = await w.model.readHomeScreen(projects: [a.place.project], past: [], filter: nil)
+        let card = screen.sections.flatMap(\.cards).first { $0.id == ws }
+        #expect(Set(card?.lines.map(\.id) ?? []) == [a.id, started])
+        #expect(screen.sections.compactMap(\.main).flatMap(\.lines).isEmpty)
+        await w.model.shutdown()
+    }
+
     @Test func aDismissedProposalIsNotRepeatedInThatWorkspace() async throws {
         let w = try await Wired()
         let (a, _) = try await w.backend()
