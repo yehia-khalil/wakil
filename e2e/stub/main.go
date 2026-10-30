@@ -488,6 +488,7 @@ func expandCwd(params map[string]interface{}) map[string]interface{} {
 	if err != nil {
 		return params
 	}
+	dir = underTempDir(dir, os.TempDir())
 	out := make(map[string]interface{}, len(params))
 	for k, v := range params {
 		if s, ok := v.(string); ok {
@@ -496,4 +497,23 @@ func expandCwd(params map[string]interface{}) map[string]interface{} {
 		out[k] = v
 	}
 	return out
+}
+
+// underTempDir is dir spelled under tmp when it is inside tmp's resolved target. getcwd answers
+// the resolved path (`/private/var/folders/…`), but the window registers the fixture's roots as
+// TMPDIR spells them (`/var/folders/…`) and confines an agent's paths to those, so a resolved
+// path would read as outside every root.
+func underTempDir(dir, tmp string) string {
+	tmp = filepath.Clean(tmp)
+	real, err := filepath.EvalSymlinks(tmp)
+	if err != nil || real == tmp {
+		return dir
+	}
+	if dir == real {
+		return tmp
+	}
+	if strings.HasPrefix(dir, real+string(filepath.Separator)) {
+		return tmp + dir[len(real):]
+	}
+	return dir
 }
