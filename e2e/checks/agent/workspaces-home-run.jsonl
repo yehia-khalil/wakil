@@ -14,6 +14,10 @@
 {"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"contains","text":"e2e-api web running on :"}}
 {"expect":{"tree":"contains","text":"Stop"}}
+{"do":{"click":"landing.card:0.stop"}}
+{"expect":{"tree":"absent","text":"e2e-api web running on :"}}
+{"do":{"click":"landing.card:0.run"}}
+{"expect":{"tree":"contains","text":"e2e-api web running on :"}}
 {"do":{"click":"landing.row.running:0"}}
 {"expect":{"tree":"contains","text":"STAGING"}}
 {"dispatch":{"action":"workspace_stop","params":{}}}

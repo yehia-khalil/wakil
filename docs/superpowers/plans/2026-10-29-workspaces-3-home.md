@@ -174,5 +174,5 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
   `config_tree` (`OrgEnvironments`, `WindowModel.environmentJudge`); Start in lists each project's real
   environments (`homeStartChoices(otherEnvironments:)`, `WindowModel.startInChoices`). NEEDS YOU draws
   no environment. Tests first: `HomeScreenTests`, `WindowModelWorkspaceViewsTests`.
-- [ ] I2 A card's Run, Stop and run error are addressed by the card's number on the home
+- [x] I2 A card's Run, Stop and run error are addressed by the card's number on the home
   (`landing.card:<n>.run`), not its workspace id (`homeCardNumbers`). Check: `agent/workspaces-home-run.jsonl`.

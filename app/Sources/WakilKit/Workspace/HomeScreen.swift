@@ -289,6 +289,18 @@ public struct HomeScreen: Sendable, Equatable {
         return out
     }
 
+    /// Every card's id in drawing order, a child straight after its parent: what numbers a card's
+    /// controls (`landing.card:<n>.run`), as a card's own id is generated.
+    public var cardOrder: [String] {
+        var out: [String] = []
+        func walk(_ c: HomeCard) {
+            out.append(c.id)
+            c.children.forEach(walk)
+        }
+        sections.forEach { $0.cards.forEach(walk) }
+        return out
+    }
+
     /// Every conversation line, in drawing order.
     public var lines: [HomeConversationLine] {
         var out: [HomeConversationLine] = []

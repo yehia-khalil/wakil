@@ -258,6 +258,12 @@ struct Home: View {
 
     // MARK: - A card
 
+    /// The card's number on the home, in drawing order (`HomeScreen.cardOrder`): what its Run, Stop
+    /// and run error are addressed by, as its own id is generated.
+    private func number(_ card: HomeCard) -> Int {
+        screen?.cardOrder.firstIndex(of: card.id) ?? 0
+    }
+
     private func expanded(_ card: HomeCard) -> Bool {
         _ = expansionTick
         return expansion.isExpanded(card.id)
@@ -283,7 +289,7 @@ struct Home: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .padding(.leading, 37 + CGFloat(depth) * 20).padding(.trailing, 16).padding(.bottom, 6)
-                        .accessibilityIdentifier("landing.card.\(card.id).runError")
+                        .accessibilityIdentifier("landing.card:\(number(card)).runError")
                 }
                 if open { cardBody(card) }
             }
@@ -347,7 +353,7 @@ struct Home: View {
                         .disabled(disabled)
                         .help("Stop what runs in it: \(card.running ?? "")")
                         .accessibilityLabel("Stop")
-                        .accessibilityIdentifier("landing.card.\(card.id).stop")
+                        .accessibilityIdentifier("landing.card:\(number(card)).stop")
                     }
                 }
                 if card.offersRun { runControl(card, disabled: disabled) }
@@ -399,7 +405,7 @@ struct Home: View {
                 .disabled(disabled)
                 .help("Run \(repo.name)'s saved recipe in this workspace's copy")
                 .accessibilityLabel("Run \(repo.name)")
-                .accessibilityIdentifier("landing.card.\(card.id).run")
+                .accessibilityIdentifier("landing.card:\(number(card)).run")
         } else {
             Menu {
                 ForEach(card.runnable) { repo in
@@ -412,7 +418,7 @@ struct Home: View {
                 .disabled(disabled)
                 .help("Run a repo's saved recipe in this workspace's copy")
                 .accessibilityLabel("Run")
-                .accessibilityIdentifier("landing.card.\(card.id).run")
+                .accessibilityIdentifier("landing.card:\(number(card)).run")
         }
     }
 

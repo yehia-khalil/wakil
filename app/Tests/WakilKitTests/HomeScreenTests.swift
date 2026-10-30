@@ -308,3 +308,17 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
     #expect(judge("unknown", "production") && !judge("unknown", "prod"))
     #expect(!OrgEnvironments.unread.judge(current: "api", flags: .undeclared)("web", "live"))
 }
+
+/// The scenario audit: a card's Run, Stop and run error carried its workspace's generated id, so no
+/// check could address them. They carry the card's number on the home, in drawing order — each
+/// project's cards, a child straight after its parent.
+@Test func cardsAreNumberedInDrawingOrderAChildAfterItsParent() {
+    let screen = homeScreen(HomeInput(
+        organization: "o", project: "estate", environment: "staging", projects: ["estate", "dashboard"],
+        workspaces: [listing(ws("p", "Exception handling", created: "2026-10-01T00:00:00Z")),
+                     listing(ws("c", "Try a shared layout", parent: "p")),
+                     listing(ws("d", "Charts", project: "dashboard"))]))
+    let drawn = screen.sections.flatMap { s in s.cards.flatMap { [$0.id] + $0.children.map(\.id) } }
+    #expect(screen.cardOrder == drawn)
+    #expect(screen.cardOrder.count == 3 && screen.cardOrder.firstIndex(of: "c") == screen.cardOrder.firstIndex(of: "p")! + 1)
+}
