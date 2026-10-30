@@ -74,9 +74,8 @@ struct TicketHandOffPopover: View {
                     .accessibilityIdentifier("ticket.handoff.cancel")
                 if state.offersSend {
                     // Item 8: the second choice beside Send to — a new conversation, numbered.
-                    Button(state.startLabel) { start() }
-                        .buttonStyle(.bordered)
-                        .disabled(state.starting || state.sending)
+                    HandOffPress(label: state.startLabel, prominent: false,
+                                 enabled: !(state.starting || state.sending)) { start() }
                         .accessibilityIdentifier("ticket.handoff.startAnother")
                 } else {
                     Button(state.starting ? state.startLabel : "\(state.startLabel) ⌘↩") { start() }
@@ -118,14 +117,9 @@ struct TicketHandOffPopover: View {
     private var sendRow: some View {
         HStack(alignment: .top, spacing: Space.s) {
             Spacer(minLength: Space.m)
-            Button { send() } label: {
-                Text(state.sending ? state.sendLabel : "\(state.sendLabel) ⌘↩")
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .buttonStyle(.borderedProminent).tint(EditorPaneStyle.violet)
-            .disabled(state.sending || state.starting)
-            .accessibilityIdentifier("ticket.handoff.send")
+            HandOffPress(label: state.sending ? state.sendLabel : "\(state.sendLabel) ⌘↩", prominent: true,
+                         enabled: !(state.sending || state.starting)) { send() }
+                .accessibilityIdentifier("ticket.handoff.send")
             if state.carriers.count > 1 {
                 Menu {
                     ForEach(Array(state.carriers.enumerated()), id: \.element.conversation) { i, c in
@@ -349,5 +343,33 @@ final class TicketHandOffDraft {
     func closeParams(_ state: TicketHandOffState?) -> [String: JSONValue] {
         guard let text, let state, text != state.brief else { return [:] }
         return ["brief": .string(text)]
+    }
+}
+
+/// Send to and Start another: a pressable element holding its Text, not a Button — a Button's label
+/// never reaches the tree the checks read, and they read these by their words (as the home's rows,
+/// piece 3). Drawn as the bordered (prominent: violet) button it stands for; disabled, it presses nothing.
+private struct HandOffPress: View {
+    let label: String
+    let prominent: Bool
+    let enabled: Bool
+    let press: () -> Void
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 13))
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(prominent ? Color.white : EditorPaneStyle.text)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5)
+                .fill(prominent ? EditorPaneStyle.violet : Color.white.opacity(0.12)))
+            .opacity(enabled ? 1 : 0.5)
+            .contentShape(Rectangle())
+            .onTapGesture { if enabled { press() } }
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { if enabled { press() } }
     }
 }
