@@ -332,6 +332,11 @@ func quarantineNote(name string, failures []string) string {
 // landed. Such an act is held pending and cleared only by a **confirming**
 // assertion — see Expect.Confirms. One still pending when the check ends is a
 // failure.
+//
+// **A check stops at its first red step.** Every later assertion reads a
+// window already known to be wrong and waits out the whole settle window
+// before failing too, which is noise bought with minutes. Acts still pending
+// at the stop are reported, since they may explain the red.
 func (r *Runner) runCheck(check Check) []string {
 	var failures []string
 	var pending []string
@@ -354,6 +359,9 @@ func (r *Runner) runCheck(check Check) []string {
 	}
 
 	for index, step := range check.Steps {
+		if len(failures) > 0 {
+			break
+		}
 		where := fmt.Sprintf("%s step %d", check.Name, index+1)
 		switch {
 		case step.Do != nil:

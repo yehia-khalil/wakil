@@ -261,6 +261,27 @@ func TestRunnerReportsSomethingThatShouldBeAbsent(t *testing.T) {
 	}
 }
 
+// A check stops at its first red step: every later assertion would wait out
+// the settle window on a window already known to be wrong.
+func TestRunnerStopsACheckAtItsFirstFailure(t *testing.T) {
+	channel := &fakeChannel{}
+	runner, _ := newRunner(t, stateJSON, channel)
+
+	got := runner.Run([]Check{mustParse(t, "s",
+		`{"expect":{"tree":"absent","text":"ORGANISATION"}}`,
+		`{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}`,
+		`{"expect":{"tree":"absent","text":"ORGANISATION"}}`)})
+
+	if len(got.Failures) != 1 || !strings.Contains(got.Failures[0], "s step 1") {
+		t.Fatalf("want only step 1's failure, got %v", got.Failures)
+	}
+	for _, call := range channel.calls {
+		if strings.HasPrefix(call, "pane_open ") {
+			t.Fatalf("a step after the first failure ran: %v", channel.calls)
+		}
+	}
+}
+
 // --- expect: process ------------------------------------------------------
 
 func TestRunnerAssertsNoMatchingProcess(t *testing.T) {
