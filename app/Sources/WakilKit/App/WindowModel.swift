@@ -9861,16 +9861,12 @@ public final class WindowModel {
     }
 
     /// Workspaces, piece 1 (decision 22, call 9): the terminals step 0 carried into workspace `w`'s
-    /// view `view` stay in Main's view — the canvas `place`'s Landing draws over, which the next
-    /// conversation started there takes — each shell, history and frame as it was; a new terminal
-    /// in the copy takes each one's place in the view, at its path in the copy (else the view's
-    /// first copy).
+    /// view `view` stay in Main's view (`mainViewScope`) — each shell, history and frame as it was; a
+    /// new terminal in the copy takes each one's place in the view, at its path in the copy (else the
+    /// view's first copy).
     func leaveTerminalsInMain(_ ids: [String], of place: Place, view: LayoutScope, into w: Workspace) async {
         guard !ids.isEmpty else { return }
-        let reserved = reservedConversations[place] ?? UUID().uuidString
-        reservedConversations[place] = reserved
-        let main = LayoutScope(organization: place.organization, project: place.project,
-                               environment: place.environment, lineageRoot: reserved)
+        let main = mainViewScope(of: place)
         // Its saved arrangement first, so a later read off disk does not put the terminals away.
         await loadOffScreen(main)
         loadedLayoutScopes.insert(main)
@@ -9918,6 +9914,20 @@ public final class WindowModel {
         await goTo(Place(organization: organization, project: w.project, environment: w.environment))
         guard self.place.project == w.project else { return }
         await openViewSlot(workspace: w)
+    }
+
+    /// Main's view of `place` (piece 3): the canvas of its live view slot — what the project's
+    /// **Open** goes back to — else the canvas the home reserves for `place`'s next conversation,
+    /// which Open adopts when it opens the view (`openViewSlot`).
+    func mainViewScope(of place: Place) -> LayoutScope {
+        if let slot = liveConversations(in: place).first(where: { $0.workspace == nil && $0.isViewSlot }),
+           let scope = slot.layoutScope {
+            return scope
+        }
+        let reserved = reservedConversations[place] ?? UUID().uuidString
+        reservedConversations[place] = reserved
+        return LayoutScope(organization: place.organization, project: place.project,
+                           environment: place.environment, lineageRoot: reserved)
     }
 
     /// New conversation here (`workspace_new_conversation`): a fresh conversation in `workspace`'s

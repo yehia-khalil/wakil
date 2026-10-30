@@ -355,6 +355,37 @@ struct WindowModelWorkspaceViewsTests {
         await model.shutdown()
     }
 
+    /// Piece 1's step 0 leaves the terminals in Main's view (decision 22): with Main's view open as a
+    /// slot, that is the slot's canvas — what the project's **Open** goes back to — not the canvas the
+    /// home reserves for its next conversation.
+    @Test func step0LeavesTheTerminalsInMainsOpenView() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+        await model.openWorkspaceView(nil)
+        let main = try #require(model.currentAgent)
+        await model.newConversation()
+        #expect(await model.send("fix the guard"))
+        let agent = try #require(model.currentAgent)
+        #expect(agent.id != main.id)
+        let before = try #require(agent.layoutScope)
+        let shell = await ScopeRouting.$home.withValue(before) {
+            await w.layout.open(kind: "terminal", title: "core", terminalPath: "/p/core/sub")
+        }
+        await model.refreshLayout()
+
+        await model.workspaceViewFollows(agent.id, from: nil, to: ws)
+
+        #expect(!(await snapshot(w.layout, in: try #require(agent.layoutScope))).panes.contains { $0.id == shell.id })
+        await model.openWorkspaceView(nil)
+        #expect(model.currentAgent?.id == main.id, "Open goes back to Main's view")
+        let kept = try #require(model.layoutSnapshot.panes.first { $0.id == shell.id }, "Main's view holds the shell")
+        #expect(kept.terminalPath == "/p/core/sub")
+        await model.shutdown()
+    }
+
     @Test func aWorkspaceWithNoLiveConversationOpensOnItsOwnView() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)
