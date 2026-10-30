@@ -132,7 +132,7 @@ func TestASuiteThatFailsWithNoRedCheckIsAnError(t *testing.T) {
 	bin := t.TempDir()
 	os.WriteFile(filepath.Join(bin, "make"), []byte("#!/bin/sh\n[ \"$1\" = e2e-cover ] && exit 0\necho 'app-bundle: build failed'\nexit 2\n"), 0o755)
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
-	_, err := suite(t.TempDir(), at(28, 7, 0).Add(24*time.Hour), io.Discard, []string{"e2e-full", "E2E_KEEP_GOING=1"})
+	_, err := suite(t.TempDir(), time.Now().Add(time.Minute), io.Discard, []string{"e2e-full", "E2E_KEEP_GOING=1"})
 	if err == nil {
 		t.Fatal("a make that failed with no red check and no coverage red read as a run")
 	}
