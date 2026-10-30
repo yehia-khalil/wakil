@@ -167,6 +167,16 @@
       "reply": "wrote the workspace note"
     },
     {
+      "match": "start the copy from main",
+      "call": { "action": "workspace_start", "echo": true, "params": { "repo": "e2e-api", "base": "main", "branch": "e2e-from-main-start" } },
+      "reply": "started the copy from main"
+    },
+    {
+      "match": "write the started note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/started-note.txt", "kind": "file" } },
+      "reply": "wrote the started note"
+    },
+    {
       "match": "where do you work",
       "reply": "map says: {map}"
     }
