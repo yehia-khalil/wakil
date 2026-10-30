@@ -24,10 +24,10 @@
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
 {"do":{"click":"landing.row.open:terminal"}}
-{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-staging"}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
 {"expect":{"tree":"contains","text":"Value: done"}}
 {"expect":{"tree":"absent","text":"Value: working"}}
 {"expect":{"tree":"absent","text":"the held agent in staging finished"}}
@@ -36,8 +36,8 @@
 {"expect":{"tree":"contains","text":"the held agent in staging finished"}}
 {"expect":{"tree":"absent","text":"the second agent answered in qa"}}
 {"expect":{"tree":"absent","text":"e2e-project-two"}}
-{"expect":{"pane":"api-2","field":"entry","equals":"billing"}}
-{"expect":{"pane":"api-2","field":"environment","equals":"staging"}}
+{"expect":{"pane":"api-3","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-3","field":"environment","equals":"staging"}}
 {"expect":{"tree":"absent","text":"Value: working"}}
 {"expect":{"journal":{"contains":"\"params\":{\"entry\":\"billing\"}"}}}
 {"expect":{"journal":{"contains":"\"params\":{\"entry\":\"catalog\"}"}}}
