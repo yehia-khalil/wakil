@@ -50,6 +50,39 @@ private actor FakeHandOff {
         wasCancelled = true
         release()
     }
+
+    // Item 8: Send to, and a queued send's Cancel.
+    var sends: [(conversation: String, text: String)] = []
+    var sendReply: TicketHandOffSent = .sent
+    var sendFails: String?
+    var unqueued: [(String, String)] = []
+    func setSendReply(_ r: TicketHandOffSent) { sendReply = r }
+    func setSendFails(_ text: String?) { sendFails = text }
+    func send(_ conversation: String, _ text: String) throws -> TicketHandOffSent {
+        if let sendFails { throw TicketHandOffError(description: sendFails) }
+        sends.append((conversation, text))
+        return sendReply
+    }
+    func unqueue(_ conversation: String, _ id: String) -> Bool {
+        unqueued.append((conversation, id))
+        return true
+    }
+}
+
+/// The window's live handed conversations, as `TicketHandOffContext.carriers` lists them (item 8).
+private final class CarrierBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: [TicketHandOffCarrier] = []
+    var carriers: [TicketHandOffCarrier] {
+        get { lock.withLock { list } }
+        set { lock.withLock { list = newValue } }
+    }
+}
+
+private func carrier(_ id: String, _ title: String, key: String? = "INI-142", pr: Int? = nil, root: String = "/p/api",
+                     ago: TimeInterval = 0, working: Bool = false) -> TicketHandOffCarrier {
+    TicketHandOffCarrier(conversation: id, title: title, key: key, pr: pr, root: root,
+                         lastActive: Date(timeIntervalSince1970: 1_000_000 - ago), working: working)
 }
 
 private let screen = Place(organization: "initech", project: "api", environment: "local")
@@ -59,6 +92,7 @@ private struct HandOffFixture {
     let ticket: FakeTicket
     let store: EditorTicketStore
     let handOff: FakeHandOff
+    let carriers: CarrierBox
 
     @discardableResult
     func dispatch(_ name: String, _ params: [String: JSONValue] = [:], origin: ActionOrigin = .ui) async throws -> JSONValue {
@@ -109,14 +143,17 @@ private func handOffFixture(defaults: JSONValue? = nil) async throws -> HandOffF
     let store = EditorTicketStore(ticket: ticket)
     let fake = FakeHandOff()
     let lookup = TicketHandOffLookup()
+    let box = CarrierBox()
     lookup.use(start: { r, reserved in try await fake.start(r, reserved: reserved) }, cancel: { await fake.cancel($0) })
     lookup.use(crew: { rs, admit in try await fake.crew(rs, admit: admit) })
+    lookup.use(send: { c, text in try await fake.send(c, text) }, unqueue: { c, id in await fake.unqueue(c, id) })
     lookup.use(context: {
         TicketHandOffContext(screen: screen, provider: "initech-work",
                              providers: [TicketHandOffProvider(id: "initech-work"), TicketHandOffProvider(id: "initech-spare")],
                              environments: ["api": [TicketHandOffEnvironment(name: "local", production: false)],
                                             "umbrella": [TicketHandOffEnvironment(name: "production", production: true),
-                                                         TicketHandOffEnvironment(name: "staging", production: false)]])
+                                                         TicketHandOffEnvironment(name: "staging", production: false)]],
+                             carriers: box.carriers)
     })
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
                                 gitStatus: status, roots: { roots }, ticket: store, organization: { "initech" },
@@ -124,7 +161,7 @@ private func handOffFixture(defaults: JSONValue? = nil) async throws -> HandOffF
     _ = try await store.read(root: "/p/api")
     _ = try await store.inFlight()
     let editor = EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane, git: git, status: status)
-    return HandOffFixture(editor: editor, ticket: ticket, store: store, handOff: fake)
+    return HandOffFixture(editor: editor, ticket: ticket, store: store, handOff: fake, carriers: box)
 }
 
 private func comment(_ author: String, _ body: String) -> ReviewCommentState {
@@ -1149,5 +1186,132 @@ private func quotedBlock(_ brief: String) -> [String] {
         try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"), "repos": .array([])])
         await #expect { _ = try await f.start() } throws: { "\($0)".contains("no repo ticked") }
         #expect(await f.handOff.crews.isEmpty)
+    }
+
+    // MARK: Send to, and Start another (item 8, 2026-10-30)
+
+    @Test func carriersAreTheSubjectsLiveConversationsMostRecentFirst() {
+        let all = [carrier("c1", "INI-142 · Work toward Next.", ago: 60), carrier("c2", "INI-142 · Fix it", ago: 5),
+                   carrier("c3", "INI-150 · Other", key: "INI-150"),
+                   carrier("c4", "#212 · api", key: nil, pr: 212), carrier("c5", "#212 · web", key: nil, pr: 212, root: "/p/web")]
+        #expect(handOffCarriers(all, key: "INI-142", pr: 212, root: "/p/api").map(\.conversation) == ["c2", "c1"])
+        #expect(handOffCarriers(all, key: nil, pr: 212, root: "/p/api").map(\.conversation) == ["c4"],
+                "a keyless PR's, at its root")
+        #expect(handOffCarriers(all, key: "INI-999", pr: nil, root: "/p/api").isEmpty)
+    }
+
+    @Test func startAnotherIsNumberedPastEveryCarrier() {
+        #expect(handOffAnotherNumber([carrier("c1", "INI-142 · Work")]) == 2)
+        #expect(handOffAnotherNumber([carrier("c1", "INI-142 · Work"), carrier("c2", "INI-142 · Work #2")]) == 3)
+        #expect(handOffAnotherNumber([carrier("c1", "INI-142 · Other #5")]) == 6)
+        #expect(handOffNumberedTitle("INI-142 · Work toward Next.", number: 2) == "INI-142 · Work toward Next. #2")
+        #expect(handOffNumberedTitle("INI-142 · Work", number: nil) == "INI-142 · Work")
+    }
+
+    @Test func aCarriedTicketOffersSendToItsMostRecentConversationAndStartAnother() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work toward Next.", ago: 60), carrier("c2", "INI-142 · Fix it", ago: 5)]
+        try await f.openFromThread()
+        let s = try await f.state()
+        #expect(s.offersSend)
+        #expect(s.sendTarget?.conversation == "c2", "the most recently active is named")
+        #expect(s.sendLabel == "Send to “INI-142 · Fix it”")
+        #expect(s.startLabel == "Start another")
+        #expect(s.carriers.map(\.conversation) == ["c2", "c1"], "the ▾ lists them all")
+        guard case .object(let j) = s.json else { Issue.record("no json"); return }
+        #expect(j["sendTo"] == .string("c2"))
+        #expect(j["carriers"] == .array([.object(["conversation": .string("c2"), "title": .string("INI-142 · Fix it")]),
+                                         .object(["conversation": .string("c1"), "title": .string("INI-142 · Work toward Next.")])]))
+        // With none carrying it, Start as before.
+        f.carriers.carriers = []
+        try await f.dispatch("ticket_hand_off_close")
+        try await f.openFromThread()
+        let none = try await f.state()
+        #expect(!none.offersSend && none.startLabel == "Start" && none.sendTarget == nil)
+    }
+
+    @Test func onePerRepoOffersOnlyStart() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work")]
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo")])
+        let s = try await f.state()
+        #expect(!s.offersSend && s.sendTarget == nil && s.startLabel == "Start")
+    }
+
+    @Test func pickingAnotherConversationIsTheOperators() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work", ago: 60), carrier("c2", "INI-142 · Fix it", ago: 5)]
+        try await f.openFromThread()
+        await #expect { try await f.dispatch("ticket_hand_off_brief", ["sendTo": .string("c1")], origin: .agent) } throws: {
+            "\($0)".contains("only the operator sets sendTo")
+        }
+        try await f.dispatch("ticket_hand_off_brief", ["sendTo": .string("c1")])
+        #expect(try await f.state().sendTarget?.conversation == "c1")
+        await #expect { try await f.dispatch("ticket_hand_off_brief", ["sendTo": .string("c7")]) } throws: {
+            "\($0)".contains("no live conversation carries")
+        }
+    }
+
+    /// Send to: the popover's brief, edited, goes as the operator's own message to that
+    /// conversation — no record appended, no conversation_message — and the popover closes, the
+    /// brief kept (Rule 2). The screen is the window's to keep (Rule 6).
+    @Test func sendToSendsTheBriefAsTheOperatorsMessageAndCloses() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work")]
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["brief": .string("Also answer the second thread.")])
+        let s = try await f.state()
+        let reply = try await f.dispatch("ticket_hand_off_send", s.sendParams)
+        #expect(reply == .object(["conversation": .string("c1"), "queued": .bool(false)]))
+        let sent = try #require(await f.handOff.sends.first)
+        #expect(sent.conversation == "c1" && sent.text == "Also answer the second thread.")
+        #expect(await f.handOff.requests.isEmpty, "nothing new started")
+        #expect(await f.store.handOff() == nil)
+        try await f.openFromThread()
+        #expect(try await f.state().brief == "Also answer the second thread.")
+    }
+
+    @Test func sendToAWorkingConversationSaysItIsQueued() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work", working: true)]
+        await f.handOff.setSendReply(.queued(id: "q1"))
+        try await f.openFromThread()
+        let reply = try await f.dispatch("ticket_hand_off_send", try await f.state().sendParams)
+        #expect(reply == .object(["conversation": .string("c1"), "queued": .bool(true), "queuedId": .string("q1")]))
+        // Its Cancel takes it back (Rule 4): the operator's only.
+        await #expect {
+            try await f.dispatch("conversation_queued_cancel", ["conversation": .string("c1"), "id": .string("q1")], origin: .agent)
+        } throws: { _ in true }
+        _ = try await f.dispatch("conversation_queued_cancel", ["conversation": .string("c1"), "id": .string("q1")])
+        #expect(await f.handOff.unqueued.map(\.1) == ["q1"])
+    }
+
+    @Test func sendToIsTheOperatorsAndAFailureStaysInThePopover() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work")]
+        try await f.openFromThread()
+        let params = try await f.state().sendParams
+        await #expect { try await f.dispatch("ticket_hand_off_send", params, origin: .agent) } throws: { _ in true }
+        #expect(await f.handOff.sends.isEmpty)
+        await f.handOff.setSendFails("‘INI-142 · Work’ is no longer live; nothing was sent")
+        await #expect { try await f.dispatch("ticket_hand_off_send", params) } throws: { "\($0)".contains("no longer live") }
+        let s = try await f.state()
+        #expect(s.error == "‘INI-142 · Work’ is no longer live; nothing was sent" && !s.sending)
+    }
+
+    /// Start another: a new conversation numbered past every one carrying the ticket, marked to
+    /// branch off in the most recently active one's workspace — read at the press, so a second
+    /// popover never starts a second "#2".
+    @Test func startAnotherIsNumberedAndBranchesOffTheMostRecentCarrier() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work toward Next.", ago: 60)]
+        try await f.openFromThread()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work toward Next.", ago: 60), carrier("c2", "INI-142 · Work toward Next. #2")]
+        _ = try await f.start()
+        let r = try #require(await f.handOff.requests.first)
+        #expect(r.number == 3)
+        #expect(r.branchOffFrom == "c2")
+        #expect(r.numberedTitle == r.title + " #3")
     }
 }

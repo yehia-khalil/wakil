@@ -298,6 +298,11 @@ public struct WakilWiring: Sendable {
             await model?.cancelHandOff(conversation)
         })
         handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
+        // Item 8: Send to, and a queued one's Cancel.
+        handOffLookup.use(send: { [weak model] conversation, text in
+            guard let model else { throw TicketHandOffError(description: "no window to send in") }
+            return try await model.sendToHandOff(conversation, text: text)
+        }, unqueue: { [weak model] conversation, id in await model?.unqueueTurn(conversation, id: id) ?? false })
         recipeDrafts.use { [weak model] conversation, proposal in
             guard let model else { throw RecipeDraftError("running_draft_propose: no window is open to show the draft in") }
             try await model.receiveRecipeDraft(conversation: conversation, proposal)

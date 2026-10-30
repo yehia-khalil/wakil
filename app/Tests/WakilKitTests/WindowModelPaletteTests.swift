@@ -1070,6 +1070,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "review_open", "review_step", "review_reply_draft", "review_reply_draft_restore", "review_reply_send", "review_resolve",
     // Ticket noticing: Hand to agent's popover; its Start and Cancel are the operator's.
     "ticket_hand_off_open", "ticket_hand_off_brief", "ticket_hand_off", "ticket_hand_off_cancel", "ticket_hand_off_close",
+    "ticket_hand_off_send", "conversation_queued_cancel",
     // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
     "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_print", "browser_pull_requests_refresh", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_unpin", "browser_zoom",
     // 3c-ii: the agent's reach into the page; the five acts are mutations, revoke_site the operator's.

@@ -137,6 +137,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "capacity_record",
             // Workspaces, piece 1: moving a conversation between workspaces is the operator's.
             "conversation_move",
+            // Item 8: a message queued for a conversation's next turn is the operator's to take back.
+            "conversation_queued_cancel",
             // Workspaces piece 5: starting, dismissing and editing a proposed teammate are the operator's.
             "conversation_teammate_brief", "conversation_teammate_dismiss", "conversation_teammate_start",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree_for",
@@ -193,6 +195,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "settings_open", "term_run",
             // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
             "ticket_hand_off", "ticket_hand_off_cancel",
+            // Item 8: Send to is the operator's own message.
+            "ticket_hand_off_send",
             // Workspaces, piece 1: archive, Bring to Main and restore are the operator's (the card's ⋯).
             "workspace_archive", "workspace_bring_home", "workspace_new_conversation", "workspace_open",
             "workspace_restore", "workspace_set_environment",

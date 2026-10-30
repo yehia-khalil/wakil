@@ -263,6 +263,10 @@ public final class PlaceAgent {
     /// input) or holds none.
     public var messagesWaitingForYou: Int { turnInFlight ? 0 : pendingMessages.count }
 
+    /// Item 8: the operator's own messages (a Send to) that came while it was in a turn, oldest
+    /// first: each goes as its own turn when the one before ends; each can be taken back until then.
+    public internal(set) var queuedTurns: [QueuedTurn] = []
+
     /// A message row (workspaces piece 4): `header` ("To ‘…’" / "From ‘…’ · …") over the text.
     func appendMessageRow(_ direction: ThoughtRow.MessageDirection, header: String, text: String) {
         thoughts.append(ThoughtRow(

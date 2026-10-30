@@ -5,6 +5,13 @@ import Foundation
 // call 15). The window's half is `WindowModel+Messages.swift`.
 
 /// One message waiting for, or delivered to, a conversation.
+/// Item 8: an operator's message queued for a conversation's next turn (a Send to while it worked).
+public struct QueuedTurn: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let text: String
+    public init(id: String, text: String) { self.id = id; self.text = text }
+}
+
 public struct ConversationMessage: Sendable, Equatable {
     /// The sending conversation's id.
     public let from: String

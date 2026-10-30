@@ -95,6 +95,8 @@ public let operatorOnlyActions: Set<String> = [
     // start conversations (conversations: "no agent tool to start or switch conversations"), and a
     // spoken turn may open the popover but never press Start (Invariant 7).
     "ticket_hand_off", "ticket_hand_off_cancel",
+    // Item 8: Send to is the operator's own message, and a queued one's Cancel is theirs too.
+    "ticket_hand_off_send", "conversation_queued_cancel",
     "session_set_provider", "ctx_set_provider",
     // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
     // push aside the operator's conversation.
@@ -437,6 +439,11 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "ticket_hand_off is the operator's: an agent does not start conversations."
     case "ticket_hand_off_cancel":
         return "ticket_hand_off_cancel is the operator's: an agent does not start or stop conversations."
+    case "ticket_hand_off_send":
+        return "ticket_hand_off_send is the operator's: it sends their own message. Message a conversation with "
+            + "conversation_message."
+    case "conversation_queued_cancel":
+        return "conversation_queued_cancel is the operator's: a queued message is theirs to take back."
     case "capacity_record":
         return "\(toolName): readings are recorded from the agent's own stream, not supplied by the "
             + "agent. Read them with ctx_capacity."

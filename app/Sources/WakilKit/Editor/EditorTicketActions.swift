@@ -910,6 +910,9 @@ func registerTicketActions(
             if await store.handOff()?.starting == true {
                 throw TicketActionError(description: "\(action): a hand-off is starting; Cancel stops it first")
             }
+            if await store.handOff()?.sending == true {
+                throw TicketActionError(description: "\(action): a brief is being sent; nothing was opened")
+            }
             guard let handOff, let ctx = await handOff.context() else {
                 throw TicketActionError(description: "\(action): no window to hand off from")
             }
@@ -973,6 +976,11 @@ func registerTicketActions(
                 opened: same ? open?.opened ?? 0 : await store.nextHandOffOpen())
             shown.agents = agents
             shown.crewRepos = crewRepos
+            // Item 8: the live conversations carrying it — Send to's, most recently active first.
+            shown.carriers = handOffCarriers(ctx.carriers, key: subject.key, pr: subject.pr, root: subject.root)
+            if let open, same, let picked = open.sendTo, shown.carriers.contains(where: { $0.conversation == picked }) {
+                shown.sendTo = picked
+            }
             await store.showHandOff(shown)
             return await editor.reply(pane)
         }))
@@ -984,16 +992,18 @@ func registerTicketActions(
             + "else, and a call from one that names any of the three is refused whole.",
         kind: .control, audience: .agentReachable,
         schema: schema(["brief": string, "harness": string, "provider": string, "mayPush": boolean, "agents": string,
-                        "repos": .object(["type": .string("array"), "items": string])]),
+                        "repos": .object(["type": .string("array"), "items": string]), "sendTo": string]),
         handler: { params in
             let action = "ticket_hand_off_brief"
             guard var s = await store.handOff() else {
                 throw TicketActionError(description: "\(action): no Hand to agent popover is open")
             }
-            guard !s.starting else { throw TicketActionError(description: "\(action): the hand-off is starting; nothing was changed") }
+            guard !s.starting, !s.sending else {
+                throw TicketActionError(description: "\(action): the hand-off is \(s.sending ? "sending" : "starting"); nothing was changed")
+            }
             guard case .object(let o) = params else { return await handOffReply(s.pane) }
             // F2: who runs it and whether it may push are the operator's (Invariant 7) — never an agent's.
-            let operatorsOnly = ["harness", "provider", "mayPush", "agents", "repos"].filter { o[$0] != nil }
+            let operatorsOnly = ["harness", "provider", "mayPush", "agents", "repos", "sendTo"].filter { o[$0] != nil }
             if ActionRegistry.dispatchOrigin == .agent, !operatorsOnly.isEmpty {
                 throw TicketActionError(description: "\(action): only the operator sets "
                     + operatorsOnly.joined(separator: ", ") + " — an agent may edit the brief's text alone; nothing was changed")
@@ -1015,6 +1025,13 @@ func registerTicketActions(
                     throw TicketActionError(description: "\(action): this project has one repo, so one agent works on it; nothing was changed")
                 }
                 s.agents = agents
+            }
+            // Item 8: which live conversation Send to sends to (the ▾).
+            if case .string(let c)? = o["sendTo"] {
+                guard s.carriers.contains(where: { $0.conversation == c }) else {
+                    throw TicketActionError(description: "\(action): no live conversation carries \(s.name) as \(c); nothing was changed")
+                }
+                s.sendTo = c
             }
             if case .array(let rs)? = o["repos"] {
                 let ticked = Set(rs.compactMap { if case .string(let r) = $0 { r } else { nil } })
@@ -1073,7 +1090,7 @@ func registerTicketActions(
                 let said = "\(error)".replacingOccurrences(of: "ticket_hand_off_open: ", with: "")
                 throw TicketActionError(description: "\(action): \(said)")
             }
-            let request = TicketHandOffRequest(
+            var request = TicketHandOffRequest(
                 key: key, pr: o["pr"]?.intValue, thread: thread, brief: s.startBrief(brief) + "\n\n" + appended,
                 harness: try param(params, "harness", action),
                 provider: try param(params, "provider", action),
@@ -1137,6 +1154,14 @@ func registerTicketActions(
                     throw TicketActionError(description: "\(action): \(error)")
                 }
             }
+            // Item 8, Start another: the conversations carrying it now — read at the press, so a
+            // second popover never starts a second "#2" — number it past theirs, and it starts in the
+            // most recently active one's workspace, marked to branch off at its first write.
+            let carrying = handOffCarriers(await handOff.context()?.carriers ?? [], key: s.key, pr: s.pr, root: s.root)
+            if let newest = carrying.first {
+                request.number = handOffAnotherNumber(carrying)
+                request.branchOffFrom = newest.conversation
+            }
             let token = await store.beginHandOffStart()
             do {
                 let id = try await handOff.start(request, reserved: { id in
@@ -1146,7 +1171,7 @@ func registerTicketActions(
                 // The whole text the agent was sent, on its own line after the dispatch's (which holds
                 // the operator's part as asked): what was asked, then what was started.
                 var started: [String: JSONValue] = ["key": key.map { .string($0) } ?? .null, "conversation": .string(id),
-                                                    "title": .string(request.title), "brief": .string(request.brief)]
+                                                    "title": .string(request.numberedTitle), "brief": .string(request.brief)]
                 if let thread { started["thread"] = .string(thread) }
                 if let pr = request.pr { started["pr"] = .integer(Int64(pr)) }
                 try? await registry.journalFollowUp(
@@ -1160,6 +1185,83 @@ func registerTicketActions(
                 }
                 throw TicketActionError(description: "\(action): \(said)")
             }
+        }))
+
+    await registry.register(Action(
+        name: "ticket_hand_off_send",
+        description: "Send to: the open Hand to agent popover's brief, as the operator's own message, to a live "
+            + "conversation that carries its ticket (conversation; the popover's Send to). An idle one starts a turn "
+            + "now, off screen; one in a turn has it queued until that turn ends, shown pending in its thread and "
+            + "cancellable (conversation_queued_cancel). Nothing new starts. The operator's only.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["conversation": string, "brief": string, "key": .object(["type": .array([.string("string"), .string("null")])]),
+                        "pr": integer, "thread": string, "opened": integer, "pane": string],
+                       required: ["conversation", "brief"]),
+        handler: { params in
+            let action = "ticket_hand_off_send"
+            guard var s = await store.handOff() else {
+                throw TicketActionError(description: "\(action): no Hand to agent popover is open; nothing was sent")
+            }
+            // Rule 5: one Send or Start at a time.
+            guard !s.starting, !s.sending else {
+                throw TicketActionError(description: "\(action): the hand-off is already \(s.sending ? "sending" : "starting"); nothing was sent twice")
+            }
+            guard let handOff else { throw TicketActionError(description: "\(action): no window to send in") }
+            guard case .object(let o) = params else { throw StandardActionError.missingParam(action: action, param: "conversation") }
+            let key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0 }
+            let thread = optionalString(params, "thread").flatMap { $0.isEmpty ? nil : $0 }
+            let opened = o["opened"]?.intValue
+            guard key == s.key, thread == s.thread, o["pr"]?.intValue == s.pr, opened == nil || opened == s.opened else {
+                throw TicketActionError(description: "\(action): the popover shows \(s.name), not what this Send names; nothing was sent")
+            }
+            let conversation = try param(params, "conversation", action)
+            guard let target = s.carriers.first(where: { $0.conversation == conversation }) else {
+                throw TicketActionError(description: "\(action): no live conversation carries \(s.name) as \(conversation); nothing was sent")
+            }
+            let brief = try param(params, "brief", action)
+            guard !brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw TicketActionError(description: "\(action): the brief is empty; nothing was sent")
+            }
+            // The field's text is kept first, so a failure leaves it as typed (Rule 2).
+            if brief != s.brief { s.write(brief: brief, byAgent: false) }
+            s.sending = true
+            s.error = nil
+            await store.showHandOff(s)
+            do {
+                let sent = try await handOff.send(target.conversation, text: s.startBrief(brief))
+                await store.closeHandOff()
+                var out: [String: JSONValue] = ["conversation": .string(target.conversation)]
+                switch sent {
+                case .sent: out["queued"] = .bool(false)
+                case .queued(let id): out["queued"] = .bool(true); out["queuedId"] = .string(id)
+                }
+                return .object(out)
+            } catch {
+                let said = "\(error)"
+                if var now = await store.handOff() {
+                    now.sending = false
+                    now.error = said
+                    await store.showHandOff(now)
+                }
+                throw TicketActionError(description: "\(action): \(said)")
+            }
+        }))
+
+    await registry.register(Action(
+        name: "conversation_queued_cancel",
+        description: "Cancel a message queued for a conversation's next turn (a Send to while it worked): it is "
+            + "taken back and never sent. conversation and id name it. The operator's only.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["conversation": string, "id": string], required: ["conversation", "id"]),
+        handler: { params in
+            let action = "conversation_queued_cancel"
+            let conversation = try param(params, "conversation", action)
+            let id = try param(params, "id", action)
+            guard let handOff, await handOff.unqueue(conversation, id: id) else {
+                throw TicketActionError(description: "\(action): no queued message \(id) in that conversation — it went "
+                    + "when its turn ended, or the conversation closed; nothing was taken back")
+            }
+            return .object(["cancelled": .bool(true), "conversation": .string(conversation), "id": .string(id)])
         }))
 
     await registry.register(Action(
@@ -1189,6 +1291,9 @@ func registerTicketActions(
             guard var s = await store.handOff() else { return .object(["handoff": .object(["open": .bool(false)])]) }
             guard !s.starting else {
                 throw TicketActionError(description: "ticket_hand_off_close: the hand-off is starting; Cancel stops it")
+            }
+            guard !s.sending else {
+                throw TicketActionError(description: "ticket_hand_off_close: the brief is being sent; nothing was closed")
             }
             if let brief = optionalString(params, "brief"), brief != s.brief {
                 s.write(brief: brief, byAgent: ActionRegistry.dispatchOrigin == .agent)

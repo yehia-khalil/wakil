@@ -312,6 +312,105 @@ struct CrewWindowTests {
     }
 }
 
+// MARK: - Send to and Start another (item 8, 2026-10-30)
+
+@MainActor
+private func handed(_ title: String = "INI-142 · Work toward Next.") -> TicketHandOffRequest {
+    TicketHandOffRequest(key: "INI-142", pr: nil, thread: nil, brief: "Work toward Next.", harness: "claude-code",
+                         provider: "test-provider", place: placeA, root: "/src/api", branch: "ini-142-login", mayPush: false,
+                         title: title)
+}
+
+@MainActor
+struct HandOffSendToWindowTests {
+    /// The popover's carriers are the window's live handed conversations, with what they carry.
+    @Test func theContextListsLiveHandedConversations() async throws {
+        let w = try await Wired()
+        let id = try await w.model.startHandOff(handed())
+        let ctx = await w.model.handOffContext()
+        let c = try #require(ctx.carriers.first { $0.conversation == id })
+        #expect(c.key == "INI-142" && c.root == "/src/api" && c.title == "INI-142 · Work toward Next.")
+        #expect(c.working, "its first turn runs")
+        await w.model.shutdown()
+    }
+
+    /// Idle: Send to starts a turn now, the brief as the operator's own message, off screen (Rule 6).
+    @Test func sendToAnIdleConversationStartsItsTurnOffScreen() async throws {
+        let w = try await Wired()
+        let (a, _) = try await w.backend()
+        let id = try await w.model.startHandOff(handed())
+        let h = try #require(w.sessions.harnesses.in(placeA).last)
+        h.emit(.result(isError: false, text: nil))
+        let t = try #require(w.model.conversation(id: id))
+        #expect(await waitUntil { !t.turnInFlight })
+        #expect(try await w.model.sendToHandOff(id, text: "Also answer the second thread.") == .sent)
+        #expect(await waitUntil { sends(h).last == "Also answer the second thread." })
+        #expect(t.thoughts.contains { $0.label == "you" && $0.detail == "Also answer the second thread." })
+        #expect(w.model.currentAgent === a, "the screen stays where it was (Rule 6)")
+        await w.model.shutdown()
+    }
+
+    /// Mid-turn: queued, shown pending in its thread, delivered when the turn ends.
+    @Test func sendToAWorkingConversationQueuesUntilItsTurnEnds() async throws {
+        let w = try await Wired()
+        let id = try await w.model.startHandOff(handed())
+        let h = try #require(w.sessions.harnesses.in(placeA).last)
+        let t = try #require(w.model.conversation(id: id))
+        #expect(t.turnInFlight)
+        let before = sends(h).count
+        let out = try await w.model.sendToHandOff(id, text: "Also answer the second thread.")
+        guard case .queued(let q) = out else { Issue.record("not queued: \(out)"); return }
+        #expect(t.queuedTurns.map(\.id) == [q])
+        #expect(t.queuedTurns.first?.text == "Also answer the second thread.")
+        #expect(sends(h).count == before, "nothing goes mid-turn")
+        h.emit(.result(isError: false, text: nil))
+        #expect(await waitUntil { sends(h).last == "Also answer the second thread." })
+        #expect(t.queuedTurns.isEmpty)
+        await w.model.shutdown()
+    }
+
+    /// Rule 4: a queued Send to is cancellable until its turn ends.
+    @Test func aQueuedSendToCanBeCancelled() async throws {
+        let w = try await Wired()
+        let id = try await w.model.startHandOff(handed())
+        let h = try #require(w.sessions.harnesses.in(placeA).last)
+        guard case .queued(let q) = try await w.model.sendToHandOff(id, text: "Never mind.") else {
+            Issue.record("not queued"); return
+        }
+        #expect(w.model.unqueueTurn(id, id: q))
+        #expect(!w.model.unqueueTurn(id, id: q), "gone already")
+        let t = try #require(w.model.conversation(id: id))
+        #expect(t.queuedTurns.isEmpty)
+        let before = sends(h).count
+        h.emit(.result(isError: false, text: nil))
+        #expect(await waitUntil { !t.turnInFlight })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(sends(h).count == before, "nothing was sent")
+        await w.model.shutdown()
+    }
+
+    /// Start another: numbered, in the carrier's workspace, holding no copy, marked to branch off.
+    @Test func startAnotherIsNumberedAndJoinsTheCarriersWorkspaceMarkedToBranchOff() async throws {
+        let w = try await Wired()
+        let first = try await w.model.startHandOff(handed())
+        let ws = await w.model.workspaceRouter!.crewWorkspace(
+            ticket: "INI-142", name: "INI-142 Work toward Next.", organization: org, project: placeA.project,
+            environment: placeA.environment)
+        await w.model.workspaceRouter!.join(first, workspace: ws.id)
+        var r = handed()
+        r.number = 2
+        r.branchOffFrom = first
+        let second = try await w.model.startHandOff(r)
+        let t = try #require(w.model.conversation(id: second))
+        #expect(t.title == conversationTitle("INI-142 · Work toward Next.") + " #2")
+        #expect(await w.store.workspaceId(ofConversation: second) == ws.id)
+        #expect(!(await w.store.holdsAny(second)), "it holds no copy")
+        #expect(await w.store.mustBranchOff(second, root: t.lineageRoot))
+        #expect(!(await w.store.mustBranchOff(first, root: nil)))
+        await w.model.shutdown()
+    }
+}
+
 /// Admits the first `allow` members asked about, and records each.
 private actor AdmitLog {
     let allow: Int

@@ -11409,8 +11409,13 @@ public final class WindowModel {
             if agent.handoff != nil { Task { [weak self] in await self?.handOffTurnEnded(agent) } }
             // Workspaces, piece 2: a drafting conversation that answered without a proposal says so.
             recipeDraftBook.turnEnded(conversation: agent.id)
-            // Workspaces piece 4: messages that came while it worked wake it now, within the budget.
-            if !agent.pendingMessages.isEmpty { Task { [weak self] in await self?.wakeForMessages(agent) } }
+            // Item 8: the operator's message queued while it worked goes now, with any messages held;
+            // else (piece 4) messages that came while it worked wake it, within the budget.
+            if !agent.queuedTurns.isEmpty {
+                Task { [weak self] in await self?.deliverQueuedTurn(agent) }
+            } else if !agent.pendingMessages.isEmpty {
+                Task { [weak self] in await self?.wakeForMessages(agent) }
+            }
         }
         // Names: the first clean exchange — its reply's start, then the one ask.
         switch event {
