@@ -3,7 +3,7 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"do":{"type":{"into":"window.composer","text":"ask the first where it works"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"asked the first where it works"}}

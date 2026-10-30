@@ -12,14 +12,15 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"do":{"type":{"into":"window.composer","text":"send word to the first conversation"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"sent word to the first conversation"}}
 {"do":{"hotkey":"cmd+shift+h"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"expect":{"tree":"contains","text":"waiting for you · 1 message"}}
-{"dispatch":{"action":"session_switch","params":{"conversation":"thread turn one"}}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"waiting on you · 1 message"}}
+{"expect":{"frame":"landing.needs","inside":"window"}}
+{"do":{"click":"landing.needs:0.act"}}
 {"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · Main"}}
 {"expect":{"tree":"absent","text":"read the word from the other conversation"}}
 {"do":{"type":{"into":"window.composer","text":"thread turn three"}}}
