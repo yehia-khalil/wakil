@@ -145,4 +145,10 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
 - [x] G5 The home lists a conversation once it has a turn (`PlaceAgent.hasTurn`); Main's lines drop
   *read only*; a ticket a live conversation carries leaves *not started* (`homeConversationCarries`).
   Tests: `WindowModelWorkspaceViewsTests`, `HomeScreenTests`. Check: `agent/conversations-new-shows-running.jsonl`.
+- [x] G6 (on main too, landed on piece 1) The editor column never pushes past its edges: the tabs' two-row
+  fallback, a section's control under its title when both do not fit, a thread's *in project* on its
+  own line, *← Back to this branch* wrapping. Check: `seeded/ticket-header.jsonl` (the tabs inside the
+  column).
+- [x] G7 (on main too, landed on piece 1) The editor's Ticket label counts nothing in a project with no git
+  repository (`ticketNeedsCount(_:roots:)`). Test: `EditorTicketNeedsTests`.
 
