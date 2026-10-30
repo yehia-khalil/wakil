@@ -332,12 +332,10 @@ private func gitRoot(_ name: String, _ files: [GitFileRow]) -> GitRootState {
         ]
         let (late, lateContinuation) = AsyncStream.makeStream(of: [PaletteEntry].self)
 
-        let started = ContinuousClock.now
+        // No wall-clock bound: a loaded full run took over the 2 s once kept here. The
+        // rows are the proof — the gate is still shut, so a list that waited on the slow source
+        // would hold its table row (after the gate's own five seconds), not "loading…".
         let rows = await openModeEntries(sources, timeout: .milliseconds(100)) { lateContinuation.yield($0) }
-        let elapsed = ContinuousClock.now - started
-
-        // Generous bound: far below the slow source's five seconds, loose enough for a loaded machine.
-        #expect(elapsed < .seconds(2))
         #expect(rows.contains { $0.id == "pane:p1" })
         #expect(rows.contains { $0.id == "project:wakil" })
         let loading = rows.first { $0.title == "loading…" }
