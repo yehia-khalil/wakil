@@ -2,7 +2,8 @@ import Foundation
 
 // Workspaces, piece 3: where a send from the home screen goes (decisions 19, 23). The composer
 // names the place; with several projects it is a picker, pre-set to the current place (Rule 9).
-// Choosing is a place switch, as the context line's; the draft stays.
+// Choosing sets where the next send goes and nothing else (piece 3 walk): the screen stays on the
+// home, and the send goes there (`WindowModel.enterStartIn`). The draft stays.
 
 /// One row of the composer's *Start in* picker.
 public struct HomeStartChoice: Sendable, Equatable, Identifiable {
@@ -32,6 +33,13 @@ public func homeStartChoices(
         out.append(HomeStartChoice(project: p, environment: e, current: false, isProduction: isProduction(p, e)))
     }
     return out
+}
+
+/// The row *Start in* shows: the one `chosen` names (`WindowModel.homeStartIn`), else the first —
+/// the window's place. A choice no longer offered falls back to the first.
+public func homeStartSelected(_ choices: [HomeStartChoice], chosen: Place?) -> HomeStartChoice? {
+    guard let chosen else { return choices.first }
+    return choices.first { $0.project == chosen.project && $0.environment == chosen.environment } ?? choices.first
 }
 
 /// The composer's placeholder on the home screen (amendment 2026-10-30): it names no place — the

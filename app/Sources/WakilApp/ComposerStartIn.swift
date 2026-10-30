@@ -2,12 +2,15 @@ import WakilKit
 import SwiftUI
 
 /// The home composer's *Start in* picker (workspaces, piece 3; decision 19): where a send goes,
-/// pre-set to the current place (Rule 9). Choosing one is a place switch, as the context line's;
-/// the draft stays in the composer. With one project and one environment there is nothing to
+/// pre-set to the current place (Rule 9). Choosing one sets where the next send goes and nothing
+/// else — the screen stays on the home (piece 3 walk; `WindowModel.chooseStartIn`); the draft stays. With one project and one environment there is nothing to
 /// choose, and nothing is drawn.
 struct ComposerStartIn: View {
     let model: WindowModel
     @State private var choices: [HomeStartChoice] = []
+
+    /// The row shown: *Start in*'s choice, else the window's place.
+    private var selected: HomeStartChoice? { homeStartSelected(choices, chosen: model.homeStartIn) }
 
     private var coolWhite: Color { Color(red: 0.910, green: 0.925, blue: 0.965) }
 
@@ -18,20 +21,19 @@ struct ComposerStartIn: View {
                     Section("Start in") {
                         ForEach(choices) { choice in
                             Button {
-                                Task {
-                                    await model.goTo(Place(organization: model.organization, project: choice.project,
-                                                           environment: choice.environment))
-                                }
+                                model.chooseStartIn(choice)
                             } label: {
-                                Text((choice.current ? "✓ " : "") + choice.label + (choice.isProduction ? " — production" : ""))
+                                Text((choice.id == selected?.id ? "✓ " : "") + choice.label + (choice.isProduction ? " — production" : ""))
                             }
                             .accessibilityIdentifier("window.composer.startIn.\(choice.id)")
                         }
                     }
                 } label: {
-                    Text("in \(choices.first?.label ?? model.project) ▾")
+                    Text("in \(selected?.label ?? model.project) ▾")
                         .font(.system(size: 11))
-                        .foregroundStyle(choices.first?.isProduction == true
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(selected?.isProduction == true
                                          ? Color(EnvironmentBadge.productionColour) : coolWhite.opacity(0.6))
                 }
                 .menuStyle(.borderlessButton)

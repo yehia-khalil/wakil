@@ -88,6 +88,9 @@ public struct HomeConversationLine: Sendable, Equatable, Identifiable {
     public let place: Place
     public let isProduction: Bool
     public let lastActivity: Date
+    /// Its session, when it has one: what a click resumes should the conversation have ended
+    /// meanwhile (`WindowModel.openHomeLine`).
+    public var session: String? = nil
     /// `working · holds api, web`; `idle · read only` in Main.
     public var detail: String {
         if holds.isEmpty { return "\(state.rawValue) · read only" }
@@ -349,7 +352,7 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
     func line(_ c: LiveConversation) -> HomeConversationLine {
         HomeConversationLine(id: c.id, index: 0, title: c.title, state: c.state,
                              holds: (holding[c.id] ?? []).sorted(), place: c.place,
-                             isProduction: c.isProduction, lastActivity: c.lastActivity)
+                             isProduction: c.isProduction, lastActivity: c.lastActivity, session: c.session)
     }
     func card(_ l: WorkspaceListing) -> HomeCard {
         let w = l.workspace

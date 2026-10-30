@@ -647,6 +647,26 @@ Approved by the operator on 2026-10-30; the calls below are the build's.
   read the line's environment chip; `seeded/workspaces-home.jsonl` reads no *you are here*. The 2d-ii
   voice checks read *TO SPEAK*, which the home's hint still carries, so they stand unchanged.
 
+### Amendment 2026-10-30 — the home's walk
+
+Approved by the operator's walk on 2026-10-30; the calls below are the build's.
+
+- **Start in moves nothing.** Choosing a row (or a project's name on the home) only sets where the next
+  send goes (`WindowModel.homeStartIn`, read by the picker's label): the screen stays on the home and no
+  project or environment is selected. The send goes there — the window switches, onto Main's Landing
+  (a conversation on screen there goes to the background untouched, as ⌘N puts it) — and the choice is
+  spent; a switch refused gives the line back (Rule 2) with its reason in the status line (Rule 8). Any
+  other change of screen pre-sets it again (Rule 9). *Call:* the rail and ⌘P keep reading the window's
+  place, which Start in no longer moves; *Open a pane* opens Main's view of Start in's place.
+- **Every line opens its conversation** (`openHomeLine`): `session_switch` while it is live, else its
+  thread through `session_resume`, as Earlier's Continue. A conversation started with no environment
+  chosen is reached again: the switch goes to its place exactly, and `set_environment ""` leaves none
+  chosen, as a project switch to a project lacking the environment already did.
+- **The composer's row never cuts.** The field shrinks to 160 pt first; narrower, Start in and the hint go
+  on a line under it, each wrapping whole. **On the home the status line has its own space**: the page
+  ends above it, and it stands 4 pt clear of the bar.
+- Checks: `seeded/workspaces-home-start-in.jsonl`; WakilKit `HomeStartInTests`.
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).

@@ -59,6 +59,26 @@ func TestSetEnvironmentValidates(t *testing.T) {
 	}
 }
 
+// Workspaces, piece 3 walk: a conversation started with no environment chosen lives in that place,
+// and opening it from the home goes back there — so "" leaves the project with none chosen, as a
+// project switch to one lacking the environment does.
+func TestSetEnvironmentEmptyLeavesNoneChosen(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	if err := setEnvironment("staging"); err != nil {
+		t.Fatalf("staging: %v", err)
+	}
+	if err := setEnvironment(""); err != nil {
+		t.Fatalf("an empty name must clear the environment: %v", err)
+	}
+	a, err := wakilcore.ReadActive()
+	if err != nil {
+		t.Fatalf("ReadActive: %v", err)
+	}
+	if a.Environment != "" {
+		t.Fatalf("environment = %q, want none", a.Environment)
+	}
+}
+
 func TestSetEnvironmentRejectsUnknownAsUserError(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]}`)
 

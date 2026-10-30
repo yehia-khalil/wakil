@@ -4,7 +4,7 @@ import SwiftUI
 /// The home screen (workspaces, piece 3; mockup `home.html`): one per organisation, grouped by
 /// project, a card per workspace. Everything it shows is decided by `homeScreen` in WakilKit
 /// (`Workspace/HomeScreen.swift`); this file only draws it and dispatches through `WindowModel`
-/// (Invariant 2): a line through `switchToRunning` (`session_switch`), a card, a project's Open and
+/// (Invariant 2): a line through `openHomeLine` (`session_switch`, else `session_resume`), a card, a project's Open and
 /// Earlier's rows through `workspace_open`, `workspace_restore` and `session_resume`.
 ///
 /// **One scroll for the page, nothing capped** (decision 20): no column has a height, no text a
@@ -151,7 +151,7 @@ struct Home: View {
     private func sectionView(_ section: HomeSection) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Button { Task { await model.setProject(section.project) } } label: {
+                Button { model.chooseStartIn(project: section.project) } label: {
                     Text(section.project)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(coolWhite.opacity(0.92))
@@ -407,7 +407,8 @@ struct Home: View {
     private func conversationLine(_ line: HomeConversationLine) -> some View {
         let id = "running:\(line.index)"
         let editing = renaming == line.id
-        let action = { Task { await model.switchToRunning(line.id) } }
+        // Every line opens its conversation, a Main line's and a card's alike (piece 3 walk).
+        let action = { Task { await model.openHomeLine(line.id, session: line.session) } }
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             ChipDot(colour: line.state.hue, breathes: line.state == .working)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }

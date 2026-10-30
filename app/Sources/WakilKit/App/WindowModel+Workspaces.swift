@@ -321,3 +321,53 @@ extension WindowModel {
         }
     }
 }
+
+// Workspaces, piece 3 walk: the home composer's *Start in* is where the next send goes, and only that.
+extension WindowModel {
+    /// Where a send from the home goes: *Start in*'s choice, else the window's place.
+    public var startInPlace: Place {
+        guard let chosen = homeStartIn, chosen.organization == organization else { return place }
+        return chosen
+    }
+
+    /// *Start in*'s choice: sets where the next send goes, and nothing else — the screen stays on the
+    /// home, no project or environment is selected (amendment "the home is the organisation's").
+    public func chooseStartIn(_ choice: HomeStartChoice) {
+        let target = Place(organization: organization, project: choice.project, environment: choice.environment)
+        homeStartIn = target == place ? nil : target
+    }
+
+    /// A project's name on the home points *Start in* at it: its environment when it is the window's
+    /// project, else the one a project switch lands on.
+    public func chooseStartIn(project: String) {
+        chooseStartIn(HomeStartChoice(project: project, environment: project == projectKey ? environment : "",
+                                      current: false, isProduction: false))
+    }
+
+    /// Whether a send typed now must first go where *Start in* points (`enterStartIn`).
+    public var sendGoesElsewhere: Bool { !sessionStarted && homeStartIn != nil }
+
+    /// A send from the home goes where *Start in* points: the window goes there, onto Main's Landing
+    /// there — a conversation on screen in that place goes to the background untouched, as ⌘N puts
+    /// it (`newConversation`) — and the choice is spent. Answers whether the window got there; a
+    /// switch refused leaves its reason in `status`, whole (Rule 8).
+    public func enterStartIn() async -> Bool {
+        guard sendGoesElsewhere, let target = homeStartIn else { return true }
+        homeStartIn = nil
+        await goTo(target)
+        guard place.organization == target.organization, place.project == target.project,
+              target.environment.isEmpty || place.environment == target.environment else { return false }
+        if sessionStarted { await newConversation() }
+        return true
+    }
+
+    /// A conversation's line on the home: brought back when it is live (`session_switch`), else its
+    /// thread opened as Earlier's Continue opens one (`session_resume`).
+    public func openHomeLine(_ id: String, session: String?) async {
+        if conversation(id: id) != nil {
+            await switchToRunning(id)
+        } else if let session {
+            await continueSession(session)
+        }
+    }
+}

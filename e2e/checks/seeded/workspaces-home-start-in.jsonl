@@ -1,0 +1,17 @@
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"in e2e-project · staging ▾"}}
+{"do":{"click":"window.composer.startIn"}}
+{"expect":{"tree":"contains","text":"e2e-project · qa"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"in e2e-project · qa ▾"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"expect":{"tree":"absent","text":"⌘K ACTIONS"}}
+{"expect":{"tree":"contains","text":"Open a pane:"}}
+{"do":{"resize":{"width":700,"height":700}}}
+{"expect":{"frame":"window.composer.hint","inside":"window"}}
+{"expect":{"frame":"window.composer.startIn","inside":"window"}}
+{"expect":{"frame":"window.composer.hint","clear":"window.composer.startIn"}}
+{"expect":{"tree":"contains","text":"HOLD ⌥ TO SPEAK"}}

@@ -127,7 +127,19 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
 | 3 | New conversation here, ⌘N, Open | The composer is focused |
 | 4 | — | Nothing new waits (worktrees are made at the first write, piece 1) |
 | 5 | Archive, Restore, Bring to Main | Disabled while their dispatch is in flight |
-| 6 | Pills, Archive, Restore, Start | The screen stays; only a card, a line, Open or a project's name moves it |
+| 6 | Pills, Archive, Restore, Start, Start in, a project's name | The screen stays; only a card, a line, Open or a send moves it |
 | 7 | Move a conversation here | Refused only by decision 6, naming it |
 | 8 | Every card action | Refusal whole in the status line |
 | 9 | The picker | Pre-set to the current place |
+
+## Phase G — the operator's walk (2026-10-30)
+
+- [x] G1 Start in sets `homeStartIn` and moves nothing; a send goes there (`enterStartIn`), a refusal gives
+  the line back. Tests: `HomeStartInTests` (choosing, a project's name, the send, a conversation there,
+  the refusal). Check: `seeded/workspaces-home-start-in.jsonl`.
+- [x] G2 Every home line opens its conversation (`openHomeLine`); a switch reaches a place with no
+  environment chosen (`goTo(exactEnvironment:)`, `set_environment ""`). Tests: `HomeStartInTests`,
+  `TestSetEnvironmentEmptyLeavesNoneChosen`.
+- [x] G3 The composer's row (`ComposerRow`): the field shrinks first, Start in and the hint wrap under it.
+  G4 The home's status line has its own space. Check: the start-in check at 700 pt.
+

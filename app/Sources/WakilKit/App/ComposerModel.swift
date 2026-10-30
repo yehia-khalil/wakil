@@ -122,6 +122,18 @@ public final class ComposerModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let source: WindowModel.TurnSource = landedUnsent ? .voice : .typed
+        // A send from the home goes where *Start in* points (piece 3 walk): the window goes there
+        // first, and the line is sent on the screen it lands on. A switch refused gives the line
+        // back where it was typed (Rule 2), its reason in `status`.
+        if window.sendGoesElsewhere {
+            let home = screen
+            draft = ""
+            caret = 0
+            guard await window.enterStartIn() else {
+                giveBack(text, source: source, typedOn: home)
+                return
+            }
+        }
         // Read before the first await: the line belongs to the conversation it was typed on —
         // on a Landing, the one its first message starts (`WindowModel.pinTurnScope`) — and the
         // screen it was typed on is where it comes back to.
@@ -143,10 +155,14 @@ public final class ComposerModel {
             break
         }
         let started = await window.send(text, via: source, scope: scope)
-        // No turn started (no harness, a failed send, a screen gone): the operator's words come
-        // back to the screen they were typed on (Rule 2) — on show, or kept for it when the
-        // screen has moved — not to whichever is shown now. Not if they have typed there since.
         guard !started else { return }
+        giveBack(text, source: source, typedOn: typedOn)
+    }
+
+    /// No turn started (no harness, a failed send, a screen gone): the operator's words come back to
+    /// the screen they were typed on (Rule 2) — on show, or kept for it when the screen has moved —
+    /// not to whichever is shown now. Not if they have typed there since.
+    private func giveBack(_ text: String, source: WindowModel.TurnSource, typedOn: String) {
         if screen == typedOn || window.isSameScreenRenamed(from: typedOn, to: screen) {
             guard draft.isEmpty else { return }
             draft = text

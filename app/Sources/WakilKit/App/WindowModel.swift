@@ -951,6 +951,12 @@ public final class WindowModel {
     /// Workspaces, piece 3 (decision 11): the PRs each open workspace's branch heads, by Main's root
     /// and the branch, as the home last read them (`readHomeMergedBranches`).
     public internal(set) var homeBranchPRs: [HomeBranch: [PullRequestState]] = [:]
+    /// Workspaces, piece 3 walk: where the home's next send goes — the composer's *Start in* — when
+    /// the operator chose somewhere other than the window's place; nil, the window's place. Choosing
+    /// it moves nothing (amendment "the home is the organisation's"): only a send (`enterStartIn`),
+    /// or opening a workspace or a conversation, selects a place. Spent by the send, and dropped
+    /// by any change of what the screen shows and by an organisation switch.
+    public internal(set) var homeStartIn: Place?
     /// When each of those was read, and which are being read now (one read per branch at a time).
     @ObservationIgnored var homeBranchReadAt: [HomeBranch: Date] = [:]
     @ObservationIgnored var homeBranchReading: Set<HomeBranch> = []
@@ -2588,6 +2594,7 @@ public final class WindowModel {
         // Workspaces, piece 3: the home's Archive offer read the outgoing org's branches, and ⌘P's
         // ticket rows knew its workspaces.
         homeBranchPRs = [:]
+        homeStartIn = nil
         homeBranchReadAt = [:]
         homeBranchReading = []
         knownWorkspaces = ("", [])
@@ -5866,9 +5873,10 @@ public final class WindowModel {
         await dispatchLayout("workspace_open", .object(params))
     }
 
-    /// The current project's Open with a pane: Main's view, then that pane in it (decision 26's line).
+    /// *Open a pane* on the home: Main's view of *Start in*'s place, then that pane in it (decision
+    /// 26's line).
     public func openMainView(withPane kind: String) async {
-        await openWorkspaceView(nil)
+        await openWorkspaceView(nil, in: startInPlace)
         if kind == "terminal" { _ = await openTerminalPane() } else { _ = await openPane(kind: kind) }
     }
 
@@ -10019,7 +10027,9 @@ public final class WindowModel {
         // back if `goTo` stops short and nothing has replaced it meanwhile.
         screenConversations[target.place] = target.id
         if target.place != self.place {
-            await goTo(target.place)
+            // Its place exactly: a conversation started with no environment chosen lives there, and
+            // only an exact switch reaches it from one with an environment (piece 3 walk).
+            await goTo(target.place, exactEnvironment: true)
             guard self.place == target.place else {
                 if screenConversations[target.place] == target.id { screenConversations[target.place] = previous }
                 return
@@ -10257,6 +10267,8 @@ public final class WindowModel {
         let now = screenKey
         guard let told = toldScreenKey, told != now else { return }
         toldScreenKey = now
+        // *Start in* is the home's, for the send typed there: another screen pre-sets it again.
+        homeStartIn = nil
         if isSameScreenRenamed(from: told, to: now) {
             onScreenChange?(told, now, false)
             return
@@ -10288,7 +10300,7 @@ public final class WindowModel {
     /// Each switch lands somewhere first — an org switch on that org's remembered place, a
     /// project switch on its first environment — and none of those has been seen: only the place
     /// the screen ends on, the target or wherever a refusal stopped it, loses its unseen marks.
-    public func goTo(_ target: Place) async {
+    public func goTo(_ target: Place, exactEnvironment: Bool = false) async {
         goTosInFlight += 1
         defer {
             goTosInFlight -= 1
@@ -10301,7 +10313,7 @@ public final class WindowModel {
         if !target.project.isEmpty, target.project != projectKey {
             guard await setProject(target.project) else { return }
         }
-        if !target.environment.isEmpty, target.environment != environment {
+        if !target.environment.isEmpty || exactEnvironment, target.environment != environment {
             _ = await setEnvironment(target.environment)
         }
     }

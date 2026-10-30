@@ -63,7 +63,10 @@ func setEnvironment(name string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := r.Project.Environments[name]; !ok {
+	// "" leaves the project with no environment chosen, as a project switch to one lacking the
+	// environment does: the place a conversation started with none chosen lives in (workspaces,
+	// piece 3 walk — the home opens it there).
+	if _, ok := r.Project.Environments[name]; !ok && name != "" {
 		return wakilcore.UserError("unknown environment: " + name)
 	}
 	a, err := wakilcore.ReadActive()
@@ -620,7 +623,7 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_environment", Description: "Switch the active environment within the active project."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_environment", Description: "Switch the active environment within the active project; an empty name leaves none chosen."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a nameArg) (*mcp.CallToolResult, empty, error) {
 			if err := setEnvironment(a.Name); err != nil {
 				return toolErr(err), empty{}, nil
