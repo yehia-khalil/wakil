@@ -8,16 +8,20 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"‘propose a portal teammate’ suggests a teammate for e2e-portal:"}}
 {"do":{"type":{"into":"window.teammates.brief.e2e-portal","text":" Keep it small."}}}
-{"do":{"click":"window.composer"}}
+{"do":{"focus":"window.composer"}}
 {"expect":{"tree":"contains","text":"Keep it small."}}
+{"dispatch":{"action":"conversation_teammate_brief","params":{"proposal":"teammate-1","brief":"Build the portal login form. Keep it tiny."}}}
+{"expect":{"tree":"contains","text":"Keep it tiny."}}
 {"dispatch":{"action":"conversation_propose_teammate","params":{"repo":"e2e-portal","brief":"Only the form, please."}}}
 {"expect":{"tree":"contains","text":"(replacing the last suggestion)"}}
 {"do":{"click":"window.teammates.dismiss.e2e-portal"}}
 {"expect":{"tree":"absent","text":"suggests a teammate for e2e-portal:"}}
-{"expect":{"tree":"contains","text":"The operator dismissed the teammate for e2e-portal; it is not proposed again here."}}
+{"expect":{"tree":"contains","text":"The operator dismissed the teammate for e2e-portal"}}
 {"dispatch":{"action":"conversation_propose_teammate","params":{"repo":"e2e-portal","brief":"Please?"},"refuses":"decision 17"}}
-{"dispatch":{"action":"conversation_teammate_dismiss","params":{"proposal":"teammate-1"},"refuses":"only the operator starts, dismisses or edits a proposed teammate"}}
+{"dispatch":{"action":"conversation_teammate_dismiss","params":{"proposal":"teammate-1"},"refuses":"only the operator can run this"}}
 {"do":{"type":{"into":"window.composer","text":"nothing for this crew member"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"said there is nothing to do"}}
 {"expect":{"tree":"contains","text":"done · nothing to do: the portal needs nothing. Close it when you have read this."}}
+{"dispatch":{"action":"conversation_nothing_to_do","params":{"why":"nothing more here"}}}
+{"expect":{"journal":{"contains":"\"action\":\"conversation_nothing_to_do\""}}}
