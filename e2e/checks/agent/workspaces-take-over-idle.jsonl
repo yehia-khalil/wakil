@@ -21,11 +21,12 @@
 {"expect":{"tree":"contains","text":"wrote the second note"}}
 {"expect":{"tree":"contains","text":"Took over e2e-api from ‘write the workspace note’ (idle)."}}
 {"expect":{"tree":"absent","text":"branched off"}}
-{"do":{"hotkey":"cmd+shift+h"}}
+{"do":{"hotkey":"cmd+n"}}
 {"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"absent","text":"branched off"}}
 {"do":{"click":"landing.project.e2e-git"}}
 {"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"pane":"terminal-1","field":"grid[0]","contains":" e2e-git %"}}
 {"do":{"click":"rail.terminal-1"}}
 {"do":{"keys":"git -C ../e2e-api worktree list --porcelain | grep -c '^worktree '; test -e \"$(git -C ../e2e-api worktree list --porcelain | sed -n 's/^worktree //p' | tail -1)/second-note.txt\" && echo SAME-COPY"}}
 {"do":{"press":"Return"}}
