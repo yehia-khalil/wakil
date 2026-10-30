@@ -405,7 +405,7 @@ struct WakilWindow: View {
                                 onEscapeUnconsumed: { threadDisclosure.escape() },
                                 placeholder: homeComposerPlaceholder,
                                 startIn: session.model.sessionStarted || session.model.project.isEmpty
-                                    ? nil : AnyView(ComposerStartIn(model: session.model)),
+                                    ? nil : AnyView(ComposerStartIn(model: session.model, refocus: { session.composer.requestFocus() })),
                                 onHome: !session.model.sessionStarted)
                             // Task 10: the running account, always on screen — the same
                             // standing Invariant 8 already gives the environment, for the
@@ -698,11 +698,7 @@ struct WakilWindow: View {
         // put a surface on top would be the org plane's treatment borrowed
         // for a case that does not need it.
         if !model.sessionStarted {
-            Home(model: model, openTicketsPalette: {
-                // ⌘P in open mode with `#` typed: every ticket in flight.
-                openPalette(.open)
-                palette?.type("#")
-            })
+            Home(model: model)
                 .padding(.top, 34)
                 .transition(.opacity)
                 // **The settings pane draws OVER the Landing**, because

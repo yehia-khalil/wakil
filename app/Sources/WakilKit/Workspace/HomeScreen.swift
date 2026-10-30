@@ -53,6 +53,9 @@ public struct HomeInput: Sendable {
     /// What runs in each workspace, by id: piece 2's `runStatusLine` (`api running on :41200 · queue
     /// running`); absent or empty when nothing does.
     public var running: [String: String]
+    /// Each project's default environment, where known: a card in another environment tags it. The
+    /// window's own project defaults to the window's environment.
+    public var defaultEnvironments: [String: String]
     /// Whether an environment of a project is production (Invariant 8).
     public var isProduction: @Sendable (_ project: String, _ environment: String) -> Bool
 
@@ -60,6 +63,7 @@ public struct HomeInput: Sendable {
                 workspaces: [WorkspaceListing] = [], live: [LiveConversation] = [], tickets: [TicketNeedsRow] = [],
                 past: [HomePastConversation] = [], filter: String? = nil,
                 branchPRs: [HomeBranch: [PullRequestState]] = [:], running: [String: String] = [:],
+                defaultEnvironments: [String: String] = [:],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -72,11 +76,12 @@ public struct HomeInput: Sendable {
         self.filter = filter
         self.branchPRs = branchPRs
         self.running = running
+        self.defaultEnvironments = defaultEnvironments
         self.isProduction = isProduction
     }
 }
 
-/// One live conversation's line: its state's dot, title, what it does, the repos it holds.
+/// One live conversation's line: its state's dot, title, and its state in words.
 public struct HomeConversationLine: Sendable, Equatable, Identifiable {
     public let id: String
     /// Its place in drawing order over the whole home: `landing.row.running:<index>`.
@@ -91,12 +96,18 @@ public struct HomeConversationLine: Sendable, Equatable, Identifiable {
     /// Its session, when it has one: what a click resumes should the conversation have ended
     /// meanwhile (`WindowModel.openHomeLine`).
     public var session: String? = nil
-    /// Drawn in Main's block, whose header already says *your folders · asking and reading*.
+    /// Drawn in Main's block.
     public var inMain = false
-    /// `working · holds api, web`; `idle · read only` in a card holding nothing; `idle` in Main.
-    public var detail: String {
-        if holds.isEmpty { return inMain ? state.rawValue : "\(state.rawValue) · read only" }
-        return "\(state.rawValue) · holds \(holds.joined(separator: ", "))"
+    /// Its state in words, as the comp draws it at the right: *working*, *idle*, *done*, *failed*,
+    /// *waiting on you*. Nothing about holds or *read only* (the home's walk).
+    public var words: String { homeStateWords(state) }
+}
+
+/// A state as a line says it.
+public func homeStateWords(_ state: ConversationState) -> String {
+    switch state {
+    case .waiting: "waiting on you"
+    case .working, .done, .failed, .idle: state.rawValue
     }
 }
 
@@ -110,7 +121,13 @@ public struct HomeRepo: Sendable, Equatable, Identifiable {
     public let inMain: Bool
     /// Whether a copy is made on disk (Bring to Main moves one).
     public let made: Bool
-    public var words: String { inMain ? "in Main" : branch }
+    /// `ini-140-move-…`, `in Main`, or `main · not copied` for a repo the workspace never copied,
+    /// so the repo list stays complete.
+    public var words: String {
+        if inMain { return "in Main" }
+        if !made { return "\(branch.isEmpty ? "main" : branch) · not copied" }
+        return branch
+    }
 }
 
 /// A conversation the card's *Move a conversation here…* offers.
@@ -119,7 +136,7 @@ public struct HomeMoveCandidate: Sendable, Equatable, Identifiable {
     public let title: String
 }
 
-/// One workspace's card (decision 20): everything about it, nothing capped.
+/// One workspace's card (decision 20): a compact row, and everything else one expand away.
 public struct HomeCard: Sendable, Equatable, Identifiable {
     public let id: String
     /// `INI-142 Login rate limit`'s two halves: the first ticket key (nil with none) and the name.
@@ -128,18 +145,28 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     public let project: String
     public let environment: String
     public let isProduction: Bool
+    /// The compact row's environment tag: drawn only when the workspace's environment differs from
+    /// its project's default, or is production (Invariant 8); nil otherwise.
+    public let environmentTag: String?
     public let repos: [HomeRepo]
     /// `2 PRs open · 1 failing`; nil with no PR.
     public let prs: String?
+    /// The first PR's page (`…/pull/7`), for the expanded card's *checks ↗*; nil with none.
+    public let prURL: String?
     /// What runs in it (piece 2's `runStatusLine`); nil when nothing does, so no **Stop**.
     public let running: String?
-    /// What needs the operator, in amber; nil when nothing does.
-    public let needs: String?
     public var lines: [HomeConversationLine]
     public var children: [HomeCard]
     /// The parent's name, for a child drawn on its own (its parent archived or elsewhere).
     public let branchedFrom: String?
-    public let needsYou: Bool
+    /// What a child row says it branched off: the parent's ticket key, else its name.
+    public let branchedOff: String?
+    /// How many things in it need the operator — each conversation waiting, failed or done unseen,
+    /// and its tickets' reasons as one: the compact row's amber `● n`. 0 draws nothing.
+    public let needCount: Int
+    /// The compact row's dot: its strongest need's hue, else working, else idle.
+    public let hue: ConversationState
+    public var needsYou: Bool { needCount > 0 }
     public let working: Bool
     public let latest: Date
     /// The most recent live conversation: what a click on the card opens.
@@ -155,20 +182,25 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     public let merged: String?
     /// ▶ Run…'s repos: those with a copy on disk, where the app runs (decision 12).
     public var runnable: [HomeRepo] { repos.filter { $0.made && !$0.inMain } }
-    /// The card's PRs and running line, as one: `7 PRs open · checks 5/7 · core running on :41200`,
-    /// with **Stop** drawn after it while something runs; nil with neither.
-    public var statusLine: String? {
-        let parts = [prs, running].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
+    /// The compact row's running token: its ports (`:41200`), else `running`; nil while nothing runs.
+    public var runningCompact: String? { running.map(homeRunningPorts) }
+    /// The compact row offers ▶ while nothing runs and a copy is on disk to run in.
+    public var offersRun: Bool { running == nil && !runnable.isEmpty }
     /// `1 repo` / `7 repos`.
     public var repoCount: String { repos.count == 1 ? "1 repo" : "\(repos.count) repos" }
+}
+
+/// The ports a running line names (`api running on :41200 · web running on :41201` → `:41200 :41201`),
+/// else `running`: the compact card's token.
+public func homeRunningPorts(_ line: String) -> String {
+    let ports = line.split(whereSeparator: { $0 == " " || $0 == "·" || $0 == "," })
+        .filter { $0.hasPrefix(":") && $0.count > 1 && $0.dropFirst().allSatisfy(\.isNumber) }
+    return ports.isEmpty ? "running" : ports.joined(separator: " ")
 }
 
 /// Main of a project, while a conversation is in it.
 public struct HomeMain: Sendable, Equatable {
     public var lines: [HomeConversationLine]
-    public static let words = "your folders · asking and reading"
 }
 
 /// One project's section.
@@ -178,17 +210,17 @@ public struct HomeSection: Sendable, Equatable, Identifiable {
     public var main: HomeMain?
     public var cards: [HomeCard]
     public let latest: Date
-    /// `2 workspaces · Main`, `1 workspace`, `Main`, `nothing going on`.
+    /// The header's micro count: `2 workspaces · Main`, `1 workspace`, `1 conversation in Main`.
     public var summary: String {
-        var parts: [String] = []
         let n = cards.reduce(0) { $0 + 1 + $1.children.count }
-        if n > 0 { parts.append(n == 1 ? "1 workspace" : "\(n) workspaces") }
-        if main != nil { parts.append("Main") }
-        return parts.isEmpty ? "nothing going on" : parts.joined(separator: " · ")
+        let m = main?.lines.count ?? 0
+        if n == 0 { return m == 1 ? "1 conversation in Main" : "\(m) conversations in Main" }
+        let w = n == 1 ? "1 workspace" : "\(n) workspaces"
+        return main == nil ? w : "\(w) · Main"
     }
 }
 
-/// A pill: All projects (nil) or one project, with its needs-you count.
+/// A pill: All projects (nil) or one project, with its NEEDS YOU rows counted.
 public struct HomePill: Sendable, Equatable, Identifiable {
     public var id: String { project ?? "" }
     public let project: String?
@@ -216,26 +248,34 @@ public struct HomeEarlier: Sendable, Equatable {
         if !archived.isEmpty { parts.append(archived.count == 1 ? "1 archived workspace" : "\(archived.count) archived workspaces") }
         let n = past.reduce(0) { $0 + $1.conversations.count }
         if n > 0 { parts.append(n == 1 ? "1 past conversation" : "\(n) past conversations") }
-        return parts.isEmpty ? nil : "Earlier — " + parts.joined(separator: ", ")
+        return parts.isEmpty ? nil : "Earlier — " + parts.joined(separator: " · ")
     }
 }
 
 /// The home screen, decided.
 public struct HomeScreen: Sendable, Equatable {
-    public let title: String
-    /// Drawn only with two projects or more.
+    /// NEEDS YOU, strongest first; empty draws no section.
+    public let needs: [HomeNeed]
+    /// Drawn only with two project sections or more: with one, a filter would do nothing.
     public let pills: [HomePill]
     public let sections: [HomeSection]
+    /// The projects with nothing going on, folded into one line that names them.
+    public let quiet: [String]
     public let ticketsNotStarted: [TicketNeedsRow]
     public let earlier: HomeEarlier
-    /// The help line in full (three cards or fewer), else an ⓘ beside the title (decision 21).
-    public let helpInFull: Bool
-    /// Nothing live and no workspace: the help line, the tickets and *Open a pane* (decision 26).
+    /// No project, nothing live, no workspace: the explainer and *Add a project*, and only then.
     public let firstRun: Bool
 
-    public static let help = "A conversation is one agent and its thread. It starts in Main, your own folders, "
-        + "where it can read and answer. When it changes something it gets a workspace: a copy Wakil makes for "
-        + "that piece of work, so your folders stay as you left them."
+    /// `2 quiet projects`; the line names them after it.
+    public var quietCount: String { quiet.count == 1 ? "1 quiet project" : "\(quiet.count) quiet projects" }
+
+    /// The first run's explainer, two paragraphs; never drawn on a working home.
+    public static let explainer = [
+        "Wakil works in projects. Each project has Main, which is your own folders as they are on disk. "
+            + "A conversation there reads them and changes nothing.",
+        "When a conversation changes something, it gets a workspace of its own: a copy on its own branch. "
+            + "Main stays untouched, and several pieces of work can run side by side.",
+    ]
 
     /// The cards offering Archive because every PR is merged (decision 11), by id, in drawing order:
     /// what numbers their Archive (`landing.archive.offer:<n>`), as a card's own id is generated.
@@ -339,7 +379,7 @@ func homePRLine(_ rows: [TicketNeedsRow]) -> String? {
     return line
 }
 
-/// Builds the home screen (spec, piece 3).
+/// Builds the home screen (spec, piece 3; amendment 2026-10-30, "the home, as the comp draws it").
 public func homeScreen(_ input: HomeInput) -> HomeScreen {
     let org = input.organization
     let live = input.live.filter { $0.place.organization == org || org.isEmpty }
@@ -356,15 +396,15 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
                              holds: (holding[c.id] ?? []).sorted(), place: c.place,
                              isProduction: c.isProduction, lastActivity: c.lastActivity, session: c.session)
     }
+    func defaultEnvironment(_ project: String) -> String? {
+        input.defaultEnvironments[project] ?? (project == input.project ? input.environment : nil)
+    }
+    var needs: [HomeNeed] = []
     func card(_ l: WorkspaceListing) -> HomeCard {
         let w = l.workspace
         let mine = live.filter { $0.workspace?.id == w.id || l.live[$0.id] != nil }
             .sorted { $0.lastActivity > $1.lastActivity }
         let rows = homeTicketRows(of: w, in: input.tickets)
-        let waiting = mine.filter { $0.state == .waiting || $0.state == .failed }
-        var needs: [String] = []
-        for c in waiting { needs.append("‘\(c.title)’ \(c.state == .waiting ? "is waiting for you" : "failed")") }
-        for r in rows where r.urgent.needsYou { needs.append(r.urgent.words) }
         let repos = w.checkouts.map {
             HomeRepo(repo: $0.repo, name: $0.repoName, branch: $0.branch, inMain: $0.inMain, made: $0.path != nil)
         }
@@ -374,12 +414,20 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             $0.place.project == w.project && $0.workspace?.id != w.id && l.live[$0.id] == nil && holding[$0.id] == nil
         }.map { HomeMoveCandidate(id: $0.id, title: $0.title) }
         let parent = w.parent.flatMap { byId[$0] }
+        let need = homeWorkspaceNeed(w, mine: mine, rows: rows, latest: latest)
+        if let need { needs.append(need) }
+        let working = mine.contains { $0.state == .working }
+        let production = input.isProduction(w.project, w.environment)
+        let tag = production || (defaultEnvironment(w.project).map { $0 != w.environment } ?? false) ? w.environment : nil
         return HomeCard(
             id: w.id, key: w.tickets.first, name: w.name, project: w.project, environment: w.environment,
-            isProduction: input.isProduction(w.project, w.environment), repos: repos, prs: homePRLine(rows),
+            isProduction: production, environmentTag: tag, repos: repos, prs: homePRLine(rows),
+            prURL: rows.flatMap(\.rows).first { !$0.url.isEmpty && $0.pr > 0 }?.url,
             running: input.running[w.id].flatMap { $0.isEmpty ? nil : $0 },
-            needs: needs.isEmpty ? nil : needs.joined(separator: " · "), lines: mine.map(line), children: [],
-            branchedFrom: parent?.name, needsYou: !needs.isEmpty, working: mine.contains { $0.state == .working },
+            lines: mine.map(line), children: [],
+            branchedFrom: parent?.name, branchedOff: parent.map { $0.tickets.first ?? $0.name },
+            needCount: homeNeedCount(mine: mine, rows: rows),
+            hue: need?.hue ?? (working ? .working : .idle), working: working,
             latest: latest, opens: mine.first?.id, moveCandidates: candidates,
             archiveAsks: mine.contains { $0.state == .waiting }, merged: homeMergedLine(w, input.branchPRs))
     }
@@ -388,13 +436,14 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         return cards.sorted { (rank($0), $1.latest, $0.id) < (rank($1), $0.latest, $1.id) }
     }
 
-    let firstRun = live.isEmpty && open.isEmpty
-    // Projects: each with something going on; every one on the first run.
+    // Projects: each with something going on is a section; the rest are quiet, named on one line.
     var projects: [String] = []
-    for p in [input.project] + input.projects + open.map(\.workspace.project) + live.map(\.place.project)
+    for p in input.projects + open.map(\.workspace.project) + live.map(\.place.project)
     where !p.isEmpty && !projects.contains(p) { projects.append(p) }
+    let firstRun = projects.isEmpty && live.isEmpty && open.isEmpty
 
     var sections: [HomeSection] = []
+    var quiet: [String] = []
     for p in projects {
         let cards = open.filter { $0.workspace.project == p }.map(card)
         let ids = Set(cards.map(\.id))
@@ -410,29 +459,32 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             c.children = ordered(children[c.id] ?? []).map(nest)
             return c
         }
-        let mainLines = live.filter { c in c.place.project == p && c.workspace == nil && !open.contains { $0.live[c.id] != nil } }
-            .sorted { $0.lastActivity > $1.lastActivity }.map(line).map { l in var l = l; l.inMain = true; return l }
+        let mainLive = live.filter { c in c.place.project == p && c.workspace == nil && !open.contains { $0.live[c.id] != nil } }
+            .sorted { $0.lastActivity > $1.lastActivity }
+        needs += mainLive.compactMap(homeMainNeed)
+        let mainLines = mainLive.map(line).map { l in var l = l; l.inMain = true; return l }
         let main = mainLines.isEmpty ? nil : HomeMain(lines: mainLines)
-        // The home is the organisation's (amendment 2026-10-30): a project is drawn while something
-        // goes on in it; with nothing going on anywhere, every project is, each with Main's Open.
-        guard firstRun || main != nil || !cards.isEmpty else { continue }
+        guard main != nil || !cards.isEmpty else {
+            quiet.append(p)
+            continue
+        }
         let latest = (cards.map(\.latest) + mainLines.map(\.lastActivity)).max() ?? distantPast
-        sections.append(HomeSection(project: p, main: main,
-                                    cards: ordered(top).map(nest), latest: latest))
+        sections.append(HomeSection(project: p, main: main, cards: ordered(top).map(nest), latest: latest))
     }
     sections.sort { ($0.latest, $1.project) > ($1.latest, $0.project) }
+    needs = homeNeedsOrdered(needs)
 
-    // Pills, before the filter narrows anything.
-    func needsYou(_ s: HomeSection) -> Int {
-        func count(_ c: HomeCard) -> Int { (c.needsYou ? 1 : 0) + c.children.reduce(0) { $0 + count($1) } }
-        return s.cards.reduce(0) { $0 + count($1) }
-            + (s.main?.lines.filter { $0.state == .waiting || $0.state == .failed }.count ?? 0)
-    }
+    // Pills, before the filter narrows anything: each counts its project's NEEDS YOU rows.
+    func needsYou(_ project: String?) -> Int { needs.filter { project == nil || $0.project == project }.count }
     let filter = input.filter.flatMap { f in sections.contains { $0.project == f } ? f : nil }
     let pills = sections.count < 2 ? [] :
-        [HomePill(project: nil, needsYou: sections.reduce(0) { $0 + needsYou($1) }, selected: filter == nil)]
-        + sections.map { HomePill(project: $0.project, needsYou: needsYou($0), selected: $0.project == filter) }
-    if let filter { sections = sections.filter { $0.project == filter } }
+        [HomePill(project: nil, needsYou: needsYou(nil), selected: filter == nil)]
+        + sections.map { HomePill(project: $0.project, needsYou: needsYou($0.project), selected: $0.project == filter) }
+    if let filter {
+        sections = sections.filter { $0.project == filter }
+        needs = needs.filter { $0.project == filter }
+        quiet = []
+    }
 
     // Number every conversation line in drawing order.
     var index = 0
@@ -448,11 +500,8 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         for c in sections[s].cards.indices { number(&sections[s].cards[c]) }
     }
 
-    // Tickets not started here: no workspace carries their key or works on their branch, and no live
-    // conversation does — its key in the title, or a hand-off's key or branch (piece 3 walk).
     let notStarted = input.tickets.filter { row in
-        !all.contains { w in !homeTicketRows(of: w, in: [row]).isEmpty }
-            && !live.contains { homeConversationCarries($0, row) }
+        !homeTicketStarted(row, workspaces: all, live: live)
             && (filter == nil || row.rows.contains { $0.project == filter } || row.rows.allSatisfy { $0.project.isEmpty })
     }
 
@@ -473,14 +522,20 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
                                     conversations: grouped[key] ?? []))
     }
 
-    let cardCount = sections.reduce(0) { n, s in
-        func count(_ c: HomeCard) -> Int { 1 + c.children.reduce(0) { $0 + count($1) } }
-        return n + s.cards.reduce(0) { $0 + count($1) } + (s.main == nil ? 0 : 1)
-    }
-    return HomeScreen(
-        title: "Work in \(org)", pills: pills, sections: sections, ticketsNotStarted: notStarted,
-        earlier: HomeEarlier(archived: archived, past: groups), helpInFull: cardCount <= 3,
-        firstRun: firstRun)
+    return HomeScreen(needs: needs, pills: pills, sections: sections, quiet: quiet, ticketsNotStarted: notStarted,
+                      earlier: HomeEarlier(archived: archived, past: groups), firstRun: firstRun)
+}
+
+/// Whether a ticket in flight is started, so it leaves *Tickets*: a workspace (open or archived)
+/// carries its key or works on one of its branches, or a live conversation carries it — its key in
+/// the title, or a hand-off's key or branch (piece 3 walk).
+public func homeTicketStarted(_ row: TicketNeedsRow, workspaces: [Workspace], live: [LiveConversation]) -> Bool {
+    workspaces.contains { !homeTicketRows(of: $0, in: [row]).isEmpty } || live.contains { homeConversationCarries($0, row) }
+}
+
+/// A Tickets row's state: the tracker's status (`In progress`), else its most urgent state in words.
+public func homeTicketStatus(_ row: TicketNeedsRow) -> String {
+    row.rows.first { !$0.status.isEmpty }?.status ?? landingTicketState(row).words
 }
 
 /// Whether live conversation `c` carries ticket `row`: the ticket's key in its title as a word, or a

@@ -46,9 +46,9 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
         organization: "initech", project: "estate", environment: "staging", projects: ["dashboard", "estate", "mobile"],
         workspaces: [listing(a), listing(b)],
         live: [conv("c2", "Fix exception pages", .working, place: web, workspace: b, ago: 0)]))
-    #expect(screen.title == "Work in initech")
     #expect(screen.sections.map(\.project) == ["dashboard", "estate"], "the latest first; a project with nothing is not drawn")
     #expect(screen.pills.map(\.label) == ["All projects", "dashboard", "estate"])
+    #expect(screen.quiet == ["mobile"], "folded into the quiet line, by name")
 }
 
 @Test func aProjectWithNothingGoingOnIsNotDrawnOnceSomethingIsGoingOnElsewhere() {
@@ -82,7 +82,7 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
         live: [conv("c1", "Why is OTP capped at 5?", ago: 10), conv("c2", "Rebase", .working, workspace: a)]))
     let s = screen.sections[0]
     #expect(s.main?.lines.map(\.title) == ["Why is OTP capped at 5?"])
-    #expect(s.main?.lines.first?.detail == "idle", "Main's header already says asking and reading (walk)")
+    #expect(s.main?.lines.first?.words == "idle", "no read only, no holds (walk)")
     #expect(s.cards.first?.lines.map(\.title) == ["Rebase"])
     #expect(screen.lines.map(\.index) == [0, 1], "lines are numbered in drawing order")
     #expect(s.summary == "1 workspace · Main")
@@ -99,7 +99,7 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
         live: [conv("c1", "one", .working, workspace: busy), conv("c2", "two", .waiting, workspace: needy)]))
     #expect(screen.sections[0].cards.map(\.name) == ["Needs you", "Busy", "Newer quiet", "Quiet"])
     let needs = screen.sections[0].cards[0]
-    #expect(needs.needs == "‘two’ is waiting for you")
+    #expect(needs.needCount == 1 && screen.needs.map(\.why) == ["waiting on you"])
     #expect(needs.archiveAsks, "Archive asks only with a conversation waiting (Rule 1)")
     #expect(!screen.sections[0].cards[1].archiveAsks)
 }
@@ -117,10 +117,14 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
     let card = screen.sections[0].cards[0]
     #expect(card.key == "INI-1728" && card.name == "Stop persisting logs")
     #expect(card.repos.map(\.words) == ["INI-1728-logs", "INI-1728-logs", "in Main"])
+    a.checkouts[1].path = nil
+    #expect(homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
+                                 workspaces: [listing(a)])).sections[0].cards[0].repos[1].words == "INI-1728-logs · not copied",
+            "a repo never copied stays listed")
     #expect(card.repoCount == "3 repos")
     #expect(card.bringHome.map(\.name) == ["api", "web"], "Bring to Main offers the repos with a copy")
     #expect(card.prs == "2 PRs open · 1 failing")
-    #expect(card.lines.first?.detail == "working · holds api")
+    #expect(card.lines.first?.words == "working")
     #expect(card.opens == "c1")
     #expect(screen.ticketsNotStarted.isEmpty, "both tickets are this workspace's: by key, and by branch")
 }
@@ -184,24 +188,8 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
                HomePastConversation(id: "s1", title: "older", subtitle: "", chain: ["s1"])]))
     #expect(screen.earlier.past.map(\.name) == ["Main", "Login rate limit"])
     #expect(screen.earlier.past[0].conversations.map(\.title) == ["asked", "older"])
-    #expect(screen.earlier.line == "Earlier — 1 archived workspace, 3 past conversations")
+    #expect(screen.earlier.line == "Earlier — 1 archived workspace · 3 past conversations")
     #expect(homeScreen(HomeInput(organization: "o", project: "e", environment: "s")).earlier.line == nil)
-}
-
-@Test func theHelpLineIsInFullWithThreeCardsOrFewerAndFirstRunWithNothing() {
-    let three = (1...3).map { listing(ws("w\($0)", "W\($0)")) }
-    #expect(homeScreen(HomeInput(organization: "o", project: "estate", environment: "s", workspaces: three)).helpInFull)
-    let four = (1...4).map { listing(ws("w\($0)", "W\($0)")) }
-    let busy = homeScreen(HomeInput(organization: "o", project: "estate", environment: "s", workspaces: four))
-    #expect(!busy.helpInFull && !busy.firstRun)
-    let empty = homeScreen(HomeInput(organization: "o", project: "estate", environment: "s", tickets: [ticket("INI-1")]))
-    #expect(empty.firstRun && empty.helpInFull)
-    // With nothing going on anywhere, every project's header stands, each with Main's Open.
-    let firstRun = homeScreen(HomeInput(organization: "o", project: "estate", environment: "s",
-                                        projects: ["dashboard", "estate"]))
-    #expect(firstRun.firstRun && firstRun.sections.map(\.project) == ["dashboard", "estate"])
-    #expect(firstRun.sections.allSatisfy { $0.summary == "nothing going on" })
-    #expect(empty.ticketsNotStarted.count == 1)
 }
 
 @Test func productionStaysRedOnACard() {
@@ -280,15 +268,14 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
                              workspaces: [listing(a)], tickets: rows, running: running)).sections[0].cards[0]
     }
     #expect(card([:]).running == nil)
-    #expect(card([:]).statusLine == "1 PR open")
+    #expect(card([:]).prs == "1 PR open")
     let running = card(["w1": "api running on :41200 · queue running"])
     #expect(running.running == "api running on :41200 · queue running")
-    #expect(running.statusLine == "1 PR open · api running on :41200 · queue running")
     #expect(card(["w1": ""]).running == nil, "nothing runs: no line, no Stop")
     #expect(card([:]).runnable.map(\.name) == ["api"], "a copy on disk, not one brought to Main or not made")
 
     let b = ws("w2", "Quiet", repos: ["/p/api"])
     let quiet = homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
                                      workspaces: [listing(b)], running: ["w2": "api running on :41210"])).sections[0].cards[0]
-    #expect(quiet.statusLine == "api running on :41210", "no PR: the line is what runs")
+    #expect(quiet.prs == nil && quiet.runningCompact == ":41210", "no PR: the compact row still says what runs")
 }

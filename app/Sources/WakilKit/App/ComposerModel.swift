@@ -87,6 +87,9 @@ public final class ComposerModel {
         if focusComposer { focusToken += 1 }
     }
 
+    /// Gives the field the keyboard back, the draft as it was (the home's Start in, after a choice).
+    public func requestFocus() { focusToken += 1 }
+
     public var bar: ComposerBarContent {
         .make(machine: machine, landedUnsent: landedUnsent && !draft.isEmpty, draft: draft, caret: caret,
               keymap: window.keymap)

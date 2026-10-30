@@ -14,6 +14,24 @@ public struct HomeStartChoice: Sendable, Equatable, Identifiable {
     public let current: Bool
     public let isProduction: Bool
     public var label: String { environment.isEmpty ? project : "\(project) · \(environment)" }
+    /// The row's tag in Start in's plane: *now* for where the window is, *production* (red,
+    /// Invariant 8) for a production environment; nil otherwise.
+    public var tag: String? { current ? "now" : isProduction ? "production" : nil }
+}
+
+/// Start in's rows, one group per project in the order given: the plane draws a hairline between.
+public func homeStartGroups(_ choices: [HomeStartChoice]) -> [[HomeStartChoice]] {
+    var out: [[HomeStartChoice]] = []
+    for c in choices {
+        if let last = out.last?.last, last.project == c.project { out[out.count - 1].append(c) } else { out.append([c]) }
+    }
+    return out
+}
+
+/// The row ↑ or ↓ moves to in Start in's plane: stops at either end, never wraps.
+public func homeStartMove(_ index: Int, by step: Int, count: Int) -> Int {
+    guard count > 0 else { return 0 }
+    return min(max(index + step, 0), count - 1)
 }
 
 /// The picker's rows: the current place first, then the current project's other environments, then

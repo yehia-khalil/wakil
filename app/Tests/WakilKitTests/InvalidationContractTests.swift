@@ -44,6 +44,8 @@ private let orgDerived: Set<String> = [
     // workspaces ⌘P's ticket rows know are its record's; `invalidateForOrgChange` empties all of them
     // (a read landing after the switch is dropped by its organisation).
     "homeBranchPRs", "homeBranchReadAt", "homeBranchReading", "knownWorkspaces",
+    // Start in's choice names a place of the outgoing org; `invalidateForOrgChange` drops it.
+    "homeStartIn",
     "project", "projectKey", "pmProjectKey", "settingsProjectWanted", "runningTryProgress", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.

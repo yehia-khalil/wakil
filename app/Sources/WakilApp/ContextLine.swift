@@ -261,7 +261,8 @@ struct ContextLine: View {
             Text("ORGANISATION")
                 .font(.system(size: 9, weight: .medium))
                 .tracking(1.7)
-                .foregroundStyle(coolWhite.opacity(0.52))
+                // The home comp's floor for a micro-label: 0.58 clears 4.5:1 on the void (`HomePalette.micro`).
+                .foregroundStyle(coolWhite.opacity(0.58))
             HStack(alignment: .firstTextBaseline, spacing: 15) {
                 homeButton
                 Text(model.organization.isEmpty ? "unknown" : model.organization)

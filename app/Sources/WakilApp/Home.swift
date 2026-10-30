@@ -1,21 +1,20 @@
 import WakilKit
 import SwiftUI
 
-/// The home screen (workspaces, piece 3; mockup `home.html`): one per organisation, grouped by
-/// project, a card per workspace. Everything it shows is decided by `homeScreen` in WakilKit
-/// (`Workspace/HomeScreen.swift`); this file only draws it and dispatches through `WindowModel`
-/// (Invariant 2): a line through `openHomeLine` (`session_switch`, else `session_resume`), a card, a project's Open and
-/// Earlier's rows through `workspace_open`, `workspace_restore` and `session_resume`.
+/// The home screen (workspaces, piece 3; the comp of 2026-10-30): the organisation's, needs first.
+/// NEEDS YOU, the pills, one slab per project with something going on (Main, then compact cards that
+/// expand in place), the quiet projects on one line, Tickets not started, Earlier. Everything it
+/// shows is decided in WakilKit (`homeScreen`, `HomeNeeds.swift`, `HomePalette`,
+/// `HomeExpansionStore`); this file only draws it and dispatches through `WindowModel`
+/// (Invariant 2): a line through `openHomeLine` (`session_switch`, else `session_resume`), a card, a
+/// project's name and a NEEDS YOU row through `workspace_open`, a PR link through `browser_open`.
 ///
 /// **One scroll for the page, nothing capped** (decision 20): no column has a height, no text a
-/// line limit; a long branch or title wraps whole.
+/// line limit; a long title, branch or why wraps whole.
 struct Home: View {
     let model: WindowModel
-    /// Opens ⌘P in open mode with `#` typed: every ticket in flight.
-    let openTicketsPalette: () -> Void
 
     @State private var screen: HomeScreen?
-    @State private var projects: [WindowModel.ProjectListing] = []
     @State private var past: [PaletteItem] = []
     @State private var filter: String?
     @State private var earlierOpen = false
@@ -29,12 +28,16 @@ struct Home: View {
     @State private var confirmingArchive: HomeCard?
     /// A card's ▶ Run or Stop that failed, whole (Rule 8), until its next Run or Stop.
     @State private var runErrors: [String: String] = [:]
+    /// Which cards are expanded, kept across relaunch (Rule 6); `expansionTick` redraws after a toggle.
+    @State private var expansion = HomeExpansionStore()
+    @State private var expansionTick = 0
 
-    private var coolWhite: Color { Color(red: 0.910, green: 0.925, blue: 0.965) }
-    private var violet: Color { Color(red: 0.620, green: 0.510, blue: 1.0) }
-    private var amber: Color { Color(TerminalPalette.amber) }
-    private var red: Color { Color(EnvironmentBadge.productionColour) }
-    private var hasProject: Bool { !model.project.isEmpty }
+    private let ink = Color(HomePalette.ink)
+    private let action = Color(HomePalette.action)
+    private let amber = Color(HomePalette.amber)
+    private let green = Color(HomePalette.green)
+    private let red = Color(HomePalette.red)
+    private let link = Color(HomePalette.link)
 
     /// What the page depends on: the place, every live conversation's state and title, the tickets read.
     private var readKey: String {
@@ -49,23 +52,28 @@ struct Home: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 22) {
-                if hasProject, let screen {
-                    header(screen)
+                if let screen {
                     if screen.firstRun { firstRun(screen) } else { page(screen) }
-                } else if hasProject {
-                    note("Reading workspaces…")
                 } else {
-                    projectRows
+                    Text("Reading workspaces…").font(.system(size: 12.5)).foregroundStyle(ink.opacity(HomePalette.quiet))
                 }
             }
-            .frame(maxWidth: 820, alignment: .leading)
+            .frame(maxWidth: 860, alignment: .leading)
             .padding(.horizontal, 40)
-            .padding(.bottom, 80)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("landing")
         }
+        // The page scrolls under the composer, fading over its last 28 pt.
+        .mask(VStack(spacing: 0) {
+            Color.black
+            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 28)
+        })
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: readKey) {
-            projects = await model.listProjects()
+            let projects = await model.listProjects()
             past = await model.landingSessions()
             screen = await model.readHomeScreen(projects: projects.map(\.name), past: past, filter: filter)
         }
@@ -85,52 +93,111 @@ struct Home: View {
         }
     }
 
-    // MARK: - Header and help
+    // MARK: - The page
 
-    private func header(_ screen: HomeScreen) -> some View {
+    @ViewBuilder
+    private func page(_ screen: HomeScreen) -> some View {
+        if !screen.needs.isEmpty { needsSection(screen.needs) }
+        if !screen.pills.isEmpty { pills(screen.pills) }
+        ForEach(screen.sections) { section in sectionView(section) }
+        if !screen.quiet.isEmpty { quietLine(screen) }
+        tickets(screen.ticketsNotStarted)
+        if let line = screen.earlier.line { earlier(screen.earlier, line: line) }
+    }
+
+    // MARK: - NEEDS YOU
+
+    private func needsSection(_ needs: [HomeNeed]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(screen.title)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(coolWhite.opacity(0.94))
-                    .accessibilityIdentifier("landing.title")
-                if !screen.helpInFull {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(coolWhite.opacity(0.5))
-                        .help(HomeScreen.help)
-                        .accessibilityLabel(HomeScreen.help)
-                        .accessibilityIdentifier("landing.help.info")
+            sectionHeader("Needs you", count: "\(needs.count)")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(needs.enumerated()), id: \.element.id) { n, need in
+                    if n > 0 { hairline }
+                    needRow(need, n: n)
                 }
             }
-            if screen.helpInFull {
-                Text(HomeScreen.help)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(coolWhite.opacity(0.62))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("landing.help")
-            }
-            // Decision 26's line, on every day: Main's view of where Start in points, with that pane.
-            openAPane
-            if !screen.pills.isEmpty { pills(screen.pills) }
+            .padding(.vertical, 4)
+            .background(slab)
         }
-        .padding(.top, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("landing.needs")
     }
+
+    /// One sentence — dot, project (mono), the workspace or conversation, the why in its hue — and one
+    /// action at the right. The row itself opens what it is about.
+    private func needRow(_ need: HomeNeed, n: Int) -> some View {
+        let key = "need:\(need.id)"
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                StateDot(state: need.hue)
+                Text(need.project)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(ink.opacity(HomePalette.quiet))
+                    .fixedSize()
+                (keyText(need.key) + Text(need.title).foregroundColor(ink.opacity(HomePalette.title))
+                    + Text(" — ").foregroundColor(ink.opacity(HomePalette.micro))
+                    + Text(need.why).foregroundColor(hue(need.hue)))
+                    .font(.system(size: 13.5))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { open(need.opens) }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { open(need.opens) }
+            .accessibilityIdentifier("landing.needs:\(n)")
+            needAction(need, n: n)
+        }
+        .padding(.vertical, 8)
+        .padding(.leading, 18)
+        .padding(.trailing, 16)
+        .background(RoundedRectangle(cornerRadius: 7).fill(ink.opacity(hovered == key ? 0.04 : 0)))
+        .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
+    }
+
+    private func needAction(_ need: HomeNeed, n: Int) -> some View {
+        Button(need.action.label) {
+            switch need.action {
+            case .review(let c, let s), .open(let c, let s): Task { await model.openHomeLine(c, session: s) }
+            case .openWorkspace(let w): Task { await model.openWorkspace(w) }
+            case .link(let url): Task { await model.openLinkInWakil(url) }
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(isLink(need.action) ? link : action)
+        .fixedSize()
+        .accessibilityIdentifier("landing.needs:\(n).act")
+    }
+
+    private func isLink(_ a: HomeNeedAction) -> Bool { if case .link = a { return true }; return false }
+
+    private func open(_ target: HomeNeedOpen) {
+        switch target {
+        case .conversation(let c, let s): Task { await model.openHomeLine(c, session: s) }
+        case .workspace(let w): Task { await model.openWorkspace(w) }
+        }
+    }
+
+    // MARK: - Pills (filter only; never select a place)
 
     private func pills(_ pills: [HomePill]) -> some View {
         WrappingRow(spacing: 8) {
             ForEach(pills) { pill in
                 let key = pill.project ?? "all"
                 Button { filter = pill.project } label: {
-                    HStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Text(pill.label).font(.system(size: 12))
-                        if pill.needsYou > 0 {
-                            Text("● \(pill.needsYou)").font(.system(size: 11)).foregroundStyle(amber)
+                        if pill.project != nil, pill.needsYou > 0 {
+                            Text("● \(pill.needsYou)").font(.system(size: 11, design: .monospaced)).foregroundStyle(amber)
                         }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 11)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(coolWhite.opacity(pill.selected ? 0.16 : 0.05)))
-                    .foregroundStyle(coolWhite.opacity(pill.selected ? 0.95 : 0.7))
+                    .background(Capsule().fill(ink.opacity(pill.selected ? HomePalette.pillOn.ground : HomePalette.pillOff)))
+                    .foregroundStyle(ink.opacity(pill.selected ? HomePalette.pillOn.text : HomePalette.secondary))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("landing.pill.\(key)")
@@ -139,170 +206,313 @@ struct Home: View {
         }
     }
 
-    // MARK: - The page
+    // MARK: - A project
 
-    @ViewBuilder
-    private func page(_ screen: HomeScreen) -> some View {
-        ForEach(screen.sections) { section in sectionView(section) }
-        if !screen.ticketsNotStarted.isEmpty { tickets(screen.ticketsNotStarted, title: "Tickets not started here") }
-        if let line = screen.earlier.line { earlier(screen.earlier, line: line) }
-    }
-
+    /// One slab per project: Main first, then its workspaces, divided by hairlines. The name is the
+    /// door to Main's view; no separate Open.
     private func sectionView(_ section: HomeSection) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Button { model.chooseStartIn(project: section.project) } label: {
-                    Text(section.project)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(coolWhite.opacity(0.92))
-                }
-                .buttonStyle(.plain)
-                .help("Start in this project: where a send from the home goes")
-                .accessibilityIdentifier("landing.project.\(section.project)")
-                Text(section.summary)
-                    .font(.system(size: 11))
-                    .foregroundStyle(coolWhite.opacity(0.45))
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Button("Open") {
-                    Task { await model.openWorkspace(nil, project: section.project, environment: section.project == model.projectKey ? model.environment : nil) }
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(coolWhite.opacity(0.75))
-                .help("Open Main's view: your own folders, with panes and no agent")
-                .accessibilityIdentifier("landing.project.\(section.project).open")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                projectName(section.project, size: 15)
+                micro(section.summary)
+                rule
             }
-            if let main = section.main { mainBlock(main) }
-            ForEach(section.cards) { card in cardView(card, depth: 0) }
+            VStack(alignment: .leading, spacing: 0) {
+                if let main = section.main {
+                    VStack(alignment: .leading, spacing: 0) {
+                        micro("Main").padding(.horizontal, 18).padding(.top, 11).padding(.bottom, 2)
+                        ForEach(main.lines) { conversationLine($0, inset: 18) }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("landing.main")
+                    if !section.cards.isEmpty { hairline.padding(.vertical, 4) }
+                }
+                ForEach(Array(section.cards.enumerated()), id: \.element.id) { n, card in
+                    if n > 0 && !expanded(section.cards[n - 1]) && !expanded(card) { hairline }
+                    cardBlock(card, depth: 0)
+                }
+            }
+            .padding(.top, section.main == nil ? 4 : 0)
+            .padding(.bottom, 4)
+            .background(slab)
         }
     }
 
-    // MARK: - Main
-
-    private func mainBlock(_ main: HomeMain) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Main").font(.system(size: 14, weight: .semibold)).foregroundStyle(coolWhite.opacity(0.9))
-                Text(HomeMain.words).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.5))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-            ForEach(main.lines) { conversationLine($0) }
+    /// A project's name: Main's view of it (`workspace_open`, Main), underlined under the pointer.
+    private func projectName(_ project: String, size: CGFloat, mono: Bool = false) -> some View {
+        let key = "project:\(project)"
+        return Button {
+            Task { await model.openWorkspace(nil, project: project, environment: project == model.projectKey ? model.environment : nil) }
+        } label: {
+            Text(project)
+                .font(.system(size: size, weight: mono ? .regular : .semibold, design: mono ? .monospaced : .default))
+                .foregroundStyle(ink.opacity(mono ? HomePalette.secondary : HomePalette.title))
+                .underline(hovered == key, color: ink.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.bottom, 8)
-        .background(slab)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("landing.main")
+        .buttonStyle(.plain)
+        .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
+        .help("Open Main's view of \(project): your own folders, with panes")
+        .accessibilityIdentifier("landing.project.\(project)")
     }
 
     // MARK: - A card
 
-    private func cardView(_ card: HomeCard, depth: Int) -> AnyView {
-        let key = "card:\(card.id)"
-        let disabled = busy == card.id
-        return AnyView(VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if depth > 0 { Text("↳").foregroundStyle(coolWhite.opacity(0.45)) }
-                    if let k = card.key {
-                        Text(k).font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(coolWhite.opacity(0.86))
-                    }
-                    Text(card.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(coolWhite.opacity(0.92))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(card.environment)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(card.isProduction ? red : coolWhite.opacity(0.5))
-                    Spacer(minLength: 8)
-                    if hovered == key || disabled {
-                        Button("New conversation here") { Task { await model.newConversation(inWorkspace: card.id) } }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(violet)
-                            .accessibilityIdentifier("landing.card.\(card.id).new")
-                        runMenu(card).disabled(disabled)
-                    }
-                    menu(card).disabled(disabled)
+    private func expanded(_ card: HomeCard) -> Bool {
+        _ = expansionTick
+        return expansion.isExpanded(card.id)
+    }
+
+    private func toggle(_ card: HomeCard) {
+        expansion.toggle(card.id)
+        expansionTick += 1
+    }
+
+    /// A compact row, its body when expanded (lifted 0.035 with a hairline, not a new slab), and its
+    /// children: each its own row under it while closed, ↳ lines inside the body while open.
+    private func cardBlock(_ card: HomeCard, depth: Int) -> AnyView {
+        let open = expanded(card)
+        return AnyView(VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                compactRow(card, depth: depth, open: open)
+                if let merged = card.merged {
+                    mergedOffer(card, merged, offer: screen?.mergedOffers.firstIndex(of: card.id) ?? 0)
                 }
-                if let from = card.branchedFrom, depth == 0 {
-                    Text("branched off ‘\(from)’").font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.5))
-                }
-                WrappingRow(spacing: 10) {
-                    Text(card.repoCount).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.5))
-                    ForEach(card.repos) { repo in
-                        HStack(spacing: 5) {
-                            Text(repo.name).font(.system(size: 11, weight: .medium)).foregroundStyle(coolWhite.opacity(0.8))
-                            Text(repo.words).font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(repo.inMain ? violet : coolWhite.opacity(0.55))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                if card.prs != nil || card.running != nil { statusLine(card, disabled: disabled) }
                 if let error = runErrors[card.id] {
-                    Text(error).font(.system(size: 11)).foregroundStyle(red)
+                    Text(error).font(.system(size: 11.5)).foregroundStyle(red)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
+                        .padding(.leading, 37 + CGFloat(depth) * 20).padding(.trailing, 16).padding(.bottom, 6)
                         .accessibilityIdentifier("landing.card.\(card.id).runError")
                 }
-                if let needs = card.needs {
-                    Text(needs).font(.system(size: 12)).foregroundStyle(amber)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("landing.card.\(card.id).needs")
+                if open { cardBody(card) }
+            }
+            .background(RoundedRectangle(cornerRadius: 7).fill(ink.opacity(open ? 0.035 : 0)))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(ink.opacity(open ? 0.08 : 0), lineWidth: 0.5))
+            if !open {
+                ForEach(card.children) { child in
+                    hairline
+                    cardBlock(child, depth: depth + 1)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
+        })
+    }
+
+    /// One line: dot · key and title · the environment tag when it differs · at the right `● n`,
+    /// `:41200 ■`, ▶ and ⌄. Only the right-hand cluster keeps to one line: its tokens are short.
+    private func compactRow(_ card: HomeCard, depth: Int, open: Bool) -> some View {
+        let key = "card:\(card.id)"
+        let disabled = busy == card.id
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                if depth > 0 {
+                    Text("↳").font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.micro))
+                        .accessibilityHidden(true)
+                }
+                StateDot(state: card.hue)
+                cardTitle(card, showsBranch: depth > 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             .contentShape(Rectangle())
             .onTapGesture { Task { await model.openWorkspace(card.id) } }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default) { Task { await model.openWorkspace(card.id) } }
             .accessibilityIdentifier("landing.card.\(card.id)")
-            .accessibilityValue(card.needsYou ? "needs you" : "")
-            if let merged = card.merged {
-                mergedOffer(card, merged, offer: screen?.mergedOffers.firstIndex(of: card.id) ?? 0, disabled: disabled)
+            .accessibilityValue(card.needsYou ? "\(card.needCount) need you" : card.hue.spoken)
+            HStack(alignment: .center, spacing: 12) {
+                if card.needCount > 0 {
+                    Text("● \(card.needCount)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(amber)
+                        .help("\(card.needCount) need you")
+                        .accessibilityLabel("\(card.needCount) need you")
+                        .accessibilityIdentifier("landing.card.\(card.id).needs")
+                }
+                if let ports = card.runningCompact {
+                    HStack(spacing: 7) {
+                        Text(ports)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(green)
+                            .accessibilityIdentifier("landing.card.\(card.id).running")
+                        Button { runOnCard(card) { await model.stopOnCard(card.id) } } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 7))
+                                .foregroundStyle(ink.opacity(HomePalette.secondary))
+                                .frame(width: 18, height: 18)
+                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(ink.opacity(0.14), lineWidth: 0.5))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(disabled)
+                        .help("Stop what runs in it: \(card.running ?? "")")
+                        .accessibilityLabel("Stop")
+                        .accessibilityIdentifier("landing.card.\(card.id).stop")
+                    }
+                }
+                if card.offersRun { runControl(card, disabled: disabled) }
+                Button { toggle(card) } label: {
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(ink.opacity(HomePalette.quiet))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(open ? "Collapse" : "Expand: repos, PRs, every conversation")
+                .accessibilityLabel(open ? "Collapse" : "Expand")
+                .accessibilityIdentifier("landing.card.\(card.id).expand")
             }
-            VStack(alignment: .leading, spacing: 0) { ForEach(card.lines) { conversationLine($0) } }
-            ForEach(card.children) { child in cardView(child, depth: depth + 1).padding(.leading, 18) }
+            .fixedSize()
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
-        .padding(.bottom, 10)
-        .background(slab)
-        .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) })
+        .padding(.vertical, 7)
+        .padding(.leading, 18 + CGFloat(depth) * 20)
+        .padding(.trailing, 12)
+        .background(RoundedRectangle(cornerRadius: 7).fill(ink.opacity(hovered == key && !open ? 0.04 : 0)))
+        .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
     }
 
-    /// The PRs and what runs, on one line (`7 PRs open · core running on :41200 · Stop`, spec piece 3);
-    /// **Stop** while something runs. Wraps whole, never cut.
-    private func statusLine(_ card: HomeCard, disabled: Bool) -> some View {
-        WrappingRow(spacing: 6) {
-            if let prs = card.prs {
-                Text(prs).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("landing.card.\(card.id).prs")
-            }
-            if let running = card.running {
-                if card.prs != nil { Text("·").font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.4)) }
-                Text(running).font(.system(size: 11)).foregroundStyle(Color(TerminalPalette.green))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("landing.card.\(card.id).running")
-                Text("·").font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.4))
-                Button("Stop") { runOnCard(card) { await model.stopOnCard(card.id) } }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(violet)
-                    .disabled(disabled)
-                    .accessibilityIdentifier("landing.card.\(card.id).stop")
-            }
+    /// `INI-140 Move webhook signing to the vault staging`, wrapping whole; a child row adds
+    /// `· branched off INI-140`.
+    private func cardTitle(_ card: HomeCard, showsBranch: Bool) -> some View {
+        var text = keyText(card.key) + Text(card.name).foregroundColor(ink.opacity(HomePalette.title))
+        if let tag = card.environmentTag {
+            text = text + Text("  \(tag)").font(.system(size: 10.5, design: .monospaced))
+                .foregroundColor(card.isProduction ? red : ink.opacity(HomePalette.quiet))
+        }
+        if showsBranch, let from = card.branchedOff {
+            text = text + Text("  · branched off \(from)").font(.system(size: 10.5, design: .monospaced))
+                .foregroundColor(ink.opacity(HomePalette.quiet))
+        }
+        return text.font(.system(size: 13.5)).lineSpacing(2).fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// ▶ on the compact row: the one copy's saved recipe, or a menu of the copies (decision 12).
+    @ViewBuilder
+    private func runControl(_ card: HomeCard, disabled: Bool) -> some View {
+        let glyph = Image(systemName: "play.fill").font(.system(size: 9)).foregroundStyle(action)
+            .frame(width: 22, height: 22).contentShape(Rectangle())
+        if card.runnable.count == 1, let repo = card.runnable.first {
+            Button { runOnCard(card) { await model.runOnCard(card.id, repo: repo.repo) } } label: { glyph }
+                .buttonStyle(.plain)
+                .disabled(disabled)
+                .help("Run \(repo.name)'s saved recipe in this workspace's copy")
+                .accessibilityLabel("Run \(repo.name)")
+                .accessibilityIdentifier("landing.card.\(card.id).run")
+        } else {
+            Menu {
+                ForEach(card.runnable) { repo in
+                    Button(repo.name) { runOnCard(card) { await model.runOnCard(card.id, repo: repo.repo) } }
+                }
+            } label: { glyph }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(disabled)
+                .help("Run a repo's saved recipe in this workspace's copy")
+                .accessibilityLabel("Run")
+                .accessibilityIdentifier("landing.card.\(card.id).run")
         }
     }
 
-    /// ▶ Run…, on the card's hover (spec, piece 3): each repo with a copy runs its saved recipe
-    /// (`workspace_run`, decision 12). With no copy yet it says why rather than offering nothing.
+    /// The expanded card, in the brief's order: repos and their whole branches · PRs, checks ↗ and
+    /// what runs · each conversation · the child ↳ · the footer.
+    private func cardBody(_ card: HomeCard) -> some View {
+        let disabled = busy == card.id
+        return VStack(alignment: .leading, spacing: 12) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 5) {
+                ForEach(card.repos) { repo in
+                    GridRow {
+                        Text(repo.name).font(.system(size: 12, weight: .medium)).foregroundStyle(ink.opacity(HomePalette.secondary))
+                            .fixedSize()
+                        Text(repo.words).font(.system(size: 11.5, design: .monospaced))
+                            .foregroundStyle(repo.inMain ? action : ink.opacity(HomePalette.quiet))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            if card.prs != nil || card.running != nil {
+                WrappingRow(spacing: 8) {
+                    if let prs = card.prs {
+                        Text(prs).font(.system(size: 12)).foregroundStyle(ink.opacity(HomePalette.secondary))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("landing.card.\(card.id).prs")
+                        if let url = card.prURL {
+                            dotSeparator
+                            Button("checks ↗") { Task { await model.openLinkInWakil(homeChecksURL(url)) } }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(link)
+                                .accessibilityIdentifier("landing.card.\(card.id).checks")
+                        }
+                    }
+                    if let running = card.running {
+                        if card.prs != nil { dotSeparator }
+                        Text(running).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(green)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if !card.lines.isEmpty || (!card.children.isEmpty) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(card.lines) { conversationLine($0, inset: 19) }
+                    ForEach(card.children) { childLine($0) }
+                }
+                .padding(.leading, -19)
+                .padding(.trailing, -16)
+            }
+            HStack(alignment: .center, spacing: 18) {
+                Button { Task { await model.newConversation(inWorkspace: card.id) } } label: {
+                    Label("New conversation here", systemImage: "plus")
+                        .labelStyle(FootLabelStyle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(action)
+                .disabled(disabled)
+                .accessibilityIdentifier("landing.card.\(card.id).new")
+                runMenu(card).disabled(disabled)
+                Spacer(minLength: 8)
+                menu(card).disabled(disabled)
+            }
+            .padding(.top, 10)
+            .overlay(alignment: .top) { hairline }
+        }
+        .padding(.leading, 37)
+        .padding(.trailing, 16)
+        .padding(.top, 2)
+        .padding(.bottom, 12)
+    }
+
+    /// A child inside its expanded parent: `↳ ● INI-140 Try HMAC — branched off INI-140 · working`,
+    /// opening the child's workspace.
+    private func childLine(_ child: HomeCard) -> some View {
+        let state = child.hue == .idle ? "idle" : homeStateWords(child.hue)
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("↳").font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.micro)).accessibilityHidden(true)
+            StateDot(state: child.hue)
+            (keyText(child.key) + Text(child.name).foregroundColor(ink.opacity(HomePalette.title))
+                + Text("  — branched off \(child.branchedOff ?? "") · \(state)")
+                .font(.system(size: 10.5, design: .monospaced)).foregroundColor(ink.opacity(HomePalette.quiet)))
+                .font(.system(size: 13.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 7)
+        .padding(.leading, 19)
+        .padding(.trailing, 16)
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await model.openWorkspace(child.id) } }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default) { Task { await model.openWorkspace(child.id) } }
+        .accessibilityIdentifier("landing.card.\(child.id)")
+    }
+
+    /// ▶ Run… in the footer: each repo with a copy runs its saved recipe (`workspace_run`, decision 12).
+    /// With no copy yet it says why rather than offering nothing.
     private func runMenu(_ card: HomeCard) -> some View {
         Menu {
             if card.runnable.isEmpty {
@@ -312,12 +522,12 @@ struct Home: View {
                 Button(repo.name) { runOnCard(card) { await model.runOnCard(card.id, repo: repo.repo) } }
             }
         } label: {
-            Text("▶ Run…").font(.system(size: 11, weight: .medium)).foregroundStyle(violet)
+            Label("Run…", systemImage: "play.fill").labelStyle(FootLabelStyle()).foregroundStyle(action)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityIdentifier("landing.card.\(card.id).run")
+        .accessibilityIdentifier("landing.card.\(card.id).runMenu")
     }
 
     /// Runs a card's Run or Stop: the card is disabled meanwhile (Rule 5), and a refusal or failure
@@ -354,33 +564,38 @@ struct Home: View {
             Divider()
             Button("Archive") { archive(card) }
         } label: {
-            Text("⋯").font(.system(size: 14, weight: .semibold)).foregroundStyle(coolWhite.opacity(0.7))
+            Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.quiet))
+                .frame(width: 22, height: 22)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .help("More: Bring to Main…, Move a conversation here…, Archive")
+        .accessibilityLabel("More")
         .accessibilityIdentifier("landing.card.\(card.id).menu")
     }
 
-    /// Decision 11's offer, outside the card's combined element so its button is its own control:
-    /// every PR merged, and **Archive** — the menu's own, asking only with a conversation waiting
-    /// (Rule 1), disabled while a card action runs (Rule 5).
-    private func mergedOffer(_ card: HomeCard, _ merged: String, offer: Int, disabled: Bool) -> some View {
+    /// Decision 11's offer, under the compact row whether or not the card is open: every PR merged,
+    /// and **Archive** — asking only with a conversation waiting (Rule 1), disabled while a card
+    /// action runs (Rule 5).
+    private func mergedOffer(_ card: HomeCard, _ merged: String, offer: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("\(merged) — this work is done")
-                .font(.system(size: 11))
-                .foregroundStyle(Color(TerminalPalette.green))
+                .font(.system(size: 12))
+                .foregroundStyle(green)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("landing.card.\(card.id).merged")
             Button("Archive") { archive(card) }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(violet)
-                .disabled(disabled)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(action)
+                .disabled(busy == card.id)
                 // Numbered in drawing order (`HomeScreen.mergedOffers`): a card's own id is generated.
                 .accessibilityIdentifier("landing.archive.offer:\(offer)")
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 37)
+        .padding(.trailing, 16)
+        .padding(.bottom, 7)
     }
 
     /// Archive, from ⋯ or the merged offer: asks only with a conversation waiting (Rule 1).
@@ -402,35 +617,36 @@ struct Home: View {
 
     // MARK: - A conversation line
 
-    /// State dot, title, what it does and the repos it holds. The id keeps the Landing's
-    /// `landing.row.running:<n>`, numbered in drawing order (`HomeConversationLine.index`).
-    private func conversationLine(_ line: HomeConversationLine) -> some View {
+    /// State dot, title, its state in words. The id keeps the Landing's `landing.row.running:<n>`,
+    /// numbered in drawing order (`HomeConversationLine.index`).
+    private func conversationLine(_ line: HomeConversationLine, inset: CGFloat) -> some View {
         let id = "running:\(line.index)"
         let editing = renaming == line.id
         // Every line opens its conversation, a Main line's and a card's alike (piece 3 walk).
         let action = { Task { await model.openHomeLine(line.id, session: line.session) } }
-        return HStack(alignment: .firstTextBaseline, spacing: 10) {
-            ChipDot(colour: line.state.hue, breathes: line.state == .working)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            StateDot(state: line.state)
             if editing {
                 ConversationNameField(
                     conversation: line.id, shown: line.title, identifier: "landing.row.\(id).name",
-                    size: 13.5, colour: coolWhite.opacity(0.92), model: model, done: { renaming = nil })
+                    size: 13.5, colour: ink.opacity(HomePalette.title), model: model, done: { renaming = nil })
             } else {
                 Text(line.title)
                     .font(.system(size: 13.5))
-                    .foregroundStyle(coolWhite.opacity(0.92))
+                    .foregroundStyle(ink.opacity(HomePalette.title))
+                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer(minLength: 8)
-            Text(line.detail)
+            Text(line.words)
                 .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(line.isProduction ? red : coolWhite.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(line.isProduction ? red : stateWordColour(line.state))
+                .fixedSize()
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
-        .background(coolWhite.opacity(hovered == id ? 0.04 : 0))
+        .padding(.leading, inset)
+        .padding(.trailing, 16)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 6).fill(ink.opacity(hovered == id ? 0.04 : 0)))
         .contentShape(Rectangle())
         .onHover { inside in hovered = inside ? id : (hovered == id ? nil : hovered) }
         .onTapGesture { if !editing { _ = action() } }
@@ -442,101 +658,123 @@ struct Home: View {
         .accessibilityValue(line.state.spoken)
     }
 
-    // MARK: - Tickets
-
-    private func tickets(_ rows: [TicketNeedsRow], title: String) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(coolWhite.opacity(0.85))
-                .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 4)
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                let state = landingTicketState(row)
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(ticketNeedsRowName(row))
-                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.86))
-                    Text(row.title)
-                        .font(.system(size: 13))
-                        .foregroundStyle(coolWhite.opacity(0.8))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    Text(state.words)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(state.needsYou ? amber : coolWhite.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Start") { Task { await model.openTicket(ticketOpenParams(row)) } }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(violet)
-                        .accessibilityIdentifier("landing.tickets.\(index)")
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-            }
-            if rows.count > 0 {
-                Button("All tickets in ⌘P  #", action: openTicketsPalette)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(coolWhite.opacity(0.55))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .accessibilityIdentifier("landing.tickets.all")
-            }
-            ForEach(ticketPartialLine(model.ticketNeeds?.partial ?? []), id: \.self) { line in
-                Text(line).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.62))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 18).padding(.vertical, 6)
-                    .accessibilityIdentifier("landing.tickets.partial")
-            }
+    private func stateWordColour(_ state: ConversationState) -> Color {
+        switch state {
+        case .waiting: amber
+        case .done: green
+        case .failed: red
+        case .working, .idle: ink.opacity(HomePalette.quiet)
         }
-        .padding(.bottom, 6)
-        .background(slab)
     }
 
-    // MARK: - Earlier
+    // MARK: - Quiet projects, Tickets, Earlier
+
+    /// `2 quiet projects — web · portal`: each name is the door to its Main view.
+    private func quietLine(_ screen: HomeScreen) -> some View {
+        WrappingRow(spacing: 6) {
+            Text("\(screen.quietCount) —").font(.system(size: 12.5)).foregroundStyle(ink.opacity(HomePalette.quiet))
+            ForEach(Array(screen.quiet.enumerated()), id: \.element) { n, project in
+                if n > 0 { dotSeparator }
+                projectName(project, size: 11.5, mono: true)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("landing.quiet")
+    }
+
+    @ViewBuilder
+    private func tickets(_ rows: [TicketNeedsRow]) -> some View {
+        let partial = ticketPartialLine(model.ticketNeeds?.partial ?? [])
+        if !rows.isEmpty || !partial.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader("Tickets · in flight, not started here", count: nil)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { n, row in
+                        if n > 0 { hairline }
+                        HStack(alignment: .firstTextBaseline, spacing: 14) {
+                            Text(ticketNeedsRowName(row))
+                                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(ink.opacity(HomePalette.strong))
+                                .fixedSize()
+                            Text(row.title)
+                                .font(.system(size: 13))
+                                .foregroundStyle(ink.opacity(HomePalette.strong))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(homeTicketStatus(row))
+                                .font(.system(size: 10.5, design: .monospaced))
+                                .foregroundStyle(row.urgent.needsYou ? amber : ink.opacity(HomePalette.quiet))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Start") { Task { await model.openTicket(ticketOpenParams(row)) } }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(action)
+                                .fixedSize()
+                                .accessibilityIdentifier("landing.tickets.\(n)")
+                        }
+                        .padding(.vertical, 9)
+                        .padding(.leading, 18)
+                        .padding(.trailing, 16)
+                    }
+                    ForEach(partial, id: \.self) { line in
+                        Text(line).font(.system(size: 11.5)).foregroundStyle(ink.opacity(HomePalette.quiet))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 18).padding(.vertical, 6)
+                            .accessibilityIdentifier("landing.tickets.partial")
+                    }
+                }
+                .padding(.vertical, 4)
+                .background(slab)
+            }
+        }
+    }
 
     private func earlier(_ earlier: HomeEarlier, line: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button { earlierOpen.toggle() } label: {
-                Text("\(earlierOpen ? "▾" : "▸") \(line)")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(coolWhite.opacity(0.62))
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: earlierOpen ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(ink.opacity(HomePalette.micro))
+                    micro(line)
+                }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(line)
             .accessibilityIdentifier("landing.earlier")
             if earlierOpen {
                 ForEach(Array(earlier.archived.enumerated()), id: \.element.id) { index, w in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(w.tickets.first.map { "\($0) \(w.name)" } ?? w.name)
-                            .font(.system(size: 13)).foregroundStyle(coolWhite.opacity(0.8))
+                        (keyText(w.tickets.first) + Text(w.name).foregroundColor(ink.opacity(HomePalette.strong)))
+                            .font(.system(size: 13))
                             .fixedSize(horizontal: false, vertical: true)
                         Text("archived · \(w.project) · \(w.environment)")
-                            .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(coolWhite.opacity(0.45))
+                            .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(ink.opacity(HomePalette.quiet))
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
                         Button("Restore") { run(w.id) { await model.restoreWorkspace(w.id) } }
                             .buttonStyle(.plain)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(violet)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(action)
                             .disabled(busy == w.id)
                             .accessibilityIdentifier("landing.earlier.archived.\(index).restore")
                     }
-                    .padding(.leading, 14)
+                    .padding(.leading, 17)
                 }
                 ForEach(earlier.past) { group in
-                    Text(group.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(coolWhite.opacity(0.55))
-                        .padding(.leading, 14).padding(.top, 6)
+                    micro(group.name).padding(.leading, 17).padding(.top, 6)
                     ForEach(group.conversations) { c in
                         Button { Task { await model.continueSession(c.id) } } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(c.title).font(.system(size: 13)).foregroundStyle(coolWhite.opacity(0.8))
+                                Text(c.title).font(.system(size: 13)).foregroundStyle(ink.opacity(HomePalette.strong))
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text(c.subtitle).font(.system(size: 10.5, design: .monospaced))
-                                    .foregroundStyle(coolWhite.opacity(0.45))
+                                    .foregroundStyle(ink.opacity(HomePalette.quiet))
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         .buttonStyle(.plain)
-                        .padding(.leading, 24)
+                        .padding(.leading, 27)
                         .accessibilityIdentifier("landing.row.\(c.id)")
                     }
                 }
@@ -546,69 +784,128 @@ struct Home: View {
 
     // MARK: - First run
 
-    /// The current project's header stays (piece 3's amendment: its Open and *Open a pane* stand on
-    /// every day, not only once something runs); the note below it says nothing runs yet.
+    /// No project yet: the explainer — shown here and never on a working home — and *Add a project*
+    /// (Settings' own, `settings_open`). A sentence in the composer still works.
     @ViewBuilder
     private func firstRun(_ screen: HomeScreen) -> some View {
-        ForEach(screen.sections) { section in sectionView(section) }
-        Text("Nothing running. Type below to start a conversation in Main, your own folders. It reads them as they are; "
-             + "the moment it changes something, it gets a workspace of its own and your folders stay untouched.")
-            .font(.system(size: 12.5))
-            .foregroundStyle(coolWhite.opacity(0.62))
-            .fixedSize(horizontal: false, vertical: true)
-        if !screen.ticketsNotStarted.isEmpty { tickets(screen.ticketsNotStarted, title: "Tickets in flight") }
-        if let line = screen.earlier.line { earlier(screen.earlier, line: line) }
-    }
-
-    /// *Open a pane: Database · Terminal · Browser* — each opens Main's view with that pane
-    /// (decision 26), in the place *Start in* points at. Drawn under the home's title on every day.
-    private var openAPane: some View {
-        HStack(spacing: 6) {
-            Text("Open a pane:").font(.system(size: 12)).foregroundStyle(coolWhite.opacity(0.5))
-            ForEach(Array(["db", "terminal", "browser"].filter(Pane.kinds.contains).enumerated()), id: \.element) { i, kind in
-                if i > 0 { Text("·").foregroundStyle(coolWhite.opacity(0.35)) }
-                Button(paneKindTitle(kind: kind)) { Task { await model.openMainView(withPane: kind) } }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.8))
-                    .accessibilityIdentifier("landing.row.open:\(kind)")
-            }
-        }
-    }
-
-    // MARK: - No project
-
-    @ViewBuilder
-    private var projectRows: some View {
-        Text("Projects").font(.system(size: 13, weight: .semibold)).foregroundStyle(coolWhite.opacity(0.85))
-            .padding(.top, 8)
-        if projects.isEmpty {
-            note("No projects in \(model.organization.isEmpty ? "this organisation" : model.organization) yet")
-        }
-        ForEach(projects) { project in
-            Button { Task { await model.setProject(project.name) } } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(project.name).font(.system(size: 15)).foregroundStyle(coolWhite.opacity(0.92))
-                    Text(project.provider ?? project.path ?? "").font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.5))
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(HomeScreen.explainer, id: \.self) { paragraph in
+                    Text(paragraph)
+                        .font(.system(size: 14.5))
+                        .lineSpacing(5)
+                        .foregroundStyle(ink.opacity(HomePalette.strong))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("landing.explainer")
+            Button { Task { await model.openSettings() } } label: {
+                Text("Add a project")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(red: 0.043, green: 0.047, blue: 0.078))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(action))
+            }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("landing.row.project:\(project.name)")
+            .accessibilityIdentifier("landing.addProject")
+            (Text("Or say it below: ").foregroundColor(ink.opacity(HomePalette.quiet))
+                + Text("add the project at ~/code/api").font(.system(size: 12, design: .monospaced))
+                .foregroundColor(ink.opacity(HomePalette.strong)))
+                .font(.system(size: 12.5))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 560, alignment: .leading)
+        .padding(.top, 38)
+        if let line = screen.earlier.line { earlier(screen.earlier, line: line) }
+    }
+
+    // MARK: - Pieces
+
+    /// A ticket key, mono and bold before a title; empty with none.
+    private func keyText(_ key: String?) -> Text {
+        guard let key else { return Text("") }
+        return Text(key + "  ").font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .foregroundColor(ink.opacity(HomePalette.strong))
+    }
+
+    private func hue(_ state: ConversationState) -> Color {
+        switch state {
+        case .waiting: amber
+        case .failed: red
+        case .done: green
+        case .working: Color(VoidPalette.violet)
+        case .idle: ink.opacity(HomePalette.quiet)
         }
     }
 
-    private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 12.5)).foregroundStyle(coolWhite.opacity(0.46))
+    /// Uppercase, wide tracking, the floor's opacity: section names and counts.
+    private func micro(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 9, weight: .medium))
+            .tracking(1.7)
+            .foregroundStyle(ink.opacity(HomePalette.micro))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func sectionHeader(_ title: String, count: String?) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            micro(title)
+            if let count {
+                Text(count).font(.system(size: 9, weight: .medium, design: .monospaced)).tracking(0.6)
+                    .foregroundStyle(ink.opacity(HomePalette.micro))
+            }
+            rule
+        }
+    }
+
+    private var rule: some View {
+        Rectangle().fill(ink.opacity(0.08)).frame(height: 0.5).frame(minWidth: 24)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(ink.opacity(0.08)).frame(height: 0.5).frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
+    }
+
+    private var dotSeparator: some View {
+        Text("·").font(.system(size: 12)).foregroundStyle(ink.opacity(HomePalette.micro)).accessibilityHidden(true)
     }
 
     /// §2: a slab — near-opaque, rounded, a drop shadow and a half-pixel luminous edge.
     private var slab: some View {
         RoundedRectangle(cornerRadius: 10)
-            .fill(Color(red: 0.055, green: 0.063, blue: 0.098))
+            .fill(Color(HomePalette.slab))
             .shadow(color: .black.opacity(0.55), radius: 18, x: 0, y: 8)
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5))
+    }
+}
+
+/// A state's dot: hue only, no glow (§1). Working breathes, and holds still under Reduce Motion
+/// (`ChipDot`); idle is a ring.
+private struct StateDot: View {
+    let state: ConversationState
+    var body: some View {
+        Group {
+            if state == .idle {
+                Circle().strokeBorder(Color(HomePalette.ink).opacity(0.5), lineWidth: 1.2).frame(width: 7, height: 7)
+            } else {
+                ChipDot(colour: state.hue, breathes: state == .working).frame(width: 7, height: 7)
+            }
+        }
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The card footer's actions: a small glyph and the words, in the action's colour.
+private struct FootLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon.font(.system(size: 9, weight: .semibold))
+            configuration.title.font(.system(size: 12, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

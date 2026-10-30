@@ -5873,13 +5873,6 @@ public final class WindowModel {
         await dispatchLayout("workspace_open", .object(params))
     }
 
-    /// *Open a pane* on the home: Main's view of *Start in*'s place, then that pane in it (decision
-    /// 26's line).
-    public func openMainView(withPane kind: String) async {
-        await openWorkspaceView(nil, in: startInPlace)
-        if kind == "terminal" { _ = await openTerminalPane() } else { _ = await openPane(kind: kind) }
-    }
-
     /// A card's New conversation here: `workspace_new_conversation`.
     public func newConversation(inWorkspace id: String) async {
         await dispatchLayout("workspace_new_conversation", .object(["workspace": .string(id)]))
