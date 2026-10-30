@@ -23,3 +23,4 @@
 {"do":{"press":"Escape"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"3 quiet projects —"}}

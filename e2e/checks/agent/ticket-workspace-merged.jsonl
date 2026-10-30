@@ -16,6 +16,6 @@
 {"expect":{"frame":"landing.archive.offer:0","inside":"window"}}
 {"do":{"click":"landing.archive.offer:0"}}
 {"expect":{"journal":{"contains":"\"action\":\"workspace_archive\""}}}
-{"expect":{"tree":"contains","text":"1 archived workspace"}}
+{"expect":{"tree":"contains","text":"1 ARCHIVED WORKSPACE"}}
 {"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"absent","text":"1 PR merged — this work is done"}}

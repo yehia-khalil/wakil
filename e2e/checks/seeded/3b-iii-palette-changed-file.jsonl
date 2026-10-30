@@ -4,7 +4,7 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.project:e2e-git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"expect":{"tree":"contains","text":"e2e-git"}}
+{"expect":{"tree":"contains","text":"in e2e-git · staging"}}
 {"expect":{"frame":"landing","minWidth":40}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}

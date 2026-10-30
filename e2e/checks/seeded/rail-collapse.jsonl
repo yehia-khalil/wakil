@@ -23,4 +23,6 @@
 {"expect":{"frame":"rail.terminal-1","inside":"window"}}
 {"expect":{"tree":"absent","text":"Value: 1 pane, terminal active"}}
 {"expect":{"focus":"window.composer"}}
+{"do":{"hotkey":"ctrl+cmd+r"}}
+{"expect":{"tree":"contains","text":"Value: 1 pane, terminal active"}}
 {"dispatch":{"action":"rail_set","params":{"collapsed":"yes"},"refuses":"collapsed"}}

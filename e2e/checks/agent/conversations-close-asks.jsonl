@@ -22,4 +22,5 @@
 {"expect":{"tree":"absent","text":"IN MAIN"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
 {"expect":{"frame":"landing.earlier","inside":"window"}}
+{"expect":{"tree":"contains","text":"1 PAST CONVERSATION"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}
