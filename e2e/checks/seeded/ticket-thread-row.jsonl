@@ -14,9 +14,13 @@
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].openThreads","equals":"2"}}
 {"expect":{"pane":"editor-1","field":"cursor.line","equals":"1"}}
+{"dispatch":{"action":"editor_goto","params":{"pane":"editor-1","line":3}}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"3"}}
 {"do":{"click":"editor.ticket.thread:T_1"}}
-{"expect":{"pane":"editor-1","field":"cursor.line","equals":"2"}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
 {"do":{"click":"editor.ticket.thread:T_2"}}
 {"expect":{"pane":"editor-1","field":"cursor.line","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
