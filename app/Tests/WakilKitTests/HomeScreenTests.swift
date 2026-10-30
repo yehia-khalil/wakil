@@ -279,3 +279,32 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
                                      workspaces: [listing(b)], running: ["w2": "api running on :41210"])).sections[0].cards[0]
     #expect(quiet.prs == nil && quiet.runningCompact == ":41210", "no PR: the compact row still says what runs")
 }
+
+// Invariant 8 beyond the screen's project: Start in lists every project's real environments, each
+// judged production by its own declaration.
+
+@Test func startInListsEachProjectsEnvironmentsJudgedByItsOwnDeclaration() {
+    let envs = OrgEnvironments(projects: [
+        "dashboard": [.init(name: "live", production: true), .init(name: "local", production: false)],
+        "mobile": [.init(name: "production", production: false)],
+    ])
+    let judge = envs.judge(current: "estate", flags: EnvironmentProduction(declarations: ["staging": false]))
+    let choices = homeStartChoices(
+        projects: ["dashboard", "estate", "mobile", "spare"], current: staging, environments: ["staging", "production"],
+        otherEnvironments: envs.names, lastEnvironment: ["dashboard": "local"], isProduction: judge)
+    #expect(choices.map(\.label) ==
+            ["estate · staging", "estate · production", "dashboard · local", "dashboard · live", "mobile · production", "spare"],
+            "the environment last in first, then the rest; a project with none read keeps its one row")
+    #expect(choices.map(\.isProduction) == [false, true, false, true, false, false])
+    #expect(choices.map(\.tag) == ["now", "production", nil, "production", nil, nil])
+}
+
+@Test func anEnvironmentAnswersByItsProjectsDeclarationElseByItsName() {
+    let envs = OrgEnvironments(projects: ["web": [.init(name: "Live ", production: true), .init(name: "old", production: nil)]])
+    let judge = envs.judge(current: "api", flags: EnvironmentProduction(declarations: ["live": false]))
+    #expect(judge("web", "live"), "folded like every other environment name")
+    #expect(!judge("api", "live"), "the screen's project by the window's own flags")
+    #expect(!judge("web", "old") && judge("web", "production"), "nothing declared: the name")
+    #expect(judge("unknown", "production") && !judge("unknown", "prod"))
+    #expect(!OrgEnvironments.unread.judge(current: "api", flags: .undeclared)("web", "live"))
+}

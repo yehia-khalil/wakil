@@ -35,9 +35,12 @@ public func homeStartMove(_ index: Int, by step: Int, count: Int) -> Int {
 }
 
 /// The picker's rows: the current place first, then the current project's other environments, then
-/// every other project at the environment it was last in (else the one a switch lands on).
+/// every other project's environments (`otherEnvironments`, the one it was last in first) — or, for
+/// a project whose environments were not read, one row at the environment it was last in (else the
+/// one a switch lands on).
 public func homeStartChoices(
-    projects: [String], current: Place, environments: [String], lastEnvironment: [String: String] = [:],
+    projects: [String], current: Place, environments: [String], otherEnvironments: [String: [String]] = [:],
+    lastEnvironment: [String: String] = [:],
     isProduction: (String, String) -> Bool = { _, e in e.lowercased() == "production" }
 ) -> [HomeStartChoice] {
     var out = [HomeStartChoice(project: current.project, environment: current.environment, current: true,
@@ -47,8 +50,13 @@ public func homeStartChoices(
                                    isProduction: isProduction(current.project, e)))
     }
     for p in projects where p != current.project {
-        let e = lastEnvironment[p] ?? ""
-        out.append(HomeStartChoice(project: p, environment: e, current: false, isProduction: isProduction(p, e)))
+        let declared = otherEnvironments[p] ?? []
+        let last = lastEnvironment[p]
+        let ordered = declared.isEmpty ? [last ?? ""]
+            : declared.filter { $0 == last } + declared.filter { $0 != last }
+        for e in ordered {
+            out.append(HomeStartChoice(project: p, environment: e, current: false, isProduction: isProduction(p, e)))
+        }
     }
     return out
 }

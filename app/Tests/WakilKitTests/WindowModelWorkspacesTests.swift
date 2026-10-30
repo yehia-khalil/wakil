@@ -476,4 +476,40 @@ struct WindowModelWorkspaceViewsTests {
         #expect(!model.sessionStarted, "the screen stays where it was (Rule 6)")
         await model.shutdown()
     }
+
+    /// Invariant 8 beyond the screen's project: another project's environment declared production
+    /// by its flag, not its name, is production on the home's card and in ⌘P's Running group — read
+    /// from the organisation's tree, as the screen's own project's flags already are.
+    @Test func anotherProjectsDeclaredProductionIsProductionOnTheHomeAndInRunning() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        let live = Workspace(id: "w9", name: "Rotate keys", slug: "rotate-keys", project: "web", environment: "live",
+                             checkouts: [WorkspaceCheckout(repo: "/p/web", path: "/h/ws/web/rotate-keys/web", branch: "rotate-keys")])
+        let named = Workspace(id: "w8", name: "Tidy", slug: "tidy", project: "web", environment: "production",
+                              checkouts: [WorkspaceCheckout(repo: "/p/web", path: "/h/ws/web/tidy/web", branch: "tidy")])
+        model.useWorkspaces(await router(with: [live, named]))
+        model.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: org), projects: [
+            SettingsProject(name: "web", environments: [
+                SettingsEnvironment(name: "live", production: true),
+                SettingsEnvironment(name: "production", production: false),
+            ]),
+        ]))
+
+        let screen = await model.readHomeScreen(projects: ["api", "web"], past: [], filter: nil)
+        let cards = screen.sections.flatMap(\.cards)
+        #expect(cards.first { $0.id == "w9" }?.isProduction == true, "declared production by its flag")
+        #expect(cards.first { $0.id == "w8" }?.isProduction == false, "a production declaring false is honoured")
+        let running = await model.runningWorkspaces()
+        #expect(running.first { $0.id == "w9" }?.isProduction == true)
+        #expect(running.first { $0.id == "w8" }?.isProduction == false)
+
+        // Another organisation's tree judges nothing here (Invariant 4): the name answers.
+        model.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "umbrella"), projects: [
+            SettingsProject(name: "web", environments: [SettingsEnvironment(name: "live", production: true)]),
+        ]))
+        #expect(await model.runningWorkspaces().first { $0.id == "w9" }?.isProduction == false)
+        await model.shutdown()
+    }
 }

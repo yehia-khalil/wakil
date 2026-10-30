@@ -271,17 +271,16 @@ extension WindowModel {
     public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?) async -> HomeScreen {
         let listings = await workspaceListings()
         readHomeMergedBranches(listings.map(\.workspace))
-        let current = projectKey
-        let flags = environmentProduction
+        let judge = await environmentJudge()
         let input = HomeInput(
-            organization: organization, project: current, environment: environment, projects: projects,
+            organization: organization, project: projectKey, environment: environment, projects: projects,
             workspaces: listings,
             live: liveConversationRows().filter { conversations[$0.id]?.hasTurn == true },
             tickets: ticketNeedsRows,
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,
             branchPRs: homeBranchPRs, running: homeRunLines,
-            isProduction: { project, env in project == current ? flags.isProduction(env) : EnvironmentProduction.undeclared.isProduction(env) })
+            isProduction: judge)
         return homeScreen(input)
     }
 
@@ -310,15 +309,51 @@ extension WindowModel {
 
     /// ⌘P's Running group's workspaces (decision 27): every unarchived one of the organisation.
     func runningWorkspaces() async -> [RunningWorkspace] {
-        let current = projectKey
-        let flags = environmentProduction
+        let judge = await environmentJudge()
         return await workspaceListings().map(\.workspace).filter { !$0.archived }.map { w in
             RunningWorkspace(
                 id: w.id, name: w.tickets.first.map { "\($0) \(w.name)" } ?? w.name,
                 place: Place(organization: organization, project: w.project, environment: w.environment),
-                isProduction: w.project == current ? flags.isProduction(w.environment)
-                    : EnvironmentProduction.undeclared.isProduction(w.environment))
+                isProduction: judge(w.project, w.environment))
         }
+    }
+
+    /// Every project's environments, from the configuration tree the window holds for its
+    /// organisation — read now when it holds none or another organisation's (Invariant 4). Unread
+    /// when that read fails: each environment then answers by its name.
+    func orgEnvironments() async -> OrgEnvironments {
+        let org = organization
+        guard !org.isEmpty else { return .unread }
+        var tree = settings
+        if tree?.org.id != org {
+            tree = try? await decodeSettingsTree(fromResult: registry.dispatch(
+                name: "ctx_config_tree", params: .object([:]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil))
+        }
+        guard let tree, tree.org.id == org else { return .unread }
+        return OrgEnvironments(projects: Dictionary(
+            tree.projects.map { p in (p.name, p.environments.map { OrgEnvironments.Environment(name: $0.name, production: $0.production) }) },
+            uniquingKeysWith: { a, _ in a }))
+    }
+
+    /// Whether an environment of any project is production (Invariant 8): the screen's project by
+    /// the window's own flags, every other by its own declarations (`orgEnvironments`).
+    func environmentJudge() async -> @Sendable (String, String) -> Bool {
+        let current = projectKey
+        let flags = environmentProduction
+        return await orgEnvironments().judge(current: current, flags: flags)
+    }
+
+    /// *Start in*'s rows: the window's place, its project's other environments, then every other
+    /// project's environments as its configuration declares them — each tagged production by its
+    /// own project's declaration (Invariant 8).
+    public func startInChoices() async -> [HomeStartChoice] {
+        let projects = await listProjects().map(\.name)
+        let environments = await listEnvironments().map(\.name)
+        let envs = await orgEnvironments()
+        return homeStartChoices(
+            projects: projects, current: place, environments: environments, otherEnvironments: envs.names,
+            isProduction: envs.judge(current: projectKey, flags: environmentProduction))
     }
 }
 

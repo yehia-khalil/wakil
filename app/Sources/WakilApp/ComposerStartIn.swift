@@ -59,13 +59,7 @@ struct ComposerStartIn: View {
             }
         }
         .task(id: "\(model.organization)/\(model.projectKey)/\(model.environment)") {
-            let projects = await model.listProjects().map(\.name)
-            let environments = await model.listEnvironments().map(\.name)
-            let flags = model.environmentProduction
-            let current = model.projectKey
-            choices = homeStartChoices(
-                projects: projects, current: model.place, environments: environments,
-                isProduction: { p, e in p == current ? flags.isProduction(e) : EnvironmentProduction.undeclared.isProduction(e) })
+            choices = await model.startInChoices()
         }
     }
 }

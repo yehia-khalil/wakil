@@ -166,3 +166,13 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
   (and `STAGING` for its absence); `landing.project.<p>.open` → `landing.project.<p>`; the start-in and
   home checks rewritten; `uncoverable.tsv` for the new ids.
 
+
+## Phase I — the scenario audit's fixes (2026-10-30)
+
+- [x] I1 Invariant 8 in every project, not only the screen's: the home's cards, ⌘P's Running group and
+  Start in judge each environment by its own project's declarations, read from the organisation's
+  `config_tree` (`OrgEnvironments`, `WindowModel.environmentJudge`); Start in lists each project's real
+  environments (`homeStartChoices(otherEnvironments:)`, `WindowModel.startInChoices`). NEEDS YOU draws
+  no environment. Tests first: `HomeScreenTests`, `WindowModelWorkspaceViewsTests`.
+- [ ] I2 A card's Run, Stop and run error are addressed by the card's number on the home
+  (`landing.card:<n>.run`), not its workspace id (`homeCardNumbers`). Check: `agent/workspaces-home-run.jsonl`.
