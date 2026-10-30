@@ -4,12 +4,12 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.project:e2e-git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"dispatch":{"action":"api_open","params":{}}}
-{"expect":{"pane":"api-1","field":"kind","equals":"api"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"expect":{"pane":"db-1","field":"kind","equals":"db"}}
 {"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
-{"expect":{"pane":"api-1","field":"kind","equals":"api"}}
+{"expect":{"pane":"db-1","field":"kind","equals":"db"}}
 {"dispatch":{"action":"workspace_set_environment","params":{"workspace":"write-the-workspace-note","environment":"qa"}}}
-{"expect":{"pane":"api-1","field":"kind","equals":"null"}}
+{"expect":{"pane":"db-1","field":"kind","equals":"null"}}
 {"expect":{"journal":{"contains":"\"action\":\"workspace_set_environment\""}}}
