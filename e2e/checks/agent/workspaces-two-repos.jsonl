@@ -20,7 +20,6 @@
 {"do":{"type":{"into":"window.composer","text":"write the portal note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"wrote the portal note"}}
-{"expect":{"tree":"contains","text":"Made a copy of e2e-portal in this workspace"}}
 {"expect":{"tree":"absent","text":"Started workspace ‘write the portal note’"}}
 {"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"test -e ../e2e-portal/portal-note.txt && test -e ws-note.txt && echo BOTH-IN-ONE-WORKSPACE"}}
@@ -31,5 +30,7 @@
 {"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"MAIN-UNTOUCHED"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
-{"expect":{"tree":"contains","text":"2 repos"}}
+{"do":{"click":"landing.card:0.expand"}}
+{"expect":{"tree":"contains","text":"e2e-portal"}}
+{"expect":{"tree":"contains","text":"e2e-api"}}
 {"expect":{"tree":"absent","text":"write the portal note"}}

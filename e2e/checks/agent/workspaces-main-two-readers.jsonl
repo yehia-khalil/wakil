@@ -30,12 +30,13 @@
 {"do":{"type":{"into":"palette.query","text":"new terminal"}}}
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.newpane:terminal"}}
-{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
-{"do":{"click":"rail.terminal-1"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held; git -C ../e2e-api worktree list --porcelain | grep -c '^worktree '"}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"1"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"CONVERSATIONS IN MAIN"}}
 {"expect":{"tree":"absent","text":"Value: working"}}
 {"expect":{"tree":"absent","text":"1 repo"}}

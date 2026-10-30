@@ -7,7 +7,7 @@
 {"expect":{"tree":"absent","text":"the joke turn arrived with no note"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
-{"expect":{"tree":"contains","text":"1 past conversation"}}
+{"expect":{"tree":"contains","text":"1 PAST CONVERSATION"}}
 {"expect":{"tree":"absent","text":"archived workspace"}}
 {"expect":{"tree":"absent","text":"1 repo"}}
 {"expect":{"frame":"landing.earlier","inside":"window"}}

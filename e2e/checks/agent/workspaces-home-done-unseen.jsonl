@@ -26,5 +26,6 @@
 {"expect":{"tree":"contains","text":"a held turn was released"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"CONVERSATIONS IN MAIN"}}
 {"expect":{"tree":"absent","text":"done, unseen"}}
 {"expect":{"tree":"absent","text":"NEEDS YOU"}}

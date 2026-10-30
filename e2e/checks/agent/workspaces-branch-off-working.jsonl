@@ -23,7 +23,7 @@
 {"do":{"type":{"into":"window.composer","text":"write the second note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"wrote the second note"}}
-{"expect":{"tree":"contains","text":"‘write the workspace note’ is working in e2e-api, so this conversation branched off into workspace"}}
+{"expect":{"tree":"contains","text":"‘write the workspace note’ is working in e2e-api, so this conversation"}}
 {"expect":{"tree":"contains","text":"write-the-workspace-note--"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}

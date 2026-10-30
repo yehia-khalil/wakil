@@ -6,11 +6,13 @@
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
 {"do":{"type":{"into":"window.composer","text":"write the plain note"}}}
 {"do":{"press":"Return"}}
-{"expect":{"tree":"contains","text":"e2e-git is not a git repository, so Wakil cannot make a workspace copy of it"}}
-{"expect":{"tree":"contains","text":"(decision 7)"}}
-{"expect":{"tree":"contains","text":"a git repository first"}}
+{"expect":{"tree":"contains","text":"editor_create was refused: e2e-git is not a git repository"}}
+{"expect":{"journal":{"contains":"e2e-git is not a git repository, so Wakil cannot make a workspace copy of it"}}}
+{"expect":{"journal":{"contains":"(decision 7)"}}}
+{"expect":{"journal":{"contains":"a git repository first"}}}
 {"expect":{"tree":"absent","text":"Started workspace"}}
 {"expect":{"tree":"absent","text":"wrote the plain note"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"CONVERSATION IN MAIN"}}
 {"expect":{"tree":"absent","text":"1 repo"}}

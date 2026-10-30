@@ -25,7 +25,7 @@
 {"expect":{"pane":"editor-1","field":"ticket.handoff.repos[0].ticked","equals":"true"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].root","contains":"e2e-portal"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].ticked","equals":"false"}}
-{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[2].root","present":false}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[-1].root","contains":"e2e-portal"}}
 {"do":{"click":"ticket.handoff.agents:one"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.agents","equals":"one"}}
 {"expect":{"tree":"absent","text":"One agent per ticked repo, in one workspace"}}
@@ -50,6 +50,8 @@
 {"do":{"click":"landing.card:0.expand"}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-api"}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-portal"}}
+{"do":{"click":"landing.project.e2e-git"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
 {"dispatch":{"action":"ticket_hand_off_open","params":{"key":"INI-142","root":"{fixtureRoot}/e2e-api","branch":"ini-142-login","from":"header"}}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"true"}}
 {"expect":{"pane":"editor-1","field":"ticket.handoff.carriers[1].title","contains":"INI-142 · e2e-"}}

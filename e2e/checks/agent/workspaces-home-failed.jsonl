@@ -25,5 +25,6 @@
 {"expect":{"tree":"contains","text":"STAGING"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"CONVERSATIONS IN MAIN"}}
 {"expect":{"tree":"absent","text":" — failed"}}
 {"expect":{"tree":"absent","text":"NEEDS YOU"}}

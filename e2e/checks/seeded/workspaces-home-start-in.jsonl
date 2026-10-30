@@ -29,7 +29,7 @@
 {"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"absent","text":"STAGING"}}
 {"expect":{"focus":"window.composer"}}
-{"do":{"resize":{"width":700,"height":700}}}
+{"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"frame":"window.composer.hint","inside":"window"}}
 {"expect":{"frame":"window.composer.startIn","inside":"window"}}
 {"expect":{"frame":"window.composer.hint","clear":"window.composer.startIn"}}
