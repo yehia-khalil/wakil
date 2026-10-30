@@ -198,6 +198,9 @@ private let keptPerPlace: Set<String> = [
     // The pool of clients pinned to agent places, and what their `wakil-ctx`s said: the places
     // with a live agent are still in use after a switch.
     "placeClients", "placeContexts",
+    // Workspaces, piece 2: each repo's drafting conversation, keyed by its project file and naming
+    // the conversation by id — that conversation survives a switch, and so does what it drafts.
+    "recipeDraftBook",
 ]
 
 private let orgIndependent: Set<String> = [
