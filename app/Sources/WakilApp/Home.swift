@@ -263,8 +263,11 @@ struct Home: View {
 
     /// The card's number on the home, in drawing order (`HomeScreen.cardOrder`): what its Run, Stop
     /// and run error are addressed by, as its own id is generated.
-    private func number(_ card: HomeCard) -> Int {
-        screen?.cardOrder.firstIndex(of: card.id) ?? 0
+    /// Each card's number by its id, for the `landing.card:<n>.…` identifiers: an interpolation
+    /// with no parenthesis inside, so the e2e harvester reads the family (`landing.card:<…>.run`)
+    /// as the checks press it; a call inside the interpolation harvested as `landing.card:<…>).run`.
+    private var cardNumbers: [String: Int] {
+        Dictionary((screen?.cardOrder ?? []).enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private func expanded(_ card: HomeCard) -> Bool {
@@ -292,7 +295,7 @@ struct Home: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .padding(.leading, 37 + CGFloat(depth) * 20).padding(.trailing, 16).padding(.bottom, 6)
-                        .accessibilityIdentifier("landing.card:\(number(card)).runError")
+                        .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).runError")
                 }
                 if open { cardBody(card) }
             }
@@ -356,7 +359,7 @@ struct Home: View {
                         .disabled(disabled)
                         .help("Stop what runs in it: \(card.running ?? "")")
                         .accessibilityLabel("Stop")
-                        .accessibilityIdentifier("landing.card:\(number(card)).stop")
+                        .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).stop")
                     }
                 }
                 if card.offersRun { runControl(card, disabled: disabled) }
@@ -370,7 +373,7 @@ struct Home: View {
                 .buttonStyle(.plain)
                 .help(open ? "Collapse" : "Expand: repos, PRs, every conversation")
                 .accessibilityLabel(open ? "Collapse" : "Expand")
-                .accessibilityIdentifier("landing.card:\(number(card)).expand")
+                .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).expand")
             }
             .fixedSize()
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -408,7 +411,7 @@ struct Home: View {
                 .disabled(disabled)
                 .help("Run \(repo.name)'s saved recipe in this workspace's copy")
                 .accessibilityLabel("Run \(repo.name)")
-                .accessibilityIdentifier("landing.card:\(number(card)).run")
+                .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).run")
         } else {
             Menu {
                 ForEach(card.runnable) { repo in
@@ -421,7 +424,7 @@ struct Home: View {
                 .disabled(disabled)
                 .help("Run a repo's saved recipe in this workspace's copy")
                 .accessibilityLabel("Run")
-                .accessibilityIdentifier("landing.card:\(number(card)).run")
+                .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).run")
         }
     }
 
