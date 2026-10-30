@@ -1,0 +1,1 @@
+{"dispatch":{"action":"running_draft_propose","params":{"repo":"e2e-project","recipe":{"processes":[{"name":"web","command":"make serve"}]}},"refuses":"only the conversation Wakil started to draft e2e-project's recipe proposes it"}}

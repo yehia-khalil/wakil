@@ -1,6 +1,16 @@
 {
   "rules": [
     {
+      "match": "Draft how e2e-api runs",
+      "call": { "action": "running_draft_propose", "echo": true, "params": { "repo": "e2e-api", "recipeName": "e2e-drafted", "recipe": { "setup": ["false"], "processes": [{ "name": "web", "command": "python3 -m http.server $WAKIL_PORT" }], "ready": { "output": "Serving HTTP" }, "notes": { "setup": "README" } } } },
+      "reply": "drafted how e2e-api runs"
+    },
+    {
+      "match": "Try of e2e-api's recipe failed",
+      "call": { "action": "running_draft_propose", "echo": true, "params": { "repo": "e2e-api", "recipeName": "e2e-drafted", "recipe": { "setup": [], "processes": [{ "name": "web", "command": "python3 -m http.server $WAKIL_PORT" }], "ready": { "output": "Serving HTTP" } } } },
+      "reply": "proposed a fix for e2e-api"
+    },
+    {
       "match": "read this page",
       "call": { "action": "browser_read_page", "echo": true, "params": { "pane": "browser-1" } },
       "reply": "read the release notes"
