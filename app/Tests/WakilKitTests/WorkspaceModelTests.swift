@@ -175,6 +175,15 @@ private func workspace(
     #expect(branchSlug(String(repeating: "word ", count: 40)).count <= 50)
 }
 
+/// A title that already starts with the ticket's key gets the key once (the walk's
+/// `AQ247-141-aq247-141-work-toward-next`), in the key's own case, whatever the title's.
+@Test func aTitleStartingWithTheTicketsKeyIsNotPrefixedTwice() {
+    #expect(fallbackBranchName(key: "AQ247-141", title: "AQ247-141 · Work toward Next.") == "AQ247-141-work-toward-next")
+    #expect(fallbackBranchName(key: "INI-142", title: "ini-142: Login rate limit") == "INI-142-login-rate-limit")
+    #expect(fallbackBranchName(key: "INI-142", title: "INI-142") == "INI-142")
+    #expect(fallbackBranchName(key: "INI-14", title: "INI-142 Login") == "INI-14-ini-142-login")
+}
+
 @Test func aChildBranchAddsTwoCharactersOfItsConversationLengthenedUntilUnused() {
     #expect(childBranchName("fix-otp", conversation: "ab12cd", taken: []) == "fix-otp--ab")
     #expect(childBranchName("fix-otp", conversation: "ab12cd", taken: ["fix-otp--ab"]) == "fix-otp--ab1")

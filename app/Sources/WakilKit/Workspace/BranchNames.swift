@@ -29,9 +29,18 @@ public func branchSlug(_ title: String) -> String {
     return cut.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
 }
 
-/// `<KEY>-<slug of title>`, or the slug alone, or "work" when there is nothing to go on.
+/// `<KEY>-<slug of title>`, or the slug alone, or "work" when there is nothing to go on. A title
+/// that already starts with the key (any case) has it once: the slug's copy of it is dropped.
 public func fallbackBranchName(key: String?, title: String) -> String {
-    let slug = branchSlug(title)
+    var slug = branchSlug(title)
+    if let key, !key.isEmpty {
+        let k = branchSlug(key)
+        if !k.isEmpty, slug == k {
+            slug = ""
+        } else if !k.isEmpty, slug.hasPrefix(k + "-") {
+            slug = String(slug.dropFirst(k.count + 1))
+        }
+    }
     switch (key.flatMap { $0.isEmpty ? nil : $0 }, slug.isEmpty) {
     case (let k?, false): return "\(k)-\(slug)"
     case (let k?, true): return k

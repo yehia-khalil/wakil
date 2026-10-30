@@ -529,6 +529,12 @@ Calls the build made where the umbrella left room, or where code forced a refine
 - A home screen longer than today's when only one thing is going on.
 - Agents that keep each other running without the operator.
 
+### Amendment 2026-10-30 — piece 1's walk: names and orphan copies
+
+- **The key once** (decision 10's fallback). `<KEY>-<slug of title>` drops the slug's leading copy of
+  the key (any case): a ticket conversation titled *AQ247-141 · Work toward Next.* gets
+  `AQ247-141-work-toward-next`, not `AQ247-141-aq247-141-work-toward-next`.
+
 ## Errors and edges
 
 - `git worktree add` fails: the write is not made; git's message whole in the thread (Rule 8).
