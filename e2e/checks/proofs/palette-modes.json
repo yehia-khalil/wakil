@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/palette-modes.jsonl",
-  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
-  "provedAt": "2026-10-10T19:57:57.198384Z",
-  "checkBlob": "3a665548d0db138bdefe3aad0240912aae06e8d2"
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "62d95892e4fb1e0f5ae68c26bb6f5f4218e80453"
 }

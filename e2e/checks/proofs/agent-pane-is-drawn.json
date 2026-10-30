@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/agent-pane-is-drawn.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "7be0f629de6e11a3fab115b6acffe4913c20070a"
+}

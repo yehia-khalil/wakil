@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/workspaces-palette-main.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "1842566a822526c2b3b5f60e844cf9c7302b5f2d"
+}

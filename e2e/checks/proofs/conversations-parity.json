@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/agent/conversations-parity.jsonl",
-  "baseCommit": "1fb2b49b1b5c6e2c43805b311032dfa94e957a71",
-  "provedAt": "2026-10-24T11:33:21.013755Z",
-  "checkBlob": "7dfbe50b6e6299bd4997ea816bc9e38d51a91438"
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "5f56b00aa866a75b0d91370ca7312edf855653be"
 }

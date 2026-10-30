@@ -4,10 +4,10 @@
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
 {"do":{"hotkey":"cmd+shift+w"}}
-{"expect":{"tree":"contains","text":"NEWEST FIRST"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
 {"expect":{"tree":"absent","text":"first reply in the thread"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
-{"expect":{"tree":"absent","text":"Nothing to continue"}}
+{"expect":{"frame":"landing.earlier","inside":"window"}}
 {"expect":{"tree":"absent","text":"your folders · asking and reading"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}

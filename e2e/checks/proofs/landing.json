@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/landing.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "44e5917c6f2db34e95794da5dea51cc0af18c9a1"
+}

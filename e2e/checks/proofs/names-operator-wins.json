@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/names-operator-wins.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "c10ff07aff3f4b49ed3dacd8ccd6777e20a4af8c"
+}

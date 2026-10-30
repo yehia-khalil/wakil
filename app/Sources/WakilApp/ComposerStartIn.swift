@@ -39,6 +39,10 @@ struct ComposerStartIn: View {
                 .fixedSize()
                 .help("Where a send starts: Main of this project and environment")
                 .accessibilityIdentifier("window.composer.startIn")
+            } else {
+                // Something must be drawn for `.task` to run: an empty Group never appears, so
+                // the choices were never read and the picker never drawn (piece 3's e2e run).
+                Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
             }
         }
         .task(id: "\(model.organization)/\(model.projectKey)/\(model.environment)") {

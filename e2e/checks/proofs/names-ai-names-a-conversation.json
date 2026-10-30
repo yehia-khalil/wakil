@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/names-ai-names-a-conversation.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "ca5ffc543bb2c7c84fd21ecb6f30ecbb174fa8ea"
+}

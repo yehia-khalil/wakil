@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/names-rename-palette.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "0aed888d2cb150224884a21e442325c0c263274c"
+}

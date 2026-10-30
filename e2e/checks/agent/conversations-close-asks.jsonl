@@ -11,15 +11,15 @@
 {"do":{"click":"window.closeConversation.keep"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
 {"expect":{"tree":"contains","text":"hold a turn open here"}}
-{"expect":{"tree":"absent","text":"NEWEST FIRST"}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
 {"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
 {"do":{"hotkey":"cmd+shift+w"}}
 {"expect":{"tree":"contains","text":"Close this conversation? The agent is still working; what it is doing now stops."}}
 {"do":{"click":"window.closeConversation.close"}}
-{"expect":{"tree":"contains","text":"NEWEST FIRST"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"expect":{"frame":"landing.row.open:terminal","inside":"window"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
 {"expect":{"tree":"absent","text":"your folders · asking and reading"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
-{"expect":{"tree":"absent","text":"Nothing to continue"}}
+{"expect":{"frame":"landing.earlier","inside":"window"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}

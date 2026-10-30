@@ -14,7 +14,7 @@
 {"expect":{"tree":"absent","text":"Placeholder: Environment"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
 {"do":{"resize":{"width":1000,"height":888}}}
-{"expect":{"tree":"contains","text":"Nothing to continue"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","clear":"window.contextLine"}}
 {"do":{"click":"landing.row.open:terminal"}}

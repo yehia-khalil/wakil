@@ -30,7 +30,7 @@
 {"do":{"type":{"into":"palette.query","text":"close conversation"}}}
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"parity":{"action":"session_close","click":"palette.row.global.closeConversation","assert":"tree"}}
-{"expect":{"tree":"contains","text":"NEWEST FIRST"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"expect":{"tree":"absent","text":"your folders · asking and reading"}}
 {"expect":{"tree":"absent","text":"Reading sessions"}}
-{"expect":{"tree":"absent","text":"Nothing to continue"}}
+{"expect":{"frame":"landing.earlier","inside":"window"}}

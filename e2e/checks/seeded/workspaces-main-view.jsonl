@@ -1,5 +1,5 @@
 {"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
-{"do":{"click":"landing.project.e2e-project.open"}}
+{"parity":{"action":"workspace_open","params":{"workspace":"main","project":"e2e-project","environment":"staging"},"click":"landing.project.e2e-project.open","assert":"tree"}}
 {"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
 {"expect":{"focus":"window.composer"}}
 {"expect":{"journal":{"contains":"\"action\":\"workspace_open\""}}}

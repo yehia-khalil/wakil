@@ -181,6 +181,8 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
     #expect(!busy.helpInFull && !busy.firstRun)
     let empty = homeScreen(HomeInput(organization: "o", project: "estate", environment: "s", tickets: [ticket("INI-1")]))
     #expect(empty.firstRun && empty.helpInFull)
+    // The current project's header (Main's Open, *Open a pane*) stands on the first run too.
+    #expect(empty.sections.map(\.project) == ["estate"] && empty.sections[0].current)
     #expect(empty.ticketsNotStarted.count == 1)
 }
 

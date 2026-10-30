@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/palette-api-entry.jsonl",
-  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
-  "provedAt": "2026-10-10T19:57:57.198384Z",
-  "checkBlob": "654522c21a8903ff7060df0c5545348c5a6cb492"
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "43fea593129c0037883de620403a4225d8999965"
 }

@@ -461,15 +461,18 @@ struct Home: View {
 
     // MARK: - First run
 
+    /// The current project's header stays (piece 3's amendment: its Open and *Open a pane* stand on
+    /// every day, not only once something runs); the note below it says nothing runs yet.
     @ViewBuilder
     private func firstRun(_ screen: HomeScreen) -> some View {
+        ForEach(screen.sections) { section in sectionView(section) }
         Text("Nothing running. Type below to start a conversation in Main, your own folders. It reads them as they are; "
              + "the moment it changes something, it gets a workspace of its own and your folders stay untouched.")
             .font(.system(size: 12.5))
             .foregroundStyle(coolWhite.opacity(0.62))
             .fixedSize(horizontal: false, vertical: true)
         if !screen.ticketsNotStarted.isEmpty { tickets(screen.ticketsNotStarted, title: "Tickets in flight") }
-        openAPane
+        if screen.sections.isEmpty { openAPane }
         if let line = screen.earlier.line { earlier(screen.earlier, line: line) }
     }
 

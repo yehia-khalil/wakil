@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/agent/3c-ii-allow-per-conversation.jsonl",
-  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
-  "provedAt": "2026-10-26T19:00:23.185368Z",
-  "checkBlob": "332aa788a1ee185284bb9c5767943eadc1e849aa"
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T04:16:01.127382Z",
+  "checkBlob": "fd9dd6bb0143a6f519ad61572a0684aabdd0792c"
 }
