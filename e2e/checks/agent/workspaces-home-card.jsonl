@@ -22,3 +22,4 @@
 {"do":{"type":{"into":"palette.query","text":"workspace"}}}
 {"expect":{"tree":"contains","text":" · workspace"}}
 {"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
