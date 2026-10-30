@@ -122,6 +122,9 @@ struct WakilWindow: View {
     /// away from the thread the first time anybody changed this window's
     /// padding, and the drift would be invisible in a still.
     @State private var threadAnchorX: Double = 0.5
+    /// The height of the status line and notes over the composer, as last drawn: on the home the
+    /// page ends above them, so neither is drawn over the other (piece 3 walk).
+    @State private var statusReserve: CGFloat = 0
     /// When the thread last gained a row. Drives `ThreadLift`'s decay, so
     /// the glow fades with the thread rather than snapping off with it.
     @State private var lastRowAt: Date?
@@ -319,6 +322,9 @@ struct WakilWindow: View {
                     // other. A fixed reserve, not the thread's height, so nothing moves as rows arrive
                     // or open; an opened row still rises over the canvas, at full opacity (§9).
                     .padding(.bottom, session.model.thoughts.isEmpty ? 0 : ThoughtThread.restingReserve)
+                    // Piece 3 walk: on the home the status line and notes have their own space,
+                    // above the bar — the page ends over them, not under them.
+                    .padding(.bottom, !session.model.sessionStarted && statusReserve > 0 ? statusReserve + 10 : 0)
 
                     // 2d-ii: ONE bottom-anchored flow, so nothing on the bottom edge
                     // can overprint anything else however tall the bar grows (rule 8:
@@ -385,6 +391,13 @@ struct WakilWindow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .allowsHitTesting(false)
+                        // Its height, for the home's reserve above (a preference: `onGeometryChange`
+                        // is macOS 15).
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: StatusReserveKey.self, value: geometry.size.height)
+                        })
+                        .onPreferenceChange(StatusReserveKey.self) { statusReserve = $0 }
+                        .padding(.bottom, statusReserve > 0 ? 4 : 0)
 
                         HStack(alignment: .bottom, spacing: 20) {
                             ComposerBar(
@@ -871,4 +884,10 @@ private struct UnsavedPromptWatch: ViewModifier {
             .onChange(of: model?.quitApproved ?? 0) { _, _ in finishQuit(true) }
             .onChange(of: model?.quitCancelled ?? 0) { _, _ in finishQuit(false) }
     }
+}
+
+/// The status line's height over the composer (`WakilWindow.statusReserve`).
+private struct StatusReserveKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
