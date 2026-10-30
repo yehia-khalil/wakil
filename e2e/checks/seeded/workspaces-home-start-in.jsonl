@@ -22,7 +22,7 @@
 {"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
 {"do":{"click":"window.composer.startIn"}}
 {"expect":{"tree":"contains","text":"START IN · MAIN OF"}}
-{"do":{"click":"window.composer.startIn.e2e-git/"}}
+{"do":{"click":"window.composer.startIn.e2e-git/staging"}}
 {"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
 {"expect":{"tree":"contains","text":"in e2e-git"}}
 {"expect":{"tree":"absent","text":"in e2e-project · staging"}}

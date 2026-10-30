@@ -8,7 +8,7 @@
 {"expect":{"tree":"absent","text":"Value: selected"}}
 {"do":{"click":"window.composer.startIn"}}
 {"expect":{"tree":"contains","text":"START IN · MAIN OF"}}
-{"do":{"click":"window.composer.startIn.e2e-git/"}}
+{"do":{"click":"window.composer.startIn.e2e-git/staging"}}
 {"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
 {"do":{"type":{"into":"window.composer","text":"thread turn two"}}}
 {"do":{"press":"Return"}}
