@@ -792,6 +792,7 @@ func newServer() *mcp.Server {
 				GitCommitInstructions: a.GitCommitInstructions,
 				GitPRInstructions:     a.GitPRInstructions,
 				GitBranchInstructions: a.GitBranchInstructions,
+				MessageWakes:          a.MessageWakes,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

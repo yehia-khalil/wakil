@@ -1260,6 +1260,23 @@ func TestUpdateOrgToolWritesTheGitIdentity(t *testing.T) {
 	}
 }
 
+// Workspaces piece 4's e2e run: the organisation's Agents woken by messages reached the tool and
+// was dropped on the way to UpdateOrg, so the Settings field never saved.
+func TestUpdateOrgToolWritesMessageWakes(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "update_org", Arguments: map[string]any{"id": "initech", "messageWakes": 3},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("update_org: %v %v", err, res)
+	}
+	o, err := wakilcore.LoadOrgFor("initech")
+	if err != nil || o.MessageWakes == nil || *o.MessageWakes != 3 {
+		t.Fatalf("messageWakes not written: %+v %v", o.MessageWakes, err)
+	}
+}
+
 // lifecycleClient connects an in-memory client to a fresh server for the
 // 2e-ii tools' round trips.
 func lifecycleClient(t *testing.T) (context.Context, *mcp.ClientSession) {

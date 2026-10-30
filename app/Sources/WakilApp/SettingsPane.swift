@@ -1054,7 +1054,7 @@ struct SettingsPane: View {
                     label: "Agents woken by messages", value: tree.org.messageWakes, range: 0...99,
                     identifier: "settings.org.agent.messageWakes",
                     save: { n in await saveMessageWakes(n, tree.org.id, nil) })
-                    .id("settings.org.agent.messageWakes.\(tree.org.id)")
+                    .id("messageWakes:\(tree.org.id)")
                 FormHint(Self.messageWakesHint).underRowValue().padding(.vertical, 6)
             }
 
@@ -1173,7 +1173,7 @@ struct SettingsPane: View {
                         value: project.agent.messageWakes ?? tree.org.messageWakes, range: 0...99,
                         identifier: "settings.project.agent.messageWakes",
                         save: { n in await saveMessageWakes(n, tree.org.id, project.path) })
-                        .id("settings.project.agent.messageWakes.\(project.path)")
+                        .id("messageWakes:\(project.path)")
                     HStack(spacing: 8) {
                         FormHint(project.agent.messageWakes == nil
                             ? "The organisation's, \(tree.org.messageWakes). A number here is this project's own."
