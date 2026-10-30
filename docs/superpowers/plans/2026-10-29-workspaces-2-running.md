@@ -175,3 +175,48 @@ this part gives it the status line and the actions it will call.
 
 29. e2e checks (`e2e/checks/seeded/workspaces-running-*.jsonl`), written, not run.
 30. `docs/architecture/wakilkit.md`, `go.md`, `state.md`; the spec's amendment.
+
+---
+
+# Part three — the drafting conversation and Try's fix (2026-10-30, finish round)
+
+**Spec:** Detect step 2 (*Draft*) and step 3's last clause (*on a failure the drafting conversation
+proposes a fix*); amendment *piece 2's drafting conversation*. The ▶ Run on the card stays piece 3's.
+
+**Calls this part makes:**
+
+- **When a conversation drafts.** Detect's draft is incomplete when the repo runs (not `doesntRun`)
+  and it has a question or no process. Then Wakil starts a conversation in Main of the project
+  (reading only, off screen, its chip shown), titled *Draft how `<repo>` runs*, whose first message
+  is the brief: the detected facts whole (Go's `Draft` JSON), the docs to read, the rules, and how
+  to answer. Detect's own draft shows meanwhile (Rule 9: a suggestion, nothing saved).
+- **How it answers.** `running_draft_propose {repo, recipe, recipeName?, questions?, why?,
+  doesntRun?}`, agent-reachable, `.control`: it writes nothing — the recipe lands in the form as a
+  proposal with Save / Discard. Only the conversation Wakil started for that repo may call it.
+- **Try's fix.** A Try that fails (not cancelled, not refused) sends the report — each step, the
+  failing one's output whole, the recipe as tried — to the repo's drafting conversation, started
+  first when there is none (or it was closed). Its answer, through the same action, shows as *Fix
+  proposed*. A fix for a repo on a shared recipe is saved as the repo's overrides (only what
+  differs), never into the shared recipe.
+- **Rule 4 / 5 / 8.** The form says *Drafting…* / *Proposing a fix…* with **Stop** (ends the
+  conversation); a conversation whose turn ends without proposing is said whole.
+
+## Phase 13 — WakilKit
+
+31. `RecipeDraftBook` (value type): begin, propose (refused for any other caller, naming decision
+    13), settle, fail, turn ended without a proposal, the key of a conversation. Tests per rule.
+32. `RunningDetected.needsDrafting`; `recipeDraftingBrief`, `recipeFixBrief` (pure): the facts, the
+    rules, the failing step's output whole, the answer's action. Tests.
+33. `RunningSettings.savingDraft`: a repo with no recipe → a new recipe as Detect saves it; a repo on
+    a recipe → overrides of what differs. Tests.
+34. `running_draft_propose` through `RecipeDraftLookup`; registered in the wiring, pointed at the
+    window. `WindowModel`: `startRecipeDraft`, `proposeRecipeFix`, `stopRecipeDraft`,
+    `settleRecipeDraft`, the turn-end hook. Test: the action's refusal and its forward.
+
+## Phase 14 — The form, cover, docs
+
+35. `RunningSettingsForm`: Detect starts the conversation when `needsDrafting`; its state line with
+    Stop; the conversation's proposal in the proposal box; a failed Try asks for a fix.
+36. e2e: `seeded/workspaces-running-draft-refusal.jsonl` (an agent that is not drafting is refused),
+    `agent/workspaces-running-drafting.jsonl` (Detect → the conversation's draft → Save → a failing
+    Try → the fix proposed); the stub's two rules. Docs: `wakilkit.md`, the spec's amendment.

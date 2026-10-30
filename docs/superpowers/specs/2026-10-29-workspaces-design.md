@@ -389,7 +389,28 @@ What building Run, Stop, Build, Try and the Running settings settled (plan, part
   form closing, another Try) archives and forgets the record. The branch stays, as Archive keeps
   branches.
 - **Not built here:** the card's ▶ Run / Stop and its run line (piece 3 draws `runStatusLine` and
-  calls the actions), the drafting conversation of Detect step 2, and Try's fix proposal.
+  calls the actions). The drafting conversation and Try's fix: the next amendment.
+
+#### Amendment 2026-10-30: piece 2's drafting conversation and Try's fix
+
+- **When a conversation drafts.** Detect's draft is incomplete when the repo runs and the draft asks
+  a question or starts no process. Then Wakil starts a conversation in Main of the project — off
+  screen, so the operator stays in the settings (Rule 6), with its chip — titled *Draft how
+  `<repo>` runs*. Its first message carries Detect's facts whole (Go's `Draft`), the docs to read,
+  the rules (ports through `$WAKIL_PORT…`, the repo's own scripts first, databases and queues in
+  `services`, change nothing) and how to answer. Detect's own draft shows meanwhile. Main's place is
+  the screen's when the project is on screen, otherwise the project's first non-production
+  environment. One conversation per repo per app session; Detect again drafts in the same thread.
+- **How it answers.** `running_draft_propose {repo, recipe, recipeName?, questions?, doesntRun?,
+  why?}`: agent-reachable, `.control`, pre-approved — it writes nothing; the recipe lands in the
+  form under the repo as *Drafted in ‘…’* with Save / Discard (Rule 9). Only the conversation Wakil
+  started for that repo may call it; anyone else is refused naming decision 13. A turn that ends
+  without a proposal is said whole in the form (Rule 8); **Stop** ends the conversation (Rule 4).
+- **Try's fix.** A Try that fails (not cancelled, not refused) sends that conversation — started
+  first when there is none — every step, the failing one's output whole, and the recipe as tried.
+  Its answer shows as *Fix proposed by ‘…’*. A repo on a shared recipe saves a draft or a fix as its
+  own overrides (only what differs), so one repo's fix never changes the others; a repo with no
+  recipe gets a new one, as Detect's draft does.
 
 ### 3. The home screen and ⌘P
 
