@@ -118,3 +118,32 @@ lines (`wakilkit.md`, `flows.md`); the spec's piece 5 amendment.
   `HomeScreenTests.aProposalIsDrawnOnItsWorkspacesCardAndInMainForOneMadeThere`. Checks: the two
   `workspaces-5-home-teammate*` read the new words and the NEEDS YOU row.
 
+## Item 8 — Hand to agent on a ticket a conversation carries (2026-10-30)
+
+The operator's agreed behaviour and the build's calls: the spec's amendment of the same name.
+
+- [x] **The record and status.** Go: `GitStatus.head` (the head's short SHA), `Workspace.BranchOff`.
+  Tests: `TestStatusNamesTheHeadsShortCommit`, `TestWorkspacesRoundTrip`.
+- [x] **Branch off, always.** `WorkspaceStore.markBranchOff/mustBranchOff/clearBranchOff`,
+  `WorkspaceRouter.join(branchOff:)`, `branchOffMarked`, `WorkspaceLine.branchedOffAt/branchedOffNoCopy`.
+  Tests (`WorkspaceRouterTests`): `aStartAnotherConversationBranchesOffAnIdleHoldersCopyAtItsLastCommit`,
+  `aResumedStartAnotherConversationStillBranchesOff`,
+  `aStartAnotherConversationWritingARepoTheWorkspaceHasNoCopyOfGetsAChildOfItsOwn`,
+  `theBranchOffLineNamesTheCommitAndTheHoldersUncommittedChanges`.
+- [x] **The popover's choices and the actions.** `TicketHandOffCarrier`, `handOffCarriers`,
+  `handOffAnotherNumber`, `TicketHandOffState.offersSend/sendTarget/sendLabel/sendParams`,
+  `ticket_hand_off_send`, `conversation_queued_cancel`, `sendTo` on `ticket_hand_off_brief`, Start
+  another's `number`/`branchOffFrom`. Tests (`EditorTicketHandOffTests`): carriers, numbering, Send to
+  offered and its ▾, one per repo offers Start alone, Send to sends and closes, queued, operator-only
+  and a failure kept, Start another numbered past the carriers read at the press.
+- [x] **The window.** `handOffCarriers()`, `sendToHandOff`, `unqueueTurn`, `deliverQueuedTurn` at the
+  turn's end, `PlaceAgent.queuedTurns`, Start another's title and join. Tests
+  (`HandOffSendToWindowTests`): the context lists carriers; idle sends off screen; working queues and
+  delivers at the turn's end; Cancel takes it back; Start another is `#2`, in the carrier's workspace,
+  holding no copy, marked.
+- [x] **WakilApp.** `TicketHandOffPopover` (`ticket.handoff.send`, `.sendTo`, `.sendTo:<n>`,
+  `.startAnother`), `QueuedTurnsStrip` (`window.queued`, `.text:<n>`, `.cancel:<n>`).
+- [x] **Cover.** `agent/ticket-workspaces-8-send-to.jsonl` (new; the stub holds the first agent's turn),
+  `agent/ticket-workspaces-5-one-per-repo.jsonl` (extended); `uncoverable.tsv` for the two actions'
+  parity and the strip's container and text. Not run here: the coordinator runs them.
+

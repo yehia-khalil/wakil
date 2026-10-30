@@ -1072,3 +1072,61 @@ Calls the build made where the piece above is silent (plan:
   lines on the home; `agent/workspaces-5-teammate.jsonl` switches with `session_switch` (same-organisation
   chips are gone).
 
+## Amendment 2026-10-30 — piece 5: Hand to agent on a ticket a conversation already carries (item 8)
+
+The walk pressed Hand to agent three times and got three background conversations with one title
+(three `ticket_hand_off` starts, not a fork-resume). The operator agreed (2026-10-30), binding:
+
+1. **Send to “<title>”** is the primary choice when a live conversation carries the ticket — the most
+   recently active one named, a ▾ to pick another when several do. It sends the popover's brief,
+   editable, as the operator's own message (a user turn, not `conversation_message`). Idle, it starts
+   a turn now, off screen; the operator stays where they are (Rule 6). In a turn, it is queued and
+   delivered when that turn ends, shown pending in that thread, and cancellable (Rule 4).
+2. **Start another** (the second choice) starts a new conversation titled `<title> #2` (`#3`…). A
+   second press while a start is in flight does nothing (Rule 5). With **One per repo** ticked, only
+   **Start** is offered.
+3. Start another's conversation starts in the ticket's workspace **holding no copy**: reads use the
+   workspace's copies (Main's folder for repos not copied); work outside the repo needs none. At its
+   **first file change it always branches off** into a child workspace (decision 9) from the parent
+   branch's **last commit** — never taking over the other conversation's copy, even an idle one.
+   Nothing uncommitted is carried. No consent prompt.
+4. The branch-off's thread line says it plainly, naming the commit, the parent's uncommitted changes
+   and the parent by name, so the agent can `conversation_message` it: *"Branched off
+   AQ247-141-work-toward-next at 2d1ac2e. ‘Work toward Next.’ has 3 uncommitted changes in its copy
+   that are not in yours."*
+5. Never commit or push on the parent's behalf.
+
+Calls the build made where the above is silent:
+
+- **Carries** means a live conversation whose hand-off names the ticket's key (a keyless PR: its PR at
+  its root). Most recently active is `PlaceAgent.lastActivity`. The popover reads them when it opens
+  (`TicketHandOffContext.carriers`); Start another reads them again at the press, so a popover left
+  open never numbers a second `#2`.
+- **The number** is one past every carrier's own (a title with no ` #n` counts as 1); the title is the
+  hand-off's (`<KEY> · <first line>`), numbered after the cut a long title gets, so `#n` is never cut.
+- **Send to sends the brief alone**, marked when an agent edited it, as Start marks it — not Wakil's
+  appended record: the conversation already has it. `ticket_hand_off_send` and the queue's Cancel
+  (`conversation_queued_cancel`) are operator-only. A Send that fails keeps the popover open with the
+  error whole (Rule 8). ⌘↩ presses the primary choice. **In a turn** is a turn in flight, a session
+  starting or a message not yet answered; a second Send while one is queued queues behind it, each
+  going as its own turn at the end of the one before. The queue is drawn over the thread of the
+  conversation on screen (*Queued — goes as your message when this turn ends*, the text whole,
+  **Cancel**); off screen it waits there.
+- **The workspace** Start another starts in is the most recently active carrier's. A carrier in Main
+  (no workspace yet) gives none: the new conversation starts in Main as any hand-off does, and its first
+  write makes its own workspace (step 0).
+- **The mark** is kept in memory and, once the conversation has a lineage root, in the record
+  (`Workspace.branchOff`, by root), so a conversation resumed into the workspace after a relaunch still
+  branches off. It goes at the branch-off.
+- **The commit** is the parent copy's head SHA as `git_status` reads it (Go's `GitStatus.head`); the
+  worktree is added from that SHA. The holder is the copy's holder, else the workspace by name. A copy
+  `git_status` cannot read is said whole (*Wakil could not read ‘…’'s copy, so it cannot say what is
+  uncommitted there.*).
+- **A repo the workspace has no copy of**: the conversation still branches off — a child workspace of
+  its own, its copy made there from the repo's base — so the parent's record gains nothing it would then
+  hold (*‘<parent>’ has no copy of <repo>, so this conversation branched off into workspace ‘<name>’ and
+  makes its own copy of <repo> there.*).
+- Checks: `agent/ticket-workspaces-8-send-to.jsonl` (Send to while the first agent's turn is held, the
+  queue drawn and cancelled, Start another's `#2`); `agent/ticket-workspaces-5-one-per-repo.jsonl` reads
+  Send to and its ▾ after the crew starts, and Start alone under one per repo.
+
