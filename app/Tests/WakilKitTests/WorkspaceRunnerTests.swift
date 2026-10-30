@@ -145,6 +145,29 @@ actor SavedFiles {
     #expect(await ctx.calls.filter { $0.name == "ports_allocate" }.count == 1)
 }
 
+/// The home's card draws what runs (piece 3): the runner tells the window each time a workspace's
+/// state changes — a run starting, running, and a stop.
+@Test func eachChangeToAWorkspacesRunIsTold() async throws {
+    let (r, _, _) = await runner(["web": PlanSpec()])
+    let told = SavedIds()
+    await r.use(changed: { id in await told.add(id) })
+    func settle(_ ok: @Sendable () async -> Bool) async -> Bool {
+        for _ in 0..<200 where !(await ok()) { try? await Task.sleep(nanoseconds: 5_000_000) }
+        return await ok()
+    }
+    _ = try await r.run("w1", repo: "web")
+    #expect(await settle { await told.ids.contains("w1") })
+    let afterRun = await told.ids.count
+    _ = try await r.stop("w1", repo: "web")
+    #expect(await settle { await told.ids.count > afterRun }, "the stop is told too")
+    #expect(runStatusLine(await r.state(of: "w1")).isEmpty)
+}
+
+actor SavedIds {
+    var ids: [String] = []
+    func add(_ id: String) { ids.append(id) }
+}
+
 @Test func runStartsNeedsAndServicesOnceSetupOnceThenEachProcessInATerminal() async throws {
     let specs = [
         "web": PlanSpec(services: [], setup: ["pnpm install"], processes: [("dev", "pnpm dev")], needs: [("api", "repo")]),

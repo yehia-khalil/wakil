@@ -386,6 +386,26 @@ struct WindowModelWorkspaceViewsTests {
         await model.shutdown()
     }
 
+    /// Piece 2's run on the home (piece 3): the card carries what the runner last said runs there,
+    /// and nothing once it stopped.
+    @Test func theHomesCardCarriesWhatTheRunnerSaysRuns() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+
+        model.runLineChanged("w1", "core running on :41200")
+        var screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
+        #expect(screen.sections.first?.cards.first?.running == "core running on :41200")
+
+        model.runLineChanged("w1", "")
+        #expect(model.homeRunLines["w1"] == nil)
+        screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
+        #expect(screen.sections.first?.cards.first?.running == nil)
+        await model.shutdown()
+    }
+
     @Test func aWorkspaceWithNoLiveConversationOpensOnItsOwnView() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)

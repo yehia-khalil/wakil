@@ -117,8 +117,17 @@ public actor WorkspaceRunner {
     private var projectPath: @Sendable (String) async -> String? = { _ in nil }
     /// The thread of the conversation that started a run: a failure is said there (Rule 8).
     private var say: @Sendable (_ conversation: String, _ text: String, _ isError: Bool) async -> Void = { _, _, _ in }
-    /// Per workspace id, per repo name.
-    private(set) var states: [String: [String: RepoRunState]] = [:]
+    /// Per workspace id, per repo name. Each change is told (`use(changed:)`): the home's card draws it.
+    private(set) var states: [String: [String: RepoRunState]] = [:] {
+        didSet {
+            let ids = Set(oldValue.keys).union(states.keys).filter { oldValue[$0] ?? [:] != states[$0] ?? [:] }
+            guard !ids.isEmpty else { return }
+            let tell = changed
+            Task { for id in ids.sorted() { await tell(id) } }
+        }
+    }
+    /// Told the id of each workspace whose run state changed (piece 3: the home's card).
+    private var changed: @Sendable (_ workspace: String) async -> Void = { _ in }
     /// Per workspace id: the needs and services already started (once per workspace).
     private var started: [String: Set<String>] = [:]
     /// Per workspace id: repos whose services ran, so Stop runs their teardown.
@@ -145,6 +154,7 @@ public actor WorkspaceRunner {
     /// Where a Try's progress goes as it runs, by project and repo (the window's Running settings).
     private var tryProgressSink: @Sendable (_ project: String, _ repo: String, _ progress: TryProgressState) async -> Void = { _, _, _ in }
     public func use(tryProgress: @escaping @Sendable (String, String, TryProgressState) async -> Void) { tryProgressSink = tryProgress }
+    public func use(changed: @escaping @Sendable (String) async -> Void) { self.changed = changed }
     func setPollInterval(_ d: Duration) { pollInterval = d }
 
     /// Every repo's state in workspace `id`, in the order runs started.

@@ -598,6 +598,20 @@ Calls the build made where the umbrella left room, or where code forced a refine
   drawing order (`landing.archive.offer:<n>`), as a card's id is generated.
 - Still not built: moving data panes when a workspace's environment changes (not piece 3's finish list).
 
+### Amendment 2026-10-30 — piece 3 on pieces 1 and 2's finish
+
+- **▶ Run on the card** (piece 2's Run, Stop, Build). A card's hover offers **▶ Run…**: a menu of the
+  repos with a copy on disk, each running its saved recipe (`workspace_run {workspace, repo}`, as the
+  operator); with no copy it says the app runs in a copy made at the first change. What runs joins the
+  PRs line (`1 PR open · api web running on :41200`) with **Stop** after it (`workspace_stop
+  {workspace}`: every process, then the teardown). The line follows the runner as it changes,
+  whoever ran it — the agent included. The card is disabled while its Run or Stop is in flight (Rule 5);
+  a refusal or failure is drawn on the card whole until its next Run or Stop (Rule 8).
+- **Main's view takes step 0's terminals** (piece 1's amendment): the canvas of Main's live view slot
+  — what the project's **Open** goes back to — else the canvas the home reserves for the place's next
+  conversation, which Open adopts.
+- Moving data panes when a workspace's environment changes is built (piece 1's three remaining items).
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).

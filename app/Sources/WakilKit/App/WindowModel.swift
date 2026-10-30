@@ -954,6 +954,9 @@ public final class WindowModel {
     /// When each of those was read, and which are being read now (one read per branch at a time).
     @ObservationIgnored var homeBranchReadAt: [HomeBranch: Date] = [:]
     @ObservationIgnored var homeBranchReading: Set<HomeBranch> = []
+    /// What runs in each workspace, by id (piece 2's `runStatusLine`), as the runner last told
+    /// (`useRunner`): the home card's running line and its **Stop**.
+    public internal(set) var homeRunLines: [String: String] = [:]
     /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.
     var screenLocked = false
     /// The 2-minute read while Wakil is in front and the screen unlocked (`updateTicketPoll`), its

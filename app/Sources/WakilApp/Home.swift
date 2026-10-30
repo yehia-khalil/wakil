@@ -27,6 +27,8 @@ struct Home: View {
     @State private var busy: String?
     /// Archive with a conversation waiting on the operator asks first (Rule 1).
     @State private var confirmingArchive: HomeCard?
+    /// A card's ▶ Run or Stop that failed, whole (Rule 8), until its next Run or Stop.
+    @State private var runErrors: [String: String] = [:]
 
     private var coolWhite: Color { Color(red: 0.910, green: 0.925, blue: 0.965) }
     private var violet: Color { Color(red: 0.620, green: 0.510, blue: 1.0) }
@@ -40,7 +42,8 @@ struct Home: View {
         // Decision 11's offer: a workspace branch's PRs landing redraws the page.
         let merged = model.homeBranchPRs.map { "\($0.key.root):\($0.key.branch)=\($0.value.map(\.state))" }.sorted()
         return "\(model.organization)/\(model.projectKey)/\(model.environment)|\(live.joined(separator: ","))|"
-            + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)|\(merged.joined(separator: ","))"
+            + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)|\(merged.joined(separator: ","))|"
+            + model.homeRunLines.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
     }
 
     var body: some View {
@@ -229,6 +232,7 @@ struct Home: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(violet)
                             .accessibilityIdentifier("landing.card.\(card.id).new")
+                        runMenu(card).disabled(disabled)
                     }
                     menu(card).disabled(disabled)
                 }
@@ -246,9 +250,12 @@ struct Home: View {
                         }
                     }
                 }
-                if let prs = card.prs {
-                    Text(prs).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.6))
-                        .accessibilityIdentifier("landing.card.\(card.id).prs")
+                if card.prs != nil || card.running != nil { statusLine(card, disabled: disabled) }
+                if let error = runErrors[card.id] {
+                    Text(error).font(.system(size: 11)).foregroundStyle(red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("landing.card.\(card.id).runError")
                 }
                 if let needs = card.needs {
                     Text(needs).font(.system(size: 12)).foregroundStyle(amber)
@@ -274,6 +281,61 @@ struct Home: View {
         .padding(.bottom, 10)
         .background(slab)
         .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) })
+    }
+
+    /// The PRs and what runs, on one line (`7 PRs open · core running on :41200 · Stop`, spec piece 3);
+    /// **Stop** while something runs. Wraps whole, never cut.
+    private func statusLine(_ card: HomeCard, disabled: Bool) -> some View {
+        WrappingRow(spacing: 6) {
+            if let prs = card.prs {
+                Text(prs).font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("landing.card.\(card.id).prs")
+            }
+            if let running = card.running {
+                if card.prs != nil { Text("·").font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.4)) }
+                Text(running).font(.system(size: 11)).foregroundStyle(Color(TerminalPalette.green))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("landing.card.\(card.id).running")
+                Text("·").font(.system(size: 11)).foregroundStyle(coolWhite.opacity(0.4))
+                Button("Stop") { runOnCard(card) { await model.stopOnCard(card.id) } }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(violet)
+                    .disabled(disabled)
+                    .accessibilityIdentifier("landing.card.\(card.id).stop")
+            }
+        }
+    }
+
+    /// ▶ Run…, on the card's hover (spec, piece 3): each repo with a copy runs its saved recipe
+    /// (`workspace_run`, decision 12). With no copy yet it says why rather than offering nothing.
+    private func runMenu(_ card: HomeCard) -> some View {
+        Menu {
+            if card.runnable.isEmpty {
+                Text("No copy to run yet: the app runs in a workspace's copy, made at its first change")
+            }
+            ForEach(card.runnable) { repo in
+                Button(repo.name) { runOnCard(card) { await model.runOnCard(card.id, repo: repo.repo) } }
+            }
+        } label: {
+            Text("▶ Run…").font(.system(size: 11, weight: .medium)).foregroundStyle(violet)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityIdentifier("landing.card.\(card.id).run")
+    }
+
+    /// Runs a card's Run or Stop: the card is disabled meanwhile (Rule 5), and a refusal or failure
+    /// is drawn on the card whole (Rule 8).
+    private func runOnCard(_ card: HomeCard, _ body: @escaping () async -> String?) {
+        runErrors[card.id] = nil
+        run(card.id) {
+            let error = await body()
+            if let error { runErrors[card.id] = error }
+            return error == nil
+        }
     }
 
     /// ⋯: Bring to Main…, Move a conversation here…, Archive (spec, piece 3).

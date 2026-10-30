@@ -163,6 +163,11 @@ extension WindowModel {
             await runner.use(tryProgress: { [weak self] project, repo, progress in
                 await self?.setRunningTryProgress(project: project, repo: repo, progress)
             })
+            // Piece 3: the card's running line follows every change, whoever ran it (Rule 5).
+            await runner.use(changed: { [weak self, runner] id in
+                let line = runStatusLine(await runner.state(of: id))
+                await self?.runLineChanged(id, line)
+            })
             // The window may already have its organisation (it was read before the wiring ended).
             self.sweepLeftoverTries()
         }
@@ -195,6 +200,21 @@ extension WindowModel {
 
     public func runningTryProgress(project: String, repo: String) -> TryProgressState? {
         runningTryProgress[runningTryKey(project: project, repo: repo)]
+    }
+
+    func runLineChanged(_ workspace: String, _ line: String) {
+        if line.isEmpty { homeRunLines[workspace] = nil } else if homeRunLines[workspace] != line { homeRunLines[workspace] = line }
+    }
+
+    /// The card's ▶ Run for `repo` of `workspace` (`workspace_run`, as the operator): the saved
+    /// recipe only (decision 12). Answers the refusal or failure whole (Rule 8), nil when it ran.
+    public func runOnCard(_ workspace: String, repo: String) async -> String? {
+        await runningDispatch("workspace_run", .object(["workspace": .string(workspace), "repo": .string(repo)])).error
+    }
+
+    /// The card's **Stop** (`workspace_stop` with no repo): every process, then the teardown.
+    public func stopOnCard(_ workspace: String) async -> String? {
+        await runningDispatch("workspace_stop", .object(["workspace": .string(workspace)])).error
     }
 
     func sayRun(_ conversation: String, _ text: String, isError: Bool) {
@@ -260,7 +280,7 @@ extension WindowModel {
             tickets: ticketNeedsRows,
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,
-            branchPRs: homeBranchPRs,
+            branchPRs: homeBranchPRs, running: homeRunLines,
             isProduction: { project, env in project == current ? flags.isProduction(env) : EnvironmentProduction.undeclared.isProduction(env) })
         return homeScreen(input)
     }

@@ -95,6 +95,20 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
    card's offer line with Archive. Check: `agent/ticket-workspace-merged.jsonl` (the GitHub stub's
    `write-the-merged-note` heads merged PR #216).
 
+## Phase F — on pieces 1 and 2's finish (2026-10-30, after the restack)
+
+1. **▶ Run on the card.** Test: `aCardsLineCarriesWhatRunsAndRunOffersEachCopy` (`HomeScreenTests`),
+   `eachChangeToAWorkspacesRunIsTold` (`WorkspaceRunnerTests`), `theHomesCardCarriesWhatTheRunnerSaysRuns`.
+   Code: `HomeInput.running`, `HomeCard.running` / `runnable` / `statusLine`; `WorkspaceRunner.use(changed:)`
+   → `WindowModel.homeRunLines`; `runOnCard` / `stopOnCard` dispatch `workspace_run` / `workspace_stop`
+   (`runningDispatch`); the card's ▶ Run… menu on hover, the running line with Stop, a failure whole.
+   Check: `agent/workspaces-home-run.jsonl`.
+2. **Step 0's terminals go to Main's view.** Test: `step0LeavesTheTerminalsInMainsOpenView`. Code:
+   `WindowModel.mainViewScope(of:)` — the live Main slot's canvas, else the reserved one Open adopts.
+   Check: `agent/workspaces-step0-terminals.jsonl` reads the terminal through Main's Open on the home.
+3. **Checks run red on piece 3's head.** `bg-agent-chip-return` follows its new pane order (terminal-2,
+   api-3); `ticket-workspace-merged` signs in to the GitHub stub first (`ticket_branch` needs it).
+
 ## Interaction Rules
 
 | Rule | Control | How |

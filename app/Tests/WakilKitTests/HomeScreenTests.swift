@@ -250,3 +250,29 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
     let gone = ws("w2", "Old", branch: "old", repos: ["/p/api"], archived: true)
     #expect(homeMergedReads([a, gone]) == [HomeBranch(root: "/p/api", branch: "logs")])
 }
+
+// Piece 2's Run on the card (spec, piece 3's card and piece 2's Run, Stop, Build): the PRs line
+// carries what runs, `· Stop` beside it; ▶ Run offers each repo with a copy.
+
+@Test func aCardsLineCarriesWhatRunsAndRunOffersEachCopy() {
+    var a = ws("w1", "Login", tickets: ["INI-142"], branch: "INI-142-login", repos: ["/p/api", "/p/web", "/p/core"])
+    a.checkouts[2].path = nil
+    a.checkouts[1].inMain = true
+    let rows = [ticket("INI-142", branch: "INI-142-login", pr: 7)]
+    func card(_ running: [String: String]) -> HomeCard {
+        homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
+                             workspaces: [listing(a)], tickets: rows, running: running)).sections[0].cards[0]
+    }
+    #expect(card([:]).running == nil)
+    #expect(card([:]).statusLine == "1 PR open")
+    let running = card(["w1": "api running on :41200 · queue running"])
+    #expect(running.running == "api running on :41200 · queue running")
+    #expect(running.statusLine == "1 PR open · api running on :41200 · queue running")
+    #expect(card(["w1": ""]).running == nil, "nothing runs: no line, no Stop")
+    #expect(card([:]).runnable.map(\.name) == ["api"], "a copy on disk, not one brought to Main or not made")
+
+    let b = ws("w2", "Quiet", repos: ["/p/api"])
+    let quiet = homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
+                                     workspaces: [listing(b)], running: ["w2": "api running on :41210"])).sections[0].cards[0]
+    #expect(quiet.statusLine == "api running on :41210", "no PR: the line is what runs")
+}

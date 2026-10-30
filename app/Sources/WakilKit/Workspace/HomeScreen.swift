@@ -50,13 +50,16 @@ public struct HomeInput: Sendable {
     /// The PRs each workspace branch heads, by Main's root and the branch (`ticket_branch`, read by
     /// the window for `homeMergedReads`): what decision 11's Archive offer is decided on.
     public var branchPRs: [HomeBranch: [PullRequestState]]
+    /// What runs in each workspace, by id: piece 2's `runStatusLine` (`api running on :41200 · queue
+    /// running`); absent or empty when nothing does.
+    public var running: [String: String]
     /// Whether an environment of a project is production (Invariant 8).
     public var isProduction: @Sendable (_ project: String, _ environment: String) -> Bool
 
     public init(organization: String, project: String, environment: String, projects: [String] = [],
                 workspaces: [WorkspaceListing] = [], live: [LiveConversation] = [], tickets: [TicketNeedsRow] = [],
                 past: [HomePastConversation] = [], filter: String? = nil,
-                branchPRs: [HomeBranch: [PullRequestState]] = [:],
+                branchPRs: [HomeBranch: [PullRequestState]] = [:], running: [String: String] = [:],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -68,6 +71,7 @@ public struct HomeInput: Sendable {
         self.past = past
         self.filter = filter
         self.branchPRs = branchPRs
+        self.running = running
         self.isProduction = isProduction
     }
 }
@@ -122,6 +126,8 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     public let repos: [HomeRepo]
     /// `2 PRs open · 1 failing`; nil with no PR.
     public let prs: String?
+    /// What runs in it (piece 2's `runStatusLine`); nil when nothing does, so no **Stop**.
+    public let running: String?
     /// What needs the operator, in amber; nil when nothing does.
     public let needs: String?
     public var lines: [HomeConversationLine]
@@ -142,6 +148,14 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     /// Decision 11's offer: every PR of the workspace is merged — `2 PRs merged`, drawn with
     /// **Archive** on the card. Nil otherwise (Archive stays in ⋯).
     public let merged: String?
+    /// ▶ Run…'s repos: those with a copy on disk, where the app runs (decision 12).
+    public var runnable: [HomeRepo] { repos.filter { $0.made && !$0.inMain } }
+    /// The card's PRs and running line, as one: `7 PRs open · checks 5/7 · core running on :41200`,
+    /// with **Stop** drawn after it while something runs; nil with neither.
+    public var statusLine: String? {
+        let parts = [prs, running].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
     /// `1 repo` / `7 repos`.
     public var repoCount: String { repos.count == 1 ? "1 repo" : "\(repos.count) repos" }
 }
@@ -360,6 +374,7 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         return HomeCard(
             id: w.id, key: w.tickets.first, name: w.name, project: w.project, environment: w.environment,
             isProduction: input.isProduction(w.project, w.environment), repos: repos, prs: homePRLine(rows),
+            running: input.running[w.id].flatMap { $0.isEmpty ? nil : $0 },
             needs: needs.isEmpty ? nil : needs.joined(separator: " · "), lines: mine.map(line), children: [],
             branchedFrom: parent?.name, needsYou: !needs.isEmpty, working: mine.contains { $0.state == .working },
             latest: latest, opens: mine.first?.id, moveCandidates: candidates,
