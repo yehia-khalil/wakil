@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-first-change.jsonl",
+  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
+  "provedAt": "2026-10-30T03:42:56.678477Z",
+  "checkBlob": "e2a5d5464d9ab0c87761c1350e1d1fbffb240e74"
+}
