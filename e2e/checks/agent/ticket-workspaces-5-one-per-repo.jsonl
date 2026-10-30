@@ -45,6 +45,6 @@
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
 {"expect":{"journal":{"contains":"\"action\":\"ticket_hand_off\""}}}
 {"do":{"hotkey":"cmd+shift+h"}}
-{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-api"}}
 {"expect":{"tree":"contains","text":"INI-142 · e2e-portal"}}

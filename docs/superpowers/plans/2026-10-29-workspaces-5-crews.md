@@ -110,3 +110,11 @@ lines (`wakilkit.md`, `flows.md`); the spec's piece 5 amendment.
    the git status's "not a git repository" roots. Check: `ticket-workspaces-5-one-per-repo.jsonl`.
 3. **The popover's brief focused** (Rule 3), a beat after it appears. Check: the same, step 18.
 
+## On the comp's home (2026-10-30, after piece 3's redesign)
+
+- [x] A proposal is a NEEDS YOU why (*suggests a teammate*, amber, after comments and before done), Start
+  (the brief in its popover) and Dismiss on the row; its card counts it in `● n`. In Main's block and an
+  expanded card the line reads **Suggests a teammate** for `<repo>` — `<brief>`, whole. Tests:
+  `HomeScreenTests.aProposalIsDrawnOnItsWorkspacesCardAndInMainForOneMadeThere`. Checks: the two
+  `workspaces-5-home-teammate*` read the new words and the NEEDS YOU row.
+

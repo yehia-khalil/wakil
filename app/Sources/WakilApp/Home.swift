@@ -171,9 +171,17 @@ struct Home: View {
     private func needAction(_ need: HomeNeed, n: Int) -> some View {
         if case .teammate(let id) = need.action, let p = screen?.proposal(id) {
             HStack(alignment: .firstTextBaseline, spacing: 14) {
-                proposalStart(p, key: "need:\(p.id)", base: "landing.needs:\(n)")
+                Button("Start") { startingProposal = "need:\(p.id)" }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(action)
+                    .popover(isPresented: starting("need:\(p.id)")) { startRow(p, base: "landing.needs:\(n)") }
                     .accessibilityIdentifier("landing.needs:\(n).act")
-                proposalDismiss(p).accessibilityIdentifier("landing.needs:\(n).dismiss")
+                Button("Dismiss") { dismiss(p) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(ink.opacity(HomePalette.quiet))
+                    .accessibilityIdentifier("landing.needs:\(n).dismiss")
             }
             .fixedSize()
         } else {
@@ -717,42 +725,44 @@ struct Home: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("landing.teammate:\(n)")
             HStack(alignment: .firstTextBaseline, spacing: 14) {
-                proposalStart(p, key: "line:\(p.id)", base: "landing.teammate:\(n)")
+                Button("Start") { startingProposal = "line:\(p.id)" }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(action)
+                    .popover(isPresented: starting("line:\(p.id)")) { startRow(p, base: "landing.teammate:\(n)") }
                     .accessibilityIdentifier("landing.teammate:\(n).start")
-                proposalDismiss(p).accessibilityIdentifier("landing.teammate:\(n).dismiss")
+                Button("Dismiss") { dismiss(p) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(ink.opacity(HomePalette.quiet))
+                    .accessibilityIdentifier("landing.teammate:\(n).dismiss")
             }
             .fixedSize()
         }
     }
 
-    /// Start: the proposal's brief in a popover (piece 5's own row), its field focused.
-    private func proposalStart(_ p: TeammateProposal, key: String, base: String) -> some View {
-        Button("Start") { startingProposal = key }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(action)
-            .popover(isPresented: Binding(get: { startingProposal == key },
-                                          set: { if !$0, startingProposal == key { startingProposal = nil } })) {
-                TeammateProposalRow(
-                    proposal: p,
-                    dispatch: { name, params in await model.dispatchFromSurfaceReply(name, params) },
-                    focusOnAppear: true, identifierBase: base,
-                    done: { startingProposal = nil; revision += 1 })
-                    .padding(12)
-                    .frame(width: 420)
-            }
+    /// Whether the Start popover keyed `key` (`need:` or `line:` and the proposal) is open.
+    private func starting(_ key: String) -> Binding<Bool> {
+        Binding(get: { startingProposal == key }, set: { if !$0, startingProposal == key { startingProposal = nil } })
     }
 
-    private func proposalDismiss(_ p: TeammateProposal) -> some View {
-        Button("Dismiss") {
-            Task {
-                _ = await model.dispatchFromSurfaceReply("conversation_teammate_dismiss", .object(["proposal": .string(p.id)]))
-                revision += 1
-            }
+    /// Start's popover: the proposal's brief (piece 5's own row), its field focused (Rule 3).
+    private func startRow(_ p: TeammateProposal, base: String) -> some View {
+        TeammateProposalRow(
+            proposal: p,
+            dispatch: { name, params in await model.dispatchFromSurfaceReply(name, params) },
+            focusOnAppear: true, identifierBase: base,
+            done: { startingProposal = nil; revision += 1 })
+            .padding(12)
+            .frame(width: 420)
+    }
+
+    /// Dismiss asks nothing (Rule 1): it destroys nothing.
+    private func dismiss(_ p: TeammateProposal) {
+        Task {
+            _ = await model.dispatchFromSurfaceReply("conversation_teammate_dismiss", .object(["proposal": .string(p.id)]))
+            revision += 1
         }
-        .buttonStyle(.plain)
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(ink.opacity(HomePalette.quiet))
     }
 
     // MARK: - A conversation line
