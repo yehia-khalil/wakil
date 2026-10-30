@@ -75,6 +75,12 @@ var Surfaces = []string{
 	"provider",
 	"rail",
 	"settings",
+	// The Hand to agent popover's own namespace (ticket noticing): `ticket.handoff.brief`,
+	// `.start`, `.cancel`, `.reset`, the menus, and workspaces piece 5's `ticket.handoff.agents:<one|perRepo>`
+	// and `ticket.handoff.repo:<name>`. The popover opens from the editor's Ticket view and from the
+	// palette, so it is not `editor`'s. Added by piece 5's Cover rung, on `branch`'s precedent:
+	// without it the resolver drops every one of them and no check can press one.
+	"ticket",
 	"window",
 }
 

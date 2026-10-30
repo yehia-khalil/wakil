@@ -77,3 +77,15 @@ Teammates strip. Identifiers for e2e.
 
 e2e checks under `e2e/checks/agent/` and `seeded/` (written, not run), stub rules; architecture
 lines (`wakilkit.md`, `flows.md`); the spec's piece 5 amendment.
+
+## Phase G — finish (2026-10-30)
+
+1. **Cancel for a one-per-repo start under way** (Rule 4). Test first: `ticket_hand_off_cancel` while
+   the second member starts ends both members and the reply reads `cancelled`, the popover kept
+   (`EditorTicketHandOffTests.cancelEndsAOnePerRepoStartAndStartsNoMore`); a member reserved after
+   Cancel is refused (`aMemberAfterCancelIsNotAdmitted`); the window ends a member not admitted unsent
+   and starts no more (`CrewWindowTests.aCrewMemberNotAdmittedNeverStartsAndStopsTheRest`). Then:
+   the store keeps every conversation a start reserved; `startCrew(_:admit:)` asks before each
+   member's first message; Cancel ends them all. e2e: `seeded/ws5-crew-cancel`.
+2. **e2e for the Teammates strip's controls**: the brief kept on blur, Start, Dismiss — each pressed
+   on screen through the strip's identifiers, read back from `session_list` and the thread.

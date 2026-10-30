@@ -10,6 +10,10 @@
       "reply": "asked the first where it works"
     },
     {
+      "match": "crew check: one agent per repo",
+      "reply": "crew member on its repo"
+    },
+    {
       "match": "build the portal login form against post /login",
       "reply": "portal teammate started on the form"
     },

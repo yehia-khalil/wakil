@@ -132,16 +132,17 @@ struct TicketHandOffPopover: View {
     /// once (`ticket_hand_off_brief`), so nothing waits on Enter (Rule 2). Names wrap, never cut.
     private var crew: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Picker("Agents", selection: Binding(
-                get: { state.agents },
-                set: { set(["agents": .string($0.rawValue)]) })) {
-                Text("One").tag(TicketHandOffAgents.one)
-                Text("One per repo").tag(TicketHandOffAgents.perRepo)
+            // Two buttons drawn as one segmented choice, each its own identifier: a segmented
+            // Picker's segments carry none, so neither a check nor VoiceOver could name one.
+            HStack(spacing: Space.s) {
+                Text("Agents")
+                HStack(spacing: 0) {
+                    agentsChoice("One", .one)
+                    agentsChoice("One per repo", .perRepo)
+                }
+                .background(RoundedRectangle(cornerRadius: 5).fill(EditorPaneStyle.text.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(EditorPaneStyle.text.opacity(0.18)))
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .disabled(state.starting)
-            .accessibilityIdentifier("ticket.handoff.agents")
             if state.agents == .perRepo {
                 HStack(alignment: .top, spacing: Space.m) {
                     ForEach(state.crewRepos, id: \.root) { repo in
@@ -164,6 +165,22 @@ struct TicketHandOffPopover: View {
             }
         }
         .font(.system(size: 11.5))
+    }
+
+    /// One segment of **Agents**: the chosen one filled, and said selected to VoiceOver.
+    private func agentsChoice(_ label: String, _ agents: TicketHandOffAgents) -> some View {
+        let chosen = state.agents == agents
+        return Button { if !chosen { set(["agents": .string(agents.rawValue)]) } } label: {
+            Text(label)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 5).fill(chosen ? EditorPaneStyle.violet.opacity(0.45) : .clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(state.starting)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+        .accessibilityIdentifier("ticket.handoff.agents:\(agents.rawValue)")
     }
 
     /// The brief — the operator's words only; Wakil appends the record and its actions at Start,

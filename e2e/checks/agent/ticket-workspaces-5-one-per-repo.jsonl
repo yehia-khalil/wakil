@@ -1,0 +1,50 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-1","field":"ticket.branch","equals":"ini-142-login"}}
+{"do":{"click":"editor.ticket.handOff"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"true"}}
+{"expect":{"focus":"ticket.handoff.brief"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.agents","equals":"one"}}
+{"expect":{"tree":"absent","text":"One agent per ticked repo, in one workspace"}}
+{"do":{"click":"ticket.handoff.agents:perRepo"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.agents","equals":"perRepo"}}
+{"expect":{"tree":"contains","text":"One agent per ticked repo, in one workspace; each is told who holds what, and they talk through messages."}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[0].root","contains":"e2e-git"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[0].ticked","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].root","contains":"e2e-api"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].ticked","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[2].root","contains":"e2e-portal"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[2].ticked","equals":"false"}}
+{"do":{"click":"ticket.handoff.agents:one"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.agents","equals":"one"}}
+{"expect":{"tree":"absent","text":"One agent per ticked repo, in one workspace"}}
+{"do":{"click":"ticket.handoff.agents:perRepo"}}
+{"do":{"click":"ticket.handoff.repo:e2e-portal"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[2].ticked","equals":"true"}}
+{"do":{"click":"ticket.handoff.repo:e2e-api"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].ticked","equals":"false"}}
+{"do":{"click":"ticket.handoff.repo:e2e-api"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.repos[1].ticked","equals":"true"}}
+{"dispatch":{"action":"ticket_hand_off_brief","params":{"agents":"perRepo"},"refuses":"only the operator sets agents"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"ticket.handoff.repo:e2e-portal","inside":"ticket.handoff"}}
+{"expect":{"frame":"ticket.handoff.agents:perRepo","clear":"ticket.handoff.agents:one"}}
+{"expect":{"frame":"ticket.handoff.repo:e2e-portal","clear":"ticket.handoff.repo:e2e-api"}}
+{"do":{"type":{"into":"ticket.handoff.brief","text":" Crew check: one agent per repo."}}}
+{"do":{"click":"ticket.handoff.start"}}
+{"expect":{"pane":"editor-1","field":"ticket.handoff.open","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"journal":{"contains":"\"action\":\"ticket_hand_off\""}}}
+{"expect":{"tree":"contains","text":"INI-142 · e2e-api"}}
+{"expect":{"tree":"contains","text":"INI-142 · e2e-portal"}}
