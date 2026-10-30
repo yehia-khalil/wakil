@@ -752,7 +752,7 @@ an agent's write finds its checkout.
   project (the current first), Main, cards (`HomeCard`: repos, PRs, needs, conversation lines, children,
   ⋯'s facts), pills, tickets not started here, Earlier, the help line's form, first run.
 - `HomeComposer.swift` — piece 3: `homeStartChoices` (the composer's *Start in* rows) and
-  `homeComposerPlaceholder`.
+  `homeComposerPlaceholder` (it names no place: the home is the organisation's).
 - Piece 2, running the app: `RunPlan.swift` (`RunPlan`, `RunStepResult`, `RunTryResult`,
   `readyOutputMatches`), `WorkspacePorts.swift` (the router's `ensurePorts`: blocks from wakil-ctx's
   `ports_allocate`, recorded in `workspaces.json`; `markSetUp`), `WorkspaceRunner.swift`

@@ -43,6 +43,15 @@ import Testing
             == .draft(hint: "Hold ⌥ to speak · ⌘P open · ⌘K actions"))
 }
 
+/// Amendment 2026-10-30: on the home the keys hint keeps only ⌥ to speak; the others pass through.
+@Test func onTheHomeTheKeysHintIsOnlyToSpeak() {
+    #expect(ComposerBarContent.onHome(ComposerBarContent.keysHint(Keymap(overrides: [:]))) == "Hold ⌥ to speak")
+    let rebound = Keymap(overrides: ["window.open": "⌃⌘O", "window.commands": "⌃⌘K"])
+    #expect(ComposerBarContent.onHome(ComposerBarContent.keysHint(rebound)) == "Hold ⌥ to speak")
+    #expect(ComposerBarContent.onHome(ComposerBarContent.landedHint) == ComposerBarContent.landedHint)
+    #expect(ComposerBarContent.onHome(ComposerBarContent.releaseHint) == ComposerBarContent.releaseHint)
+}
+
 @Test func theBarSaysHeardAfterALanding() {
     #expect(ComposerBarContent.make(machine: ListeningMachine(), landedUnsent: true)
             == .draft(hint: "heard · Return sends · edit first"))

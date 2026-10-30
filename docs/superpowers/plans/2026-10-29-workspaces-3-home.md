@@ -108,6 +108,15 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
    Check: `agent/workspaces-step0-terminals.jsonl` reads the terminal through Main's Open on the home.
 3. **Checks run red on piece 3's head.** `bg-agent-chip-return` follows its new pane order (terminal-2,
    api-3); `ticket-workspace-merged` signs in to the GitHub stub first (`ticket_branch` needs it).
+4. **The home is the organisation's** (amendment 2026-10-30). Tests:
+   `theHomeIsTheOrganisationsGroupedByProjectByLatestActivity`,
+   `aProjectWithNothingGoingOnIsNotDrawnOnceSomethingIsGoingOnElsewhere`, the help line's first-run
+   headers, `theHomesComposerSaysAskOrNameWhatToOpen`, `onTheHomeTheKeysHintIsOnlyToSpeak`, the keymap's
+   table (`window.home`, ⇧⌘H) and `testHomeIsAKeyCommandAndItsChordIsFree`. Code: `homeScreen` (no
+   current project), `homeComposerPlaceholder`, `ComposerBarContent.onHome`, `KeyCommand` `window.home`
+   → `session_new`; the context line's Home and org-only line; *Open a pane* under the title. Check:
+   `seeded/workspaces-home-organisation.jsonl`; `landing`, `2e-ii-rename-active-environment` and
+   `workspaces-home` read the new words.
 
 ## Interaction Rules
 

@@ -34,11 +34,6 @@ public func homeStartChoices(
     return out
 }
 
-/// The composer's placeholder on the home screen: *Ask anything — in estate · staging*; with one
-/// project and one environment, the project alone (nothing to choose).
-public func homeComposerPlaceholder(_ current: Place, choices: Int) -> String {
-    guard !current.project.isEmpty else { return "Ask, or name what to open" }
-    if choices <= 1 { return "Ask anything — in \(current.project)" }
-    let place = current.environment.isEmpty ? current.project : "\(current.project) · \(current.environment)"
-    return "Ask anything — in \(place)"
-}
+/// The composer's placeholder on the home screen (amendment 2026-10-30): it names no place — the
+/// *Start in* picker beside it already shows where a send goes.
+public let homeComposerPlaceholder = "Ask, or name what to open"

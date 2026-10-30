@@ -1,0 +1,25 @@
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"frame":"window.contextLine.home","inside":"window"}}
+{"expect":{"frame":"window.contextLine.home","minWidth":10}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"expect":{"tree":"absent","text":"you are here"}}
+{"expect":{"tree":"contains","text":"e2e-project · staging"}}
+{"expect":{"tree":"contains","text":"Ask, or name what to open"}}
+{"expect":{"tree":"contains","text":"HOLD ⌥ TO SPEAK"}}
+{"expect":{"tree":"absent","text":"⌘K ACTIONS"}}
+{"expect":{"tree":"absent","text":"Ask anything"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"tree":"contains","text":"⌘K ACTIONS"}}
+{"do":{"click":"window.contextLine.home"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"journal":{"contains":"\"action\":\"session_new\""}}}
+{"do":{"click":"landing.project.e2e-project.open"}}
+{"expect":{"tree":"absent","text":"Work in e2e-fixture"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
+{"expect":{"tree":"absent","text":"STAGING"}}

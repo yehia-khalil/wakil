@@ -13,6 +13,8 @@ struct ComposerBar: View {
     var placeholder: String = "Ask, or name what to open"
     /// On the home screen: the *Start in* picker, before the hints (workspaces, piece 3).
     var startIn: AnyView? = nil
+    /// On the home screen (amendment 2026-10-30): the keys hint keeps only ⌥ to speak.
+    var onHome: Bool = false
 
     @State private var host: NSWindow?
 
@@ -112,7 +114,7 @@ struct ComposerBar: View {
     private var hint: some View {
         let text: String
         switch composer.bar {
-        case .draft(let h), .hearing(_, _, _, _, let h), .notice(_, _, let h): text = h
+        case .draft(let h), .hearing(_, _, _, _, let h), .notice(_, _, let h): text = onHome ? ComposerBarContent.onHome(h) : h
         }
         let landed = text == ComposerBarContent.landedHint
         return Text(text.uppercased())

@@ -612,6 +612,41 @@ Calls the build made where the umbrella left room, or where code forced a refine
   conversation, which Open adopts.
 - Moving data panes when a workspace's environment changes is built (piece 1's three remaining items).
 
+### Amendment 2026-10-30 — the home is the organisation's
+
+Approved by the operator on 2026-10-30; the calls below are the build's.
+
+- **No project and no environment are selected on the home.** It shows every workspace and open
+  conversation of the organisation, grouped by project; a project is drawn while something goes on in
+  it, by latest activity, and none is pinned first or marked *you are here*. With nothing going on
+  anywhere, every project's header is drawn, each with Main's **Open**. A project and an environment
+  become selected only by starting a conversation (in Main, or as a new change in a workspace) through
+  the composer's **Start in**, or by opening a workspace or a conversation.
+- **The context line on the home names the organisation only** — no project, environment, branch or
+  workspace, at rest or promoted. *Call:* the environment still reaches the screen on the home through
+  **Start in** (red for production), which keeps Invariant 8 where a send would go.
+- **What needs a place on the home uses Start in's** (*call*): the window keeps the place Start in
+  points at — the last one worked in, pre-set as Rule 9 says — and the rail, ⌘P's sources (files,
+  tables, the api entries), the fast path and *Open a pane* read it, exactly as before. A project's
+  name on the home points Start in at that project (it no longer reads as *becoming the current
+  project*: nothing is current on the home).
+- ***Open a pane: Database · Terminal · Browser*** moves under the home's title, drawn every day; it
+  opens Main's view of Start in's place with that pane. The header's *⌘N new conversation in Main of
+  <project>* is dropped: it named a project.
+- **A Home button**: a house at the far left of the context line, before the organisation's name, at
+  rest and promoted, on every screen (`window.contextLine.home`). It and **⇧⌘H** (`window.home`, the
+  Window menu's *Home*, in the one keymap of Decision 50; no other command holds ⇧⌘H anywhere, and it
+  is taken before a browser page) run ⌘N's path, `session_new`: the home, every conversation left
+  running where it was. Rules: 6 — it is the operator's own move of the screen, the one thing it does;
+  3 — the composer is focused on arrival; 1 — nothing is closed, so nothing asks.
+- **The composer on the home**: the placeholder is *Ask, or name what to open* (Start in already shows
+  where); the hints keep only *Hold ⌥ to speak* — ⌘P and ⌘K stay in a conversation's hints. Both wrap
+  or show whole; nothing is cut.
+- Checks: `seeded/workspaces-home-organisation.jsonl` (the line, the hints, Home and ⇧⌘H);
+  `seeded/landing.jsonl`, `seeded/2e-ii-rename-active-environment.jsonl` read Start in's place where they
+  read the line's environment chip; `seeded/workspaces-home.jsonl` reads no *you are here*. The 2d-ii
+  voice checks read *TO SPEAK*, which the home's hint still carries, so they stand unchanged.
+
 ## Calls made for the operator
 
 1. **"Workspace"** is the name (Conductor and Orca use it too).

@@ -1,6 +1,6 @@
 {"expect":{"tree":"contains","text":"Work in e2e-fixture"}}
 {"expect":{"tree":"contains","text":"A conversation is one agent and its thread."}}
-{"expect":{"tree":"contains","text":"you are here"}}
+{"expect":{"tree":"absent","text":"you are here"}}
 {"expect":{"tree":"contains","text":"Open a pane:"}}
 {"expect":{"tree":"absent","text":"CONTINUE · NEWEST FIRST"}}
 {"expect":{"frame":"landing.title","minWidth":40}}

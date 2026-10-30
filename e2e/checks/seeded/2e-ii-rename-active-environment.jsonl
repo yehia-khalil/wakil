@@ -1,4 +1,4 @@
-{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"tree":"contains","text":"e2e-project · staging"}}
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.environment.e2e-project.staging"}}
 {"do":{"focus":"settings.environment.name"}}

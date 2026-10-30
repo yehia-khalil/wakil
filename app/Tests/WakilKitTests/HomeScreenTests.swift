@@ -37,7 +37,9 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
                    activity: "", openable: true)
 }
 
-@Test func theHomeIsTheOrganisationsGroupedByProjectTheCurrentFirst() {
+/// Amendment 2026-10-30 — the home is the organisation's: no project is selected on it, so none is
+/// pinned first or marked; projects go by latest activity, and one with nothing going on is not drawn.
+@Test func theHomeIsTheOrganisationsGroupedByProjectByLatestActivity() {
     let a = ws("w1", "Login rate limit", tickets: ["INI-142"])
     let b = ws("w2", "Exception pages", project: "dashboard")
     let screen = homeScreen(HomeInput(
@@ -45,17 +47,15 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
         workspaces: [listing(a), listing(b)],
         live: [conv("c2", "Fix exception pages", .working, place: web, workspace: b, ago: 0)]))
     #expect(screen.title == "Work in initech")
-    #expect(screen.sections.map(\.project) == ["estate", "dashboard"], "the current first; a project with nothing is not drawn")
-    #expect(screen.sections[0].current && !screen.sections[1].current)
-    #expect(screen.pills.map(\.label) == ["All projects", "estate", "dashboard"])
+    #expect(screen.sections.map(\.project) == ["dashboard", "estate"], "the latest first; a project with nothing is not drawn")
+    #expect(screen.pills.map(\.label) == ["All projects", "dashboard", "estate"])
 }
 
-@Test func theCurrentProjectIsDrawnEvenWithNothingGoingOn() {
+@Test func aProjectWithNothingGoingOnIsNotDrawnOnceSomethingIsGoingOnElsewhere() {
     let b = ws("w2", "Exception pages", project: "dashboard")
     let screen = homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
-                                      workspaces: [listing(b)]))
-    #expect(screen.sections.map(\.project) == ["estate", "dashboard"])
-    #expect(screen.sections[0].summary == "nothing going on")
+                                      projects: ["dashboard", "estate"], workspaces: [listing(b)]))
+    #expect(screen.sections.map(\.project) == ["dashboard"])
 }
 
 @Test func aPillFiltersTheSameScreenAndKeepsEveryPill() {
@@ -148,7 +148,7 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
         organization: "initech", project: "estate", environment: "staging",
         workspaces: [listing(a), listing(b, holders: ["/p/api": "held"], live: ["held": .idle])],
         live: [conv("main", "in Main"), conv("held", "holds one", workspace: b), conv("other", "elsewhere", place: web)]))
-    let card = screen.sections[0].cards.first { $0.id == "w1" }!
+    let card = screen.sections.first { $0.project == "estate" }!.cards.first { $0.id == "w1" }!
     #expect(card.moveCandidates.map(\.title) == ["in Main"], "decision 6: one holding a copy is not moved; another project's never")
 }
 
@@ -181,8 +181,11 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
     #expect(!busy.helpInFull && !busy.firstRun)
     let empty = homeScreen(HomeInput(organization: "o", project: "estate", environment: "s", tickets: [ticket("INI-1")]))
     #expect(empty.firstRun && empty.helpInFull)
-    // The current project's header (Main's Open, *Open a pane*) stands on the first run too.
-    #expect(empty.sections.map(\.project) == ["estate"] && empty.sections[0].current)
+    // With nothing going on anywhere, every project's header stands, each with Main's Open.
+    let firstRun = homeScreen(HomeInput(organization: "o", project: "estate", environment: "s",
+                                        projects: ["dashboard", "estate"]))
+    #expect(firstRun.firstRun && firstRun.sections.map(\.project) == ["dashboard", "estate"])
+    #expect(firstRun.sections.allSatisfy { $0.summary == "nothing going on" })
     #expect(empty.ticketsNotStarted.count == 1)
 }
 
@@ -208,11 +211,9 @@ private func ticket(_ key: String, branch: String = "", pr: Int = 0, failing: [S
     #expect(choices[1].isProduction, "production stays red in the picker (Invariant 8)")
 }
 
-@Test func theComposerNamesWhereASendGoes() {
-    #expect(homeComposerPlaceholder(staging, choices: 3) == "Ask anything — in estate · staging")
-    #expect(homeComposerPlaceholder(staging, choices: 1) == "Ask anything — in estate")
-    #expect(homeComposerPlaceholder(Place(organization: "o", project: "", environment: ""), choices: 0)
-        == "Ask, or name what to open")
+/// Amendment 2026-10-30: Start in shows where a send goes, so the placeholder names no place.
+@Test func theHomesComposerSaysAskOrNameWhatToOpen() {
+    #expect(homeComposerPlaceholder == "Ask, or name what to open")
 }
 
 // Decision 11: the card offers Archive once every PR of the workspace is merged.

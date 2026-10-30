@@ -101,11 +101,6 @@ struct Home: View {
                         .accessibilityLabel(HomeScreen.help)
                         .accessibilityIdentifier("landing.help.info")
                 }
-                Spacer(minLength: 8)
-                Text("⌘N new conversation in Main of \(model.project)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(coolWhite.opacity(0.45))
-                    .fixedSize(horizontal: false, vertical: true)
             }
             if screen.helpInFull {
                 Text(HomeScreen.help)
@@ -114,6 +109,8 @@ struct Home: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("landing.help")
             }
+            // Decision 26's line, on every day: Main's view of where Start in points, with that pane.
+            openAPane
             if !screen.pills.isEmpty { pills(screen.pills) }
         }
         .padding(.top, 8)
@@ -160,18 +157,15 @@ struct Home: View {
                         .foregroundStyle(coolWhite.opacity(0.92))
                 }
                 .buttonStyle(.plain)
-                .disabled(section.current)
+                .help("Start in this project: where a send from the home goes")
                 .accessibilityIdentifier("landing.project.\(section.project)")
-                if section.current {
-                    Text("you are here").font(.system(size: 11)).foregroundStyle(violet.opacity(0.9))
-                }
                 Text(section.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(coolWhite.opacity(0.45))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Button("Open") {
-                    Task { await model.openWorkspace(nil, project: section.project, environment: section.current ? model.environment : nil) }
+                    Task { await model.openWorkspace(nil, project: section.project, environment: section.project == model.projectKey ? model.environment : nil) }
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
@@ -179,7 +173,6 @@ struct Home: View {
                 .help("Open Main's view: your own folders, with panes and no agent")
                 .accessibilityIdentifier("landing.project.\(section.project).open")
             }
-            if section.current { openAPane }
             if let main = section.main { mainBlock(main) }
             ForEach(section.cards) { card in cardView(card, depth: 0) }
         }
@@ -563,12 +556,11 @@ struct Home: View {
             .foregroundStyle(coolWhite.opacity(0.62))
             .fixedSize(horizontal: false, vertical: true)
         if !screen.ticketsNotStarted.isEmpty { tickets(screen.ticketsNotStarted, title: "Tickets in flight") }
-        if screen.sections.isEmpty { openAPane }
         if let line = screen.earlier.line { earlier(screen.earlier, line: line) }
     }
 
     /// *Open a pane: Database · Terminal · Browser* — each opens Main's view with that pane
-    /// (decision 26). Drawn on first run and under the current project's header.
+    /// (decision 26), in the place *Start in* points at. Drawn under the home's title on every day.
     private var openAPane: some View {
         HStack(spacing: 6) {
             Text("Open a pane:").font(.system(size: 12)).foregroundStyle(coolWhite.opacity(0.5))

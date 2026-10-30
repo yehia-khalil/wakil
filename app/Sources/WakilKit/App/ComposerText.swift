@@ -62,10 +62,18 @@ public enum ComposerBarContent: Sendable, Equatable {
     /// them now (Decision 50). A command with no chord drops out rather than naming a key that
     /// does nothing. ⌥ is the dictation key and is not rebindable.
     public static func keysHint(_ keymap: Keymap) -> String {
-        var parts = ["Hold ⌥ to speak"]
+        var parts = [homeKeysHint]
         if let open = keymap.chord("window.open") { parts.append("\(open.text) open") }
         if let actions = keymap.chord("window.commands") { parts.append("\(actions.text) actions") }
         return parts.joined(separator: " · ")
+    }
+    /// The keys hint on the home (workspaces, amendment 2026-10-30): only ⌥ to speak.
+    public static let homeKeysHint = "Hold ⌥ to speak"
+
+    /// `hint` as the home's composer draws it: the keys hint, whatever chords it names, shortened
+    /// to ⌥ alone; any other as it is.
+    public static func onHome(_ hint: String) -> String {
+        hint.hasPrefix(homeKeysHint) ? homeKeysHint : hint
     }
     public static let landedHint = "heard · Return sends · edit first"
     public static let releaseHint = "release to put it in the line"

@@ -85,7 +85,7 @@ public struct Keymap: Sendable, Equatable {
     /// still reach a web app that handles them.
     public static let beforePage: Set<String> = {
         var ids: Set<String> = [
-            "window.commands", "window.open", "conversation.new", "conversation.close",
+            "window.commands", "window.open", "conversation.new", "conversation.close", "window.home",
             "editor.newScratch", "browser.newTab", "pane.close", "browser.closeTab",
             "browser.focusAddress", "window.settings", "browser.bookmark", "browser.copyURL",
             "window.toggleRail", "browser.lastTab", "browser.toggleTabColumn",

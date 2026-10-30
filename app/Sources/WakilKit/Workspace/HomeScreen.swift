@@ -170,8 +170,6 @@ public struct HomeMain: Sendable, Equatable {
 public struct HomeSection: Sendable, Equatable, Identifiable {
     public var id: String { project }
     public let project: String
-    /// The current project: *you are here*.
-    public let current: Bool
     public var main: HomeMain?
     public var cards: [HomeCard]
     public let latest: Date
@@ -385,7 +383,8 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         return cards.sorted { (rank($0), $1.latest, $0.id) < (rank($1), $0.latest, $1.id) }
     }
 
-    // Projects: each with something going on, the current one always (its header holds Main's Open).
+    let firstRun = live.isEmpty && open.isEmpty
+    // Projects: each with something going on; every one on the first run.
     var projects: [String] = []
     for p in [input.project] + input.projects + open.map(\.workspace.project) + live.map(\.place.project)
     where !p.isEmpty && !projects.contains(p) { projects.append(p) }
@@ -409,13 +408,14 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
         let mainLines = live.filter { c in c.place.project == p && c.workspace == nil && !open.contains { $0.live[c.id] != nil } }
             .sorted { $0.lastActivity > $1.lastActivity }.map(line)
         let main = mainLines.isEmpty ? nil : HomeMain(lines: mainLines)
-        guard p == input.project || main != nil || !cards.isEmpty else { continue }
+        // The home is the organisation's (amendment 2026-10-30): a project is drawn while something
+        // goes on in it; with nothing going on anywhere, every project is, each with Main's Open.
+        guard firstRun || main != nil || !cards.isEmpty else { continue }
         let latest = (cards.map(\.latest) + mainLines.map(\.lastActivity)).max() ?? distantPast
-        sections.append(HomeSection(project: p, current: p == input.project, main: main,
+        sections.append(HomeSection(project: p, main: main,
                                     cards: ordered(top).map(nest), latest: latest))
     }
-    let current = sections.filter(\.current)
-    sections = current + sections.filter { !$0.current }.sorted { ($0.latest, $1.project) > ($1.latest, $0.project) }
+    sections.sort { ($0.latest, $1.project) > ($1.latest, $0.project) }
 
     // Pills, before the filter narrows anything.
     func needsYou(_ s: HomeSection) -> Int {
@@ -473,5 +473,5 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
     return HomeScreen(
         title: "Work in \(org)", pills: pills, sections: sections, ticketsNotStarted: notStarted,
         earlier: HomeEarlier(archived: archived, past: groups), helpInFull: cardCount <= 3,
-        firstRun: live.isEmpty && open.isEmpty)
+        firstRun: firstRun)
 }

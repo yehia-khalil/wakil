@@ -6,8 +6,8 @@ import Testing
     private let plain = Keymap(overrides: [:])
 
     @Test func tableHasAllFortyFourCommands() {
-        #expect(KeyCommand.all.count == 44)
-        #expect(Set(KeyCommand.all.map(\.id)).count == 44)
+        #expect(KeyCommand.all.count == 45)
+        #expect(Set(KeyCommand.all.map(\.id)).count == 45)
         #expect(FixedKey.all.count == 8)
     }
 
@@ -25,6 +25,7 @@ import Testing
             ("editor.searchFiles", "Search Files", "A", "⇧⌘F", "Editor"),
             ("editor.showChanges", "Show Changes", "A", "⇧⌘G", "Editor"),
             ("editor.save", "Save", "A", "⌘S", "Editor"),
+            ("window.home", "Home", "A", "⇧⌘H", "Window"),
             ("window.organisation", "Organisation…", "A", "⇧⌘O", "Window"),
             ("window.open", "Open…", "A", "⌘P", "Window"),
             ("window.commands", "Run a Command…", "A", "⌘K", "Window"),

@@ -205,6 +205,9 @@ private let keptPerPlace: Set<String> = [
     // Workspaces, piece 2: each repo's drafting conversation, keyed by its project file and naming
     // the conversation by id — that conversation survives a switch, and so does what it drafts.
     "recipeDraftBook",
+    // Workspaces, piece 3: what runs in each workspace, by id — the apps keep running across a switch
+    // (spec, Errors and edges), and the home draws only the incoming organisation's workspaces.
+    "homeRunLines",
 ]
 
 private let orgIndependent: Set<String> = [

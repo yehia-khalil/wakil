@@ -136,7 +136,7 @@ import from the Passwords app's CSV).
 |---|---|---|
 | `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover. Waiting on you: the amber tick and ` · N` on an editor row, or a `Tickets · N` row when no editor is open |
 | `RailPeek` | `RailPeek.swift` | The collapsed rail (⌃⌘R, `rail_set`): the spine of marks, the 6 pt edge zone and the rail sliding out over the canvas on a 150 ms rest |
-| `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line |
+| `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line; on the home, the organisation only. Its Home button (`window.home`, ⇧⌘H) goes back to the organisation's home |
 | `ComposerBar` | `ComposerBar.swift` | The bar typed and spoken text land in; Return sends |
 | `ThoughtThread` | `ThoughtThread.swift` | The agent's progress, rising from the bottom edge |
 | `ConfirmationPlane` | `ConfirmationPlane.swift` | The typed confirmation for a gated mutation; the site question (3c-ii): **Don't Allow** / **Allow for this conversation**, a click for a typed request and the typed word for a spoken one |

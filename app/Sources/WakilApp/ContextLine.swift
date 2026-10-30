@@ -117,6 +117,31 @@ struct ContextLine: View {
         }
     }
 
+    /// The home is on screen (workspaces, amendment 2026-10-30): it is the organisation's, so the
+    /// line names the organisation only — no project, environment, branch or workspace is selected
+    /// there. *Start in*, in the composer, shows where a send goes (red for production, Invariant 8).
+    private var onHome: Bool { !model.sessionStarted && !model.organization.isEmpty }
+
+    /// Home, at the far left in both states: back to the organisation's home from anywhere, by the
+    /// same path as ⇧⌘H (`window.home`, which dispatches `session_new` as ⌘N does). A press the
+    /// operator makes moves the screen (Rule 6); nothing is closed or asked (Rule 1).
+    private var homeButton: some View {
+        let chord = model.keymap.chord("window.home")?.text
+        return Button {
+            Task { _ = await model.runKeyCommand("window.home") }
+        } label: {
+            Image(systemName: "house")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(coolWhite.opacity(onHome ? 0.95 : 0.78))
+                .padding(4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Home: every workspace and conversation of \(model.organization)" + (chord.map { " (\($0))" } ?? ""))
+        .accessibilityLabel("Home")
+        .accessibilityIdentifier("window.contextLine.home")
+    }
+
     private var isProduction: Bool {
         VoidPalette.forEnvironment(model.environment, production: model.environmentProduction).isProduction
     }
@@ -238,32 +263,42 @@ struct ContextLine: View {
                 .tracking(1.7)
                 .foregroundStyle(coolWhite.opacity(0.52))
             HStack(alignment: .firstTextBaseline, spacing: 15) {
+                homeButton
                 Text(model.organization.isEmpty ? "unknown" : model.organization)
                     .font(.system(size: 19))
                     .foregroundStyle(coolWhite)
-                // §6: identifiers are monospace, always.
-                Text(model.project.isEmpty ? "no project" : model.project)
+                if !onHome { restingPlace }
+            }
+        }
+    }
+
+    /// The rest of the resting line, off the home: the project, its environment, the branch and the
+    /// view's workspace.
+    @ViewBuilder
+    private var restingPlace: some View {
+        Group {
+            // §6: identifiers are monospace, always.
+            Text(model.project.isEmpty ? "no project" : model.project)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(coolWhite.opacity(0.50))
+            // Absent with no project, for the reason the segment is: an
+            // environment lives inside a project's own map, so there is
+            // nothing here to be unset from.
+            if !model.project.isEmpty { chip }
+            // 3a-iv: the active root's branch, an identifier, so monospace (§6).
+            if let branch = model.branchSegment {
+                Text(branch)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(coolWhite.opacity(0.50))
-                // Absent with no project, for the reason the segment is: an
-                // environment lives inside a project's own map, so there is
-                // nothing here to be unset from.
-                if !model.project.isEmpty { chip }
-                // 3a-iv: the active root's branch, an identifier, so monospace (§6).
-                if let branch = model.branchSegment {
-                    Text(branch)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.50))
-                        .lineLimit(1).truncationMode(.middle)
-                }
-                // Workspaces, piece 1: the view's workspace (Main names none), whole.
-                if let workspace = model.workspaceOnScreen {
-                    Text("› \(workspace.name)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(coolWhite.opacity(0.62))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("window.contextLine.workspace")
-                }
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            // Workspaces, piece 1: the view's workspace (Main names none), whole.
+            if let workspace = model.workspaceOnScreen {
+                Text("› \(workspace.name)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(coolWhite.opacity(0.62))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("window.contextLine.workspace")
             }
         }
     }
@@ -288,11 +323,14 @@ struct ContextLine: View {
 
     private var promoted: some View {
         HStack(alignment: .top, spacing: 28) {
+            homeButton
             organisation
-            project
-            environment
-            branch
-            workspace
+            if !onHome {
+                project
+                environment
+                branch
+                workspace
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)

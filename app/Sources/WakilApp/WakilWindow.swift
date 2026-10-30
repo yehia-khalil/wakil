@@ -390,10 +390,10 @@ struct WakilWindow: View {
                             ComposerBar(
                                 composer: session.composer,
                                 onEscapeUnconsumed: { threadDisclosure.escape() },
-                                placeholder: session.model.sessionStarted || session.model.project.isEmpty
-                                    ? "Ask, or name what to open" : homeComposerPlaceholder(session.model.place, choices: 2),
+                                placeholder: homeComposerPlaceholder,
                                 startIn: session.model.sessionStarted || session.model.project.isEmpty
-                                    ? nil : AnyView(ComposerStartIn(model: session.model)))
+                                    ? nil : AnyView(ComposerStartIn(model: session.model)),
+                                onHome: !session.model.sessionStarted)
                             // Task 10: the running account, always on screen — the same
                             // standing Invariant 8 already gives the environment, for the
                             // reason this task exists at all: "work account against a
