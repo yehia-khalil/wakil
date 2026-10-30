@@ -74,5 +74,6 @@
 {"expect":{"tree":"absent","text":"the second word arrived"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.card:0.expand"}}
 {"expect":{"tree":"contains","text":" #2"}}
 {"expect":{"tree":"absent","text":"branched off"}}
