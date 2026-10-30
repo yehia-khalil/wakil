@@ -482,7 +482,7 @@ final class EditorTabsWriteGate {
     /// saved-tabs write is its scope's, which stays (background agents 3 of 4), so it lands.
     @Test func anOrgSwitchClosesThePathFieldAndKeepsTheTabsWrite() async throws {
         let (model, _) = await editorWindow()
-        model.editorTabsDelay = .milliseconds(50)
+        let gate = EditorTabsWriteGate(model)
         await model.refreshContext()
         await model.newScratch()
         let pane = try #require(model.layoutSnapshot.focusedId)
@@ -492,6 +492,9 @@ final class EditorTabsWriteGate {
                                         selection: nil, visibleRange: nil, scrollTop: 0)
         await model.invalidateForOrgChange()
         #expect(model.editorSaveAsRequest == nil)
+        // Still pending across the switch, as the check means; on a 50ms real clock a loaded run can
+        // begin the write during the switch, and settling then finds nothing to wait for.
+        gate.open()
         await model.settleEditorTabsWrite(pane: pane)
         #expect(model.editorTabsWriteCount == 1)
     }
