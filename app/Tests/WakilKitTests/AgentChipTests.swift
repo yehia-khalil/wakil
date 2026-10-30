@@ -3,7 +3,9 @@ import Testing
 @testable import WakilKit
 
 // Background agents, 4 of 4, Task 1: one chip per agent in another place, and the click that
-// goes there.
+// goes there. Workspaces, piece 3: the home shows the organisation's own conversations, so the
+// window draws only another organisation's (`chips`); the tests of what a chip says and when one
+// shows read every candidate (`chipCandidates`), which the filter narrows.
 
 private let org = "initech"
 private let placeA = Place(organization: org, project: "api", environment: "staging")
@@ -55,7 +57,7 @@ struct AgentChipTests {
     @Test func noAgentsElsewhereMeansNoChips() {
         let model = chipWindow(Harnesses())
         show(placeA, in: model)
-        #expect(model.chips.isEmpty)
+        #expect(model.chipCandidates.isEmpty)
     }
 
     @Test func aWorkingAgentElsewhereIsAVioletChip() async throws {
@@ -63,8 +65,8 @@ struct AgentChipTests {
         let model = chipWindow(harnesses)
         await startTurn(in: placeA, thenShow: placeB, model)
 
-        let chip = try #require(model.chips.first)
-        #expect(model.chips.count == 1)
+        let chip = try #require(model.chipCandidates.first)
+        #expect(model.chipCandidates.count == 1)
         #expect(chip.place == placeA)
         #expect(chip.state == .working)
         #expect(chip.label == "initech · api · staging — hello api")
@@ -82,9 +84,9 @@ struct AgentChipTests {
             conversation: try #require(model.agents[placeA]?.id))
         let parked = Task { await broker.request(proposal) }
 
-        #expect(await waitUntil { model.chips.first?.state == .waiting }, "\(model.chips)")
+        #expect(await waitUntil { model.chipCandidates.first?.state == .waiting }, "\(model.chipCandidates)")
         #expect(model.agents[placeA]?.turnInFlight == true, "the turn is in flight too")
-        #expect(model.chips.count == 1)
+        #expect(model.chipCandidates.count == 1)
 
         await broker.cancel(id: proposal.id)
         _ = await parked.value
@@ -102,7 +104,7 @@ struct AgentChipTests {
         let parked = Task { await broker.request(proposal) }
 
         #expect(await waitUntil { model.waitingPlaces == [placeA] }, "parked")
-        #expect(model.chips.map(\.state) == [.working], "\(model.chips)")
+        #expect(model.chipCandidates.map(\.state) == [.working], "\(model.chipCandidates)")
 
         await broker.cancel(id: proposal.id)
         _ = await parked.value
@@ -116,13 +118,13 @@ struct AgentChipTests {
 
         harnessA.emit(.result(isError: false, text: "done A"))
 
-        #expect(await waitUntil { model.chips.first?.state == .done }, "\(model.chips)")
+        #expect(await waitUntil { model.chipCandidates.first?.state == .done }, "\(model.chipCandidates)")
         #expect(model.agents[placeA]?.turnInFlight == false)
 
         await visit(placeA, in: model)
         await visit(placeB, in: model)
 
-        #expect(model.chips.isEmpty, "seen, and idle: no chip")
+        #expect(model.chipCandidates.isEmpty, "seen, and idle: no chip")
     }
 
     @Test func visitingAPlaceClearsOnlyItsChip() async throws {
@@ -132,14 +134,14 @@ struct AgentChipTests {
         await startTurn(in: placeC, thenShow: placeB, model)
         try #require(harnesses.in(placeA).first).emit(.result(isError: false, text: "done A"))
         try #require(harnesses.in(placeC).first).emit(.result(isError: false, text: "done C"))
-        #expect(await waitUntil { model.chips.map(\.state) == [.done, .done] }, "\(model.chips)")
+        #expect(await waitUntil { model.chipCandidates.map(\.state) == [.done, .done] }, "\(model.chipCandidates)")
 
         await visit(placeA, in: model)
-        #expect(model.chips.map(\.place) == [placeC], "A is on screen; C's result is still unseen")
+        #expect(model.chipCandidates.map(\.place) == [placeC], "A is on screen; C's result is still unseen")
         await visit(placeB, in: model)
 
-        #expect(model.chips.map(\.place) == [placeC])
-        #expect(model.chips.first?.state == .done)
+        #expect(model.chipCandidates.map(\.place) == [placeC])
+        #expect(model.chipCandidates.first?.state == .done)
     }
 
     @Test func aFailedSessionOffScreenIsAFailedChip() async throws {
@@ -153,12 +155,12 @@ struct AgentChipTests {
         let harnessC = try #require(harnesses.in(placeC).first)
         await harnessC.stop()
 
-        #expect(await waitUntil { model.chips.map(\.state) == [.failed, .failed] }, "\(model.chips)")
-        #expect(model.chips.map(\.place) == [placeA, placeC])
+        #expect(await waitUntil { model.chipCandidates.map(\.state) == [.failed, .failed] }, "\(model.chipCandidates)")
+        #expect(model.chipCandidates.map(\.place) == [placeA, placeC])
 
         await visit(placeC, in: model)
         await visit(placeB, in: model)
-        #expect(model.chips.map(\.place) == [placeA], "visiting C cleared C's failure, not A's")
+        #expect(model.chipCandidates.map(\.place) == [placeA], "visiting C cleared C's failure, not A's")
     }
 
     @Test func theScreensOwnAgentHasNoChip() async throws {
@@ -166,13 +168,13 @@ struct AgentChipTests {
         let model = chipWindow(harnesses)
         show(placeA, in: model)
         #expect(await model.send("hello A"))
-        #expect(model.chips.isEmpty, "working on screen: no chip")
+        #expect(model.chipCandidates.isEmpty, "working on screen: no chip")
 
         try #require(harnesses.in(placeA).first).emit(.result(isError: false, text: "done A"))
         #expect(await waitUntil { model.agents[placeA]?.turnInFlight == false })
         show(placeB, in: model)
 
-        #expect(model.chips.isEmpty, "a result seen on screen leaves nothing to show elsewhere")
+        #expect(model.chipCandidates.isEmpty, "a result seen on screen leaves nothing to show elsewhere")
     }
 
     @Test func aProductionPlacesChipMarksItsEnvironment() async throws {
@@ -182,9 +184,9 @@ struct AgentChipTests {
         await startTurn(in: production, thenShow: placeA, model)
         await startTurn(in: placeB, thenShow: placeA, model)
 
-        #expect(model.chips.map(\.place) == [production, placeB], "ordered by org, project, environment")
-        #expect(model.chips.map(\.productionEnvironment) == [true, false])
-        #expect(model.chips.first?.label == "initech · api · production — hello api")
+        #expect(model.chipCandidates.map(\.place) == [production, placeB], "ordered by org, project, environment")
+        #expect(model.chipCandidates.map(\.productionEnvironment) == [true, false])
+        #expect(model.chipCandidates.first?.label == "initech · api · production — hello api")
     }
 
     @Test func goToReachesAPlaceInAnotherOrg() async throws {
@@ -238,8 +240,8 @@ struct AgentChipTests {
 
         #expect(model.place == shopStaging, "\(model.status)")
         #expect(model.agents[shopStaging]?.unseenResult == false, "landed on: seen")
-        #expect(model.chips.map(\.place) == [webDev], "passed through, never seen")
-        #expect(model.chips.first?.state == .done)
+        #expect(model.chipCandidates.map(\.place) == [webDev], "passed through, never seen")
+        #expect(model.chipCandidates.first?.state == .done)
     }
 
     @Test func goToWithinAnOrgLeavesTheEnvironmentItPassedThrough() async throws {
@@ -256,8 +258,8 @@ struct AgentChipTests {
         await model.goTo(apiProduction)
 
         #expect(model.place == apiProduction, "\(model.status)")
-        #expect(model.chips.map(\.place) == [apiStaging])
-        #expect(model.chips.first?.state == .done)
+        #expect(model.chipCandidates.map(\.place) == [apiStaging])
+        #expect(model.chipCandidates.first?.state == .done)
     }
 
     @Test func aRefusedGoToClearsOnlyWhereItStopped() async throws {
@@ -278,8 +280,58 @@ struct AgentChipTests {
         #expect(model.status.contains("no environment nosuch"), "\(model.status)")
         #expect(model.place == shopDev)
         #expect(model.agents[shopDev]?.unseenResult == false, "where it stopped is on screen: seen")
-        #expect(model.chips.map(\.place) == [webDev])
-        #expect(model.chips.first?.state == .done)
+        #expect(model.chipCandidates.map(\.place) == [webDev])
+        #expect(model.chipCandidates.first?.state == .done)
+    }
+
+    // Workspaces, piece 3: chips show only other organisations' agents, naming the workspace.
+
+    @Test func anAgentOfTheScreensOwnOrganisationHasNoChip() async throws {
+        let harnesses = Harnesses()
+        let model = chipWindow(harnesses)
+        await startTurn(in: placeA, thenShow: placeB, model)
+
+        #expect(model.chipCandidates.map(\.place) == [placeA], "it is working off screen")
+        #expect(model.chips.isEmpty, "the home lists it: no chip in its own organisation")
+
+        // The screen moves to another organisation: the agent left behind is a chip there.
+        model.setOrganizationForTesting("umbrella")
+        show(Place(organization: "umbrella", project: "web", environment: "staging"), in: model)
+
+        let chip = try #require(model.chips.first)
+        #expect(model.chips.count == 1)
+        #expect(chip.place == placeA)
+        #expect(chip.label == "initech · api · staging — hello api")
+    }
+
+    @Test func aChipNamesItsWorkspaceBeforeTheConversation() {
+        let inMain = AgentChip(place: placeA, state: .waiting, productionEnvironment: false, conversation: "c1",
+                               title: "frontend")
+        #expect(inMain.subject == "frontend")
+        #expect(inMain.label == "initech · api · staging — frontend")
+        let inWorkspace = AgentChip(place: placeA, state: .waiting, productionEnvironment: false, conversation: "c2",
+                                    title: "frontend", workspace: "INI-87")
+        #expect(inWorkspace.subject == "INI-87 · frontend")
+        #expect(inWorkspace.label == "initech · api · staging — INI-87 · frontend")
+        #expect(inWorkspace.identifier == "window.agentChip.initech/api/staging", "a check presses it as before")
+    }
+
+    @Test func anAgentInAWorkspaceIsChippedByTheWorkspacesTicketElseItsName() async throws {
+        let harnesses = Harnesses()
+        let model = chipWindow(harnesses)
+        await startTurn(in: placeA, thenShow: placeB, model)
+        await startTurn(in: placeC, thenShow: placeB, model)
+        let a = try #require(model.agents[placeA]), c = try #require(model.agents[placeC])
+        a.workspace = Workspace(id: "w1", name: "Login rate limit", slug: "login", project: "api", environment: "staging",
+                                tickets: ["INI-87"])
+        c.workspace = Workspace(id: "w2", name: "Tidy the docs", slug: "docs", project: "crm", environment: "staging")
+        model.setOrganizationForTesting("umbrella")
+        show(Place(organization: "umbrella", project: "web", environment: "staging"), in: model)
+
+        #expect(model.chips.map(\.label) == [
+            "initech · api · staging — INI-87 · hello api",
+            "initech · crm · staging — Tidy the docs · hello crm",
+        ])
     }
 }
 
@@ -299,7 +351,7 @@ private func finishOffScreen(
     for place in places {
         try #require(harnesses.in(place).first).emit(.result(isError: false, text: "done"))
     }
-    #expect(await waitUntil { model.chips.map(\.state) == places.map { _ in .done } }, "\(model.chips)")
+    #expect(await waitUntil { model.chipCandidates.map(\.state) == places.map { _ in .done } }, "\(model.chipCandidates)")
 }
 
 // Task 2's controller ruling: the chip's production flag, read off the place's own project.
@@ -391,8 +443,8 @@ struct AgentChipProductionTests {
         let model = flagWindow(Harnesses(), pinned: pinned)
         await startTurn(in: live, thenShow: placeB, model)
 
-        #expect(await waitUntil { model.chips.first?.productionEnvironment == true }, "\(model.chips)")
-        #expect(model.chips.map(\.place) == [live])
+        #expect(await waitUntil { model.chipCandidates.first?.productionEnvironment == true }, "\(model.chipCandidates)")
+        #expect(model.chipCandidates.map(\.place) == [live])
     }
 
     // Final review, item 2: a conversation that has sent nothing is listed too, and its row is
@@ -416,8 +468,8 @@ struct AgentChipProductionTests {
         let model = flagWindow(Harnesses(), pinned: pinned)
         await startTurn(in: namedProduction, thenShow: placeB, model)
 
-        #expect(await waitUntil { model.chips.first?.productionEnvironment == false }, "\(model.chips)")
-        #expect(model.chips.map(\.place) == [namedProduction])
+        #expect(await waitUntil { model.chipCandidates.first?.productionEnvironment == false }, "\(model.chipCandidates)")
+        #expect(model.chipCandidates.map(\.place) == [namedProduction])
     }
 
     @Test func theNameRuleStandsWhenTheReadFails() async throws {
@@ -427,7 +479,7 @@ struct AgentChipProductionTests {
 
         #expect(await waitUntil { await pinned.asked > 0 })
         try await Task.sleep(nanoseconds: 50_000_000)
-        #expect(model.chips.first?.productionEnvironment == true, "unread, the name says production")
+        #expect(model.chipCandidates.first?.productionEnvironment == true, "unread, the name says production")
     }
 
     @Test func aChipIsNamedByItsConversationAndOrdinal() {
@@ -493,8 +545,8 @@ struct AgentChipProductionTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         show(placeB, in: model)
 
-        #expect(model.chips.map(\.place) == [live])
-        #expect(model.chips.first?.productionEnvironment == true, "the older read landed last and was dropped")
+        #expect(model.chipCandidates.map(\.place) == [live])
+        #expect(model.chipCandidates.first?.productionEnvironment == true, "the older read landed last and was dropped")
     }
 }
 

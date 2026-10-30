@@ -106,13 +106,13 @@ struct ConversationSwitchTests {
         #expect(first.harness != nil && sessions.harnesses.in(placeA).first?.stopped == false)
         #expect(first.turnInFlight, "its turn carries on")
         try #require(sessions.harnesses.in(placeA).first).emit(.result(isError: false, text: "done"))
-        #expect(await waitUntil { model.chips.first?.state == .done }, "\(model.chips)")
-        #expect(model.chips.first?.conversation == first.id)
+        #expect(await waitUntil { model.chipCandidates.first?.state == .done }, "\(model.chipCandidates)")
+        #expect(model.chipCandidates.first?.conversation == first.id)
 
         await model.switchToConversation(first.id)
 
         #expect(model.currentAgent === first && model.sessionId == first.sessionId)
-        #expect(model.chips.isEmpty, "seen on its return")
+        #expect(model.chipCandidates.isEmpty, "seen on its return")
         #expect(sessions.harnesses.in(placeA).count == 1, "no fork, no fresh process")
         await model.shutdown()
     }
@@ -371,13 +371,13 @@ struct ConversationSwitchTests {
         await model.goTo(away)
         try #require(model.place == away, "\(model.status)")
         try #require(harnesses.in(home).last).emit(.result(isError: false, text: "done"))
-        #expect(await waitUntil { model.chips.contains { $0.conversation == second.id && $0.state == .done } })
+        #expect(await waitUntil { model.chipCandidates.contains { $0.conversation == second.id && $0.state == .done } })
 
         await model.switchToConversation(first.id)
 
         #expect(model.place == home, "\(model.status)")
         #expect(model.currentAgent === first, "that conversation, not the place's other one")
-        #expect(model.chips.contains { $0.conversation == second.id && $0.state == .done },
+        #expect(model.chipCandidates.contains { $0.conversation == second.id && $0.state == .done },
                 "the place's other conversation was not seen by the switch")
         await model.shutdown()
     }
@@ -523,7 +523,7 @@ struct ConversationSwitchTests {
         let first = try #require(model.currentAgent)
         await model.newConversation()
 
-        let chip = try #require(model.chips.first)
+        let chip = try #require(model.chipCandidates.first)
         #expect(chip.label == "initech · api · staging — fix the flaky login test")
         #expect(chip.identifier == "window.agentChip.initech/api/staging" && chip.state == .working)
         #expect(chip.id == first.id && chip.ordinal == 1)
@@ -539,10 +539,10 @@ struct ConversationSwitchTests {
         #expect(await model.send("second job"))
         await model.newConversation()
 
-        #expect(model.chips.map(\.identifier) == [
+        #expect(model.chipCandidates.map(\.identifier) == [
             "window.agentChip.initech/api/staging", "window.agentChip.initech/api/staging#2"])
-        #expect(model.chips.map(\.title) == ["first job", "second job"])
-        #expect(Set(model.chips.map(\.id)).count == 2, "two chips in one place never share an id")
+        #expect(model.chipCandidates.map(\.title) == ["first job", "second job"])
+        #expect(Set(model.chipCandidates.map(\.id)).count == 2, "two chips in one place never share an id")
         await model.shutdown()
     }
 
@@ -559,7 +559,7 @@ struct ConversationSwitchTests {
             affectsEveryRow: true, origin: .agent, place: placeA, conversation: a)
         let parked = Task { await broker.request(proposal) }
 
-        #expect(await waitUntil { model.chips.first?.state == .waiting } && model.pending == nil)
+        #expect(await waitUntil { model.chipCandidates.first?.state == .waiting } && model.pending == nil)
         await model.switchToConversation(a)
         #expect(model.pending?.conversation == a)
         await model.confirmPending(typed: "confirm")   // the plane's own typed confirmation (Invariant 7)

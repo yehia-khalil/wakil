@@ -124,8 +124,8 @@ config carries the new `WAKIL_ORG`.
 
 ## 4. Switching and closing a conversation
 
-A place holds any number of live conversations, one on screen. ⌘N, a Running row, a chip, ⌘P's
-Running group and ⌘⇧W are operator clicks or the actions `session_new`, `session_switch` and
+A place holds any number of live conversations, one on screen. ⌘N, a home line, a chip (another
+organisation's agent only: the home lists the screen's own), ⌘P's Running group and ⌘⇧W are operator clicks or the actions `session_new`, `session_switch` and
 `session_close`; the actions are `.control`, operator-only, and reach the window through
 `ConversationBroker` (`Harness/ConversationBroker.swift`), drained by a pump, as `session_resume` is.
 

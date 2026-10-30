@@ -1,9 +1,9 @@
 import WakilKit
 import SwiftUI
 
-/// One chip per live conversation not on screen — in another place, or backgrounded in this one —
-/// top right of the window (background agents 4 of 4; conversations 2 of 3). `WindowModel.chips`
-/// decides which have one and in what state; this only draws them, and a click is
+/// One chip per live conversation of another organisation not on screen, top right of the window
+/// (background agents 4 of 4; conversations 2 of 3; workspaces, piece 3: the screen's own
+/// organisation's are on its home). `WindowModel.chips` decides which have one and in what state; this only draws them, and a click is
 /// `session_switch` through the registry (`WindowModel.switchToRunning`): the conversation
 /// brought back as it was left, in its own place, no fork.
 ///
@@ -209,7 +209,7 @@ private struct AgentChipView: View {
                 }
                 Text(environmentSegment).fixedSize()
                 Text(" — ").foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
-                Text(chip.title).foregroundStyle(coolWhite.opacity(0.82)).truncationMode(.tail)
+                Text(chip.subject).foregroundStyle(coolWhite.opacity(0.82)).truncationMode(.tail)
                 if !chip.state.suffix.isEmpty {
                     Text(chip.state.suffix).foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
                 }

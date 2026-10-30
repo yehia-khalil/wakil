@@ -254,8 +254,8 @@ struct ConversationCloseTests {
 
         try #require(sessions.harnesses.in(placeA).first).finish()
 
-        #expect(await waitUntil { model.chips.first?.state == .failed }, "\(model.chips)")
-        #expect(model.chips.first?.conversation == dead.id)
+        #expect(await waitUntil { model.chipCandidates.first?.state == .failed }, "\(model.chipCandidates)")
+        #expect(model.chipCandidates.first?.conversation == dead.id)
         await model.switchToConversation(dead.id)
         #expect(model.currentAgent === dead)
         #expect(model.thoughts.last?.isError == true, "the failure is shown whole (Rule 8)")

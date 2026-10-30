@@ -3,7 +3,7 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"hold a turn open here"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
+{"expect":{"frame":"landing.row.running:0","inside":"window"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
@@ -24,9 +24,9 @@
 {"expect":{"label":"palette.row.name","contains":"Rename to “Held Billing”"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"expect":{"label":"window.agentChip.e2e-fixture/e2e-project/staging","contains":"staging — Held Billing"}}
+{"expect":{"label":"landing.row.running:0","contains":"Held Billing"}}
 {"expect":{"tree":"absent","text":"Dropped Name"}}
-{"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
+{"expect":{"frame":"landing.row.running:0","inside":"window"}}
 {"do":{"click":"landing.row.open:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held"}}

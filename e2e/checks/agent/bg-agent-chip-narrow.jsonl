@@ -2,16 +2,10 @@
 {"do":{"type":{"into":"window.composer","text":"hold a turn open here"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"hold a turn open here"}}
-{"do":{"hotkey":"cmd+k"}}
-{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
-{"do":{"type":{"into":"palette.query","text":"environment"}}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
-{"do":{"press":"Return"}}
-{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
-{"do":{"type":{"into":"palette.query","text":"qa"}}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
-{"do":{"click":"palette.row.qa"}}
-{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"e2e-project-two"}}
 {"do":{"click":"landing.row.open:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"resize":{"width":1000,"height":888}}}

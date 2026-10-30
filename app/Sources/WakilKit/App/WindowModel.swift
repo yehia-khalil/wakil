@@ -9715,12 +9715,20 @@ public final class WindowModel {
         updateTicketPoll()
     }
 
+    /// The chips the window draws (workspaces, piece 3): only another organisation's agents. The
+    /// screen's own organisation's are on its home, by workspace; a chip is how an agent elsewhere
+    /// still reaches the operator. Empty when none works there, so the resting state is unchanged.
+    public var chips: [AgentChip] {
+        let own = organization
+        return chipCandidates.filter { $0.place.organization != own }
+    }
+
     /// One chip per conversation not on screen that has something to show — in another place,
     /// or backgrounded in this one — ordered by organisation, project and environment, then by
     /// creation within a place (background agents 4 of 4; conversations 2 of 3). Each names its
-    /// conversation (`title`) and its rank among its place's live ones (`ordinal`, ruling 2).
-    /// Empty when no agent works elsewhere, so the window's resting state is unchanged.
-    public var chips: [AgentChip] {
+    /// conversation (`title`), its workspace (by its ticket key, else its name) and its rank among
+    /// its place's live ones (`ordinal`, ruling 2). `chips` keeps another organisation's.
+    var chipCandidates: [AgentChip] {
         let waiting = waitingConversations
         let shown = currentAgent
         var ordinals: [Place: Int] = [:]
@@ -9735,7 +9743,8 @@ public final class WindowModel {
                 return AgentChip(
                     place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
                     conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1],
-                    handoffNote: agent.handoffFailure)
+                    handoffNote: agent.handoffFailure,
+                    workspace: agent.workspace.map { $0.tickets.first ?? $0.name })
             }
             .sorted {
                 ($0.place.organization, $0.place.project, $0.place.environment, $0.ordinal)

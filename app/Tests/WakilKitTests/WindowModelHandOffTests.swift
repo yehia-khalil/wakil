@@ -118,7 +118,7 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         #expect(h["provider"] == .string("test-provider"))
         #expect(window.conversation(id: id)?.handoff?.key == "INI-142")
         // Its chip, not on screen, says it works.
-        #expect(window.chips.contains { $0.conversation == id && $0.state == .working })
+        #expect(window.chipCandidates.contains { $0.conversation == id && $0.state == .working })
     }
 
     @Test func startHandOffInAnotherProjectPinsItsPlace() async throws {
@@ -143,7 +143,7 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
             #expect("\(error)" == "agent: the provider refused the key")
         }
         #expect(window.liveConversationRows().isEmpty)
-        #expect(window.chips.isEmpty)
+        #expect(window.chipCandidates.isEmpty)
         #expect(await writes(fake, op: "add").isEmpty)
     }
 
@@ -217,7 +217,7 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         let id = try await window.startHandOff(request(mayPush: true))
         let note = "The hand-off was not recorded (INI-142.json is not readable), so this conversation's push and sync ask you."
         #expect(window.conversation(id: id)?.handoffFailure == note)
-        #expect(window.chips.first { $0.conversation == id }?.handoffNote == note)
+        #expect(window.chipCandidates.first { $0.conversation == id }?.handoffNote == note)
         #expect(window.conversation(id: id)?.thoughts.contains { $0.detail == note && $0.isError } == true)
     }
 
