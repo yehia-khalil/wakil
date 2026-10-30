@@ -16,7 +16,7 @@
 {"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
 {"expect":{"pane":"browser-3","field":"pinsError","present":true}}
 {"expect":{"pane":"browser-3","field":"tabs[0].pinned","equals":"false"}}
-{"expect":{"frame":"browser.pinsError","inside":"browser.pane"}}
+{"expect":{"frame":"browser.pinsError","inside":"window"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
 {"dispatch":{"action":"browser_restore","params":{"pane":"browser-1"}}}
 {"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}

@@ -36,7 +36,7 @@
 {"expect":{"pane":"browser-2","field":"tabs[2].pinned","equals":"false"}}
 {"expect":{"pane":"browser-2","field":"tabs[2].active","equals":"true"}}
 {"dispatch":{"action":"browser_unpin","params":{"pane":"browser-2","tab":"t2"}}}
-{"dispatch":{"action":"browser_unpin","params":{"pane":"browser-2","tab":"t3"}}}
+{"dispatch":{"action":"browser_unpin","params":{"pane":"browser-2","tab":"t1"}}}
 {"expect":{"pane":"browser-2","field":"tabs[0].pinned","equals":"false"}}
 {"expect":{"pane":"browser-2","field":"groups[0].pinned","equals":"false"}}
 {"expect":{"journal":{"contains":"\"action\":\"browser_unpin\""}}}
