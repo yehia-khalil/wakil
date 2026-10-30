@@ -578,6 +578,7 @@ struct EditorTicketView: View {
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Threads · \(threads.count) open")
+                .accessibilityAddTraits(.isStaticText)
                 let cursor = editorCursorThread(tab, reviews)
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(threads, id: \.id) { t in threadRow(t, selected: t.id == cursor, elsewhere: elsewhere) }
@@ -595,6 +596,7 @@ struct EditorTicketView: View {
             // One element read as the PR's whole line: number, branches, state and checks.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(ticketPRLine(pr))
+            .accessibilityAddTraits(.isStaticText)
             .accessibilityIdentifier("editor.ticket.pr:\(pr.number)")
             // Its branches on their own line, then the pills flowing whole onto the next line when the
             // column is narrow — never a pill broken mid-word (walk 2026-10-29).
@@ -782,6 +784,7 @@ struct EditorTicketView: View {
             .font(.system(size: 11))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(g.heading) \(g.count)")
+            .accessibilityAddTraits(.isStaticText)
             ForEach(section.lines(r), id: \.id) { line in recordLine(r.key, section, line) }
             if adding == section {
                 // A new line arrives focused (Rule 3). Its main field and, for a kind that has one,
