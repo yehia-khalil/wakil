@@ -179,6 +179,22 @@ public func ticketNeedsLabel(_ s: InFlightState?) -> String? {
     return parts.isEmpty ? "\(s.count) waiting on you" : "\(s.count) waiting on you: " + parts.joined(separator: ", ")
 }
 
+/// The editor's Ticket label counts only what its body can show for this project (piece 3 walk): a
+/// project whose roots are read and none is a git repository has no branch to show a ticket on, so
+/// it counts nothing. Roots not read yet, or any repository among them: the organisation's count.
+public func ticketNeedsCount(_ s: InFlightState?, roots: [GitRootState]) -> Int {
+    ticketCountShowable(roots) ? ticketNeedsCount(s) : 0
+}
+
+/// `ticketNeedsLabel` for the editor's Ticket label, by `ticketNeedsCount(_:roots:)`'s rule.
+public func ticketNeedsLabel(_ s: InFlightState?, roots: [GitRootState]) -> String? {
+    ticketCountShowable(roots) ? ticketNeedsLabel(s) : nil
+}
+
+private func ticketCountShowable(_ roots: [GitRootState]) -> Bool {
+    roots.isEmpty || roots.contains(where: gitRootIsRepository)
+}
+
 /// Whether the 2-minute read runs: Wakil is the active app, the screen is unlocked, and an
 /// organisation is open.
 public func ticketPollWanted(appActive: Bool, screenLocked: Bool, organization: String) -> Bool {

@@ -122,3 +122,10 @@ terminals left). Tags "Main · your folder" / "workspace copy"; the context line
    `aBranchOffWhoseRecordCannotBeSavedIsTakenBack`, `aLazilyMadeCheckoutWhoseRecordCannotBeSavedIsTakenBack`.
    No e2e check: a save failure cannot be staged from the screen (the store reads its own file);
    the unit and wakil-git tests drive both halves.
+
+## On the walk of the home (2026-10-30) — fixes that are main's too, landed at the stack's base
+
+- [x] The editor column never pushes past its edges (tabs in two rows, a section's control under its title, a
+  thread's *in project* and *Back to this branch* wrapping). Check: `seeded/ticket-header.jsonl`.
+- [x] The editor's Ticket label counts nothing in a project with no git repository (`ticketNeedsCount(_:roots:)`).
+  Test: `EditorTicketNeedsTests`.

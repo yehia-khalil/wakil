@@ -601,8 +601,8 @@ extension WakilWindow {
                         t.liveHandOffs = model.ticketLiveHandOffs
                         return t
                     }(),
-                    ticketCount: ticketNeedsCount(model.ticketNeeds),
-                    ticketCountLabel: ticketNeedsLabel(model.ticketNeeds),
+                    ticketCount: ticketNeedsCount(model.ticketNeeds, roots: model.gitRoots),
+                    ticketCountLabel: ticketNeedsLabel(model.ticketNeeds, roots: model.gitRoots),
                     dispatchThrowingReply: { name, params in
                         var withPane = params
                         withPane["pane"] = .string(pane.id)

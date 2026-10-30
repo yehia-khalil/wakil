@@ -111,6 +111,23 @@ private func row(key: String = "INI-142", pr: Int = 0, threads: [String] = [], f
         #expect(ticketNeedsCount(nil) == 0)
     }
 
+    /// The walk: "Ticket · 1" over a body that could only say the project's root is not a git
+    /// repository. A project with no repository counts nothing; one with a repository, or roots
+    /// not read yet, counts the organisation's as before.
+    @Test func aProjectWithNoRepositoryCountsNothing() {
+        let s = InFlightState(waitingOnYou: [row(pr: 212, threads: ["T1"])], count: 1)
+        func root(_ error: String?) -> GitRootState {
+            GitRootState(root: "/p/plain", name: "plain", branch: "", detached: "", ahead: 0, behind: 0, files: [],
+                         error: error, loading: false)
+        }
+        #expect(ticketNeedsCount(s, roots: [root("not a git repository")]) == 0)
+        #expect(ticketNeedsLabel(s, roots: [root("not a git repository")]) == nil)
+        #expect(ticketNeedsCount(s, roots: [root(nil)]) == 1)
+        #expect(ticketNeedsCount(s, roots: [root("not a git repository"), root(nil)]) == 1)
+        #expect(ticketNeedsCount(s, roots: []) == 1)
+        #expect(ticketNeedsLabel(s, roots: [root(nil)]) == ticketNeedsLabel(s))
+    }
+
     @Test func labelSaysEachKind() {
         let four = InFlightState(waitingOnYou: [row(pr: 212, threads: ["T1", "T2", "T3"]), row(key: "", pr: 215, failing: ["unit (Linux)"])],
                                  count: 4)
