@@ -14,7 +14,16 @@ const frameSlack = 0.5
 // reports elements and windows in.
 type Rect struct{ X, Y, W, H float64 }
 
-func rectOfElement(e Element) Rect    { return Rect{e.X, e.Y, e.Width, e.Height} }
+func rectOfElement(e Element) Rect { return Rect{e.X, e.Y, e.Width, e.Height} }
+
+// drawnRect is the element's frame, refused when it is not drawn: its zeros
+// would sit "inside" nothing and "clear" of everything.
+func drawnRect(e Element) (Rect, error) {
+	if e.Undrawn {
+		return Rect{}, fmt.Errorf("%s is in the tree but not drawn on screen, so it has no frame", e.Identifier)
+	}
+	return rectOfElement(e), nil
+}
 func rectOfWindow(w WindowFrame) Rect { return Rect{w.X, w.Y, w.Width, w.Height} }
 
 // Contains reports whether o lies wholly within r, to within frameSlack.

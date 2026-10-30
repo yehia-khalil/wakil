@@ -31,13 +31,19 @@ type Resolver struct {
 // Element is one identified element, in SCREEN coordinates with a top-left
 // origin — the space `AXPosition` reports.
 type Element struct {
-	Identifier string  `json:"identifier"`
-	Role       string  `json:"role"`
-	Enabled    bool    `json:"enabled"`
-	X          float64 `json:"x"`
-	Y          float64 `json:"y"`
-	Width      float64 `json:"width"`
-	Height     float64 `json:"height"`
+	Identifier string `json:"identifier"`
+	Role       string `json:"role"`
+	Enabled    bool   `json:"enabled"`
+	// Label is AXDescription, else AXTitle: the element's name aloud, which
+	// orca's tree text never prints for a button (axresolve's header).
+	Label string `json:"label"`
+	// Undrawn is true for an element AX gives a non-finite frame: in the tree,
+	// pressable, but not on screen, so X…Height are zeros and mean nothing.
+	Undrawn bool    `json:"undrawn"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Width   float64 `json:"width"`
+	Height  float64 `json:"height"`
 }
 
 // WindowFrame is the window's own rectangle, in the same screen space.

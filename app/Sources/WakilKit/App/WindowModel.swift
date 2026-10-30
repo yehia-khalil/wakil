@@ -1372,6 +1372,12 @@ public final class WindowModel {
                     || name == "db_set_connection" {
                     await self.refreshDatabases()
                 }
+                // The browser settings in force were read only on a context change and after the
+                // Settings form's own save: a write by any other route left the tab column, ⌃⌘S
+                // and group naming on the old read (night run 2026-10-29, 3d-i).
+                if name == "ctx_set_browser_settings" {
+                    await self.refreshBrowserSettings()
+                }
                 // **An agent's settings write, and the pane it lands under.**
                 // Every operator edit goes through a wrapper here that calls
                 // `refreshSettings()` after it (`setDatabaseDSN`,

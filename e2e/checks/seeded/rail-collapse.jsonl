@@ -1,26 +1,23 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
 {"do":{"click":"landing.row.open:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
-{"expect":{"tree":"contains","text":"rail.terminal-1"}}
-{"expect":{"tree":"absent","text":"rail.spine"}}
+{"expect":{"frame":"rail.terminal-1","inside":"window"}}
+{"expect":{"tree":"absent","text":"Value: 1 pane, terminal active"}}
 {"dispatch":{"action":"rail_set","params":{"collapsed":true}}}
-{"expect":{"tree":"contains","text":"rail.spine"}}
-{"expect":{"tree":"contains","text":"rail.edge"}}
-{"expect":{"tree":"absent","text":"rail.terminal-1"}}
+{"expect":{"tree":"contains","text":"Value: 1 pane, terminal active"}}
 {"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"frame":"rail.spine","inside":"window"}}
 {"expect":{"frame":"rail.edge","inside":"window","maxWidth":8}}
 {"parity":{"action":"rail_set","params":{"collapsed":false},"click":"rail.spine","assert":"tree"}}
-{"expect":{"tree":"contains","text":"rail.terminal-1"}}
-{"expect":{"tree":"absent","text":"rail.spine"}}
+{"expect":{"frame":"rail.terminal-1","inside":"window"}}
+{"expect":{"tree":"absent","text":"Value: 1 pane, terminal active"}}
 {"do":{"focus":"window.composer"}}
 {"expect":{"focus":"window.composer"}}
 {"do":{"hotkey":"ctrl+cmd+r"}}
-{"expect":{"tree":"contains","text":"rail.spine"}}
-{"expect":{"tree":"absent","text":"rail.terminal-1"}}
+{"expect":{"tree":"contains","text":"Value: 1 pane, terminal active"}}
 {"expect":{"focus":"window.composer"}}
 {"do":{"hotkey":"ctrl+cmd+r"}}
-{"expect":{"tree":"contains","text":"rail.terminal-1"}}
-{"expect":{"tree":"absent","text":"rail.spine"}}
+{"expect":{"frame":"rail.terminal-1","inside":"window"}}
+{"expect":{"tree":"absent","text":"Value: 1 pane, terminal active"}}
 {"expect":{"focus":"window.composer"}}
 {"dispatch":{"action":"rail_set","params":{"collapsed":"yes"},"refuses":"collapsed"}}

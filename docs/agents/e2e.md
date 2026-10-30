@@ -109,6 +109,9 @@ green, the work committed.
    expressible; they stay walk-only and are named in the residue. The window's minimum is
    1000 wide and 888 tall, frame included (`WakilWindow.swift` sets the content to
    1000×860); a resize below it fails and says what size it reached.
+   `tree` text holds a button's title or value, never its `accessibilityLabel`, nor any
+   identifier: a row that names itself with a label (palette, Landing, rail) is read with
+   `{"expect":{"label":"<id>","contains":"…"}}`.
 4. **Add the identifiers the checks need** when an actionable control has none. That is
    real accessibility work, not test scaffolding.
 5. **Prove each new check red**: `make e2e-new`. A check that passes against the

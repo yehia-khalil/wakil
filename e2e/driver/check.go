@@ -308,6 +308,12 @@ type Expect struct {
 	MinHeight *float64 `json:"minHeight,omitempty"`
 	MaxWidth  *float64 `json:"maxWidth,omitempty"`
 	MaxHeight *float64 `json:"maxHeight,omitempty"`
+
+	// Label names a control whose accessibility label must hold Equals or
+	// Contains. Orca's tree text prints a button's title or value, never its
+	// label, so a row that names itself with `accessibilityLabel` — a palette
+	// row, a Landing row, a rail tick — is read here or not at all.
+	Label string `json:"label,omitempty"`
 }
 
 // FrameWindow is the Inside value that means the window itself.
@@ -409,6 +415,12 @@ func (s Step) IsAssertion() bool {
 //
 //   - `tree: contains`, `pane` with `equals` or `contains`, `journal` and
 //     `process: any-matching` all say a thing IS there. They confirm.
+//   - `frame` does too: it fails unless the identifier resolves to exactly
+//     one element, so it passing says the control is drawn. An identifier
+//     never reaches the tree's text (axresolve's header), so for a control
+//     with no text of its own — a rail tick — it is the only positive read.
+//   - `label` with `equals` or `contains` says the control is drawn AND
+//     names what it should.
 //   - `tree: absent` passes when the text is not there, which is also what it
 //     does when the act never happened, when the window never drew, and when
 //     the identifier was a typo. It is the assertion most likely to pass
@@ -430,6 +442,10 @@ func (e *Expect) Confirms() bool {
 	case e.Journal != nil:
 		return true
 	case e.Process != nil && e.Process.AnyMatching != "":
+		return true
+	case e.Frame != "":
+		return true
+	case e.Label != "":
 		return true
 	default:
 		return false
@@ -614,14 +630,14 @@ func validateDispatch(dispatch *Dispatch) error {
 
 func validateExpect(expect *Expect) error {
 	arms := countTrue(expect.Tree != "", expect.Pane != "", expect.Process != nil,
-		expect.Journal != nil, expect.Focus != "", expect.Frame != "")
+		expect.Journal != nil, expect.Focus != "", expect.Frame != "", expect.Label != "")
 	switch {
 	case arms == 0:
 		return fmt.Errorf("an expect asserts against a tree, a pane, a process, the journal, " +
-			"focus or a frame, and this one names none")
+			"focus, a frame or a label, and this one names none")
 	case arms > 1:
 		return fmt.Errorf("an expect asserts against exactly one of tree, pane, process, " +
-			"journal, focus or frame")
+			"journal, focus, frame or label")
 	}
 	switch {
 	case expect.Tree != "":
@@ -670,6 +686,13 @@ func validateExpect(expect *Expect) error {
 		return validIdentifier(expect.Focus)
 	case expect.Frame != "":
 		return validateFrame(expect)
+	case expect.Label != "":
+		if err := validIdentifier(expect.Label); err != nil {
+			return err
+		}
+		if countTrue(expect.Equals != nil, expect.Contains != nil) != 1 || expect.Present != nil {
+			return fmt.Errorf("an expect.label on %s names exactly one of equals and contains", expect.Label)
+		}
 	}
 	return nil
 }

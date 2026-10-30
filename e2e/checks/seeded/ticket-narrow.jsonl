@@ -14,6 +14,7 @@
 {"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].openThreads","equals":"2"}}
 {"do":{"resize":{"width":1000,"height":900}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"editor-1","width":640,"height":760}}}
 {"expect":{"frame":"editor.ticket.refresh","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.root","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.root","clear":"editor.ticket.refresh"}}
@@ -29,5 +30,7 @@
 {"expect":{"tree":"contains","text":"Tokens live in the Keychain"}}
 {"expect":{"frame":"editor.ticket.add:notDone","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.line:decisions:d1","inside":"editor.ticket","minWidth":60}}
+{"do":{"focus":"editor.ticket.line:decisions:d1"}}
+{"expect":{"focus":"editor.ticket.line:decisions:d1"}}
 {"expect":{"frame":"editor.ticket.remove:decisions:d1","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.remove:decisions:d1","clear":"editor.ticket.line:decisions:d1"}}

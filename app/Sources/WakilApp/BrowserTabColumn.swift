@@ -274,7 +274,9 @@ struct BrowserTabColumn: View {
         .anchorPreference(key: BrowserTabColumnTipAnchor.self, value: .bounds) { bounds in
             tip(list)?.index == index ? bounds : nil
         }
-        .accessibilityElement(children: .contain)
+        // A tile draws no text, and a `.contain` with no readable child never reached the tree
+        // (3d-i-pinned-section, 2026-10-30): it is one element, closed by its menu or ⌘W.
+        .accessibilityElement(children: tile ? .ignore : .contain)
         .accessibilityLabel(BrowserEntryPresses.label(entry, titled: !tile))
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { presses.activate(entry) }

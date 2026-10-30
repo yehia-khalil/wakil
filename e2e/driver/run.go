@@ -787,6 +787,8 @@ func (r *Runner) assert(expect *Expect) error {
 		return r.settle(func() error { return r.assertFocus(expect.Focus) })
 	case expect.Frame != "":
 		return r.settle(func() error { return r.assertFrame(expect) })
+	case expect.Label != "":
+		return r.settle(func() error { return r.assertLabel(expect) })
 	default:
 		return fmt.Errorf("an expect step with no arm reached the runner")
 	}
@@ -873,7 +875,10 @@ func (r *Runner) assertFrame(expect *Expect) error {
 		if err != nil {
 			return err
 		}
-		o := rectOfElement(other)
+		o, err := drawnRect(other)
+		if err != nil {
+			return err
+		}
 		inside = &o
 	}
 	if expect.Clear != "" {
@@ -881,10 +886,17 @@ func (r *Runner) assertFrame(expect *Expect) error {
 		if err != nil {
 			return err
 		}
-		o := rectOfElement(other)
+		o, err := drawnRect(other)
+		if err != nil {
+			return err
+		}
 		clear = &o
 	}
-	return judgeFrame(expect, rectOfElement(element), inside, clear)
+	box, err := drawnRect(element)
+	if err != nil {
+		return err
+	}
+	return judgeFrame(expect, box, inside, clear)
 }
 
 func (r *Runner) assertPane(expect *Expect) error {

@@ -22,6 +22,7 @@
 {"expect":{"pane":"browser-1","field":"groups[0].tabs[2]","equals":"t4"}}
 {"expect":{"pane":"browser-1","field":"tabs[2].id","equals":"t4"}}
 {"expect":{"pane":"browser-1","field":"tabs[3].id","equals":"t3"}}
+{"dispatch":{"action":"pane_resize","params":{"id":"browser-1","width":900,"height":420}}}
 {"expect":{"frame":"browser.group.g1","inside":"browser.tabs"}}
 {"parity":{"action":"browser_group","params":{"pane":"browser-1","action":"collapse","group":"g1"},"assert":"read_pane","click":"browser.group.g1"}}
 {"expect":{"pane":"browser-1","field":"groups[0].collapsed","equals":"true"}}

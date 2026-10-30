@@ -13,7 +13,7 @@
 {"expect":{"tree":"contains","text":"Placeholder: Conversation name"}}
 {"expect":{"focus":"palette.query"}}
 {"do":{"keys":"Dropped Name"}}
-{"expect":{"tree":"contains","text":"Rename to “Dropped Name”"}}
+{"expect":{"label":"palette.row.name","contains":"Rename to “Dropped Name”"}}
 {"do":{"press":"Escape"}}
 {"expect":{"tree":"absent","text":"Placeholder: Conversation name"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
@@ -21,10 +21,10 @@
 {"expect":{"tree":"contains","text":"Placeholder: Conversation name"}}
 {"expect":{"focus":"palette.query"}}
 {"do":{"keys":"Held Billing"}}
-{"expect":{"tree":"contains","text":"Rename to “Held Billing”"}}
+{"expect":{"label":"palette.row.name","contains":"Rename to “Held Billing”"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"expect":{"tree":"contains","text":"staging — Held Billing"}}
+{"expect":{"label":"window.agentChip.e2e-fixture/e2e-project/staging","contains":"staging — Held Billing"}}
 {"expect":{"tree":"absent","text":"Dropped Name"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"do":{"click":"landing.row.open:terminal"}}
