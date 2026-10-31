@@ -14,7 +14,7 @@
 {"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
-{"expect":{"pane":"terminal-3","field":"cwd","contains":"/write-the-workspace-note/e2e-api"}}
+{"expect":{"pane":"terminal-2","field":"cwd","contains":"/write-the-workspace-note/e2e-api"}}
 {"dispatch":{"action":"workspace_new_conversation","params":{"workspace":"write-the-workspace-note"}}}
 {"expect":{"focus":"window.composer"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"null"}}
@@ -23,8 +23,8 @@
 {"expect":{"tree":"contains","text":"STAGING"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"expect":{"pane":"terminal-1","field":"grid[0]","contains":" e2e-git %"}}
-{"expect":{"pane":"terminal-3","field":"kind","equals":"null"}}
-{"expect":{"pane":"editor-2","field":"kind","equals":"null"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"null"}}
+{"expect":{"pane":"editor-3","field":"kind","equals":"null"}}
 {"do":{"click":"rail.terminal-1"}}
 {"do":{"keys":"case \"$PWD\" in */e2e-git) echo IN-MAIN;; *) echo ELSEWHERE;; esac"}}
 {"do":{"press":"Return"}}
