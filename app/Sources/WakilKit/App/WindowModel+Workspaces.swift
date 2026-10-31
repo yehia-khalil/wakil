@@ -379,15 +379,19 @@ extension WindowModel {
                                       current: false, isProduction: false))
     }
 
-    /// Whether a send typed now must first go where *Start in* points (`enterStartIn`).
-    public var sendGoesElsewhere: Bool { !sessionStarted && homeStartIn != nil }
+    /// Whether a send typed now must first go where *Start in* points (`enterStartIn`) — or, with no
+    /// choice made, into the window's own project with an environment chosen (piece 3 walk).
+    public var sendGoesElsewhere: Bool {
+        !sessionStarted && (homeStartIn != nil || (environment.isEmpty && !projectKey.isEmpty))
+    }
 
     /// A send from the home goes where *Start in* points: the window goes there, onto Main's Landing
     /// there — a conversation on screen in that place goes to the background untouched, as ⌘N puts
     /// it (`newConversation`) — and the choice is spent. Answers whether the window got there; a
     /// switch refused leaves its reason in `status`, whole (Rule 8).
     public func enterStartIn() async -> Bool {
-        guard sendGoesElsewhere, let target = homeStartIn else { return true }
+        guard sendGoesElsewhere else { return true }
+        let target = homeStartIn ?? place
         homeStartIn = nil
         await goTo(target)
         guard place.organization == target.organization, place.project == target.project,

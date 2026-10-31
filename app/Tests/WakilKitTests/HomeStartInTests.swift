@@ -16,7 +16,8 @@ private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
 }
 
 /// `wakil-ctx` for one organisation: a project switch keeps the environment when the project has
-/// it, else leaves none chosen; `set_environment ""` leaves none chosen.
+/// it, else leaves none chosen; `set_environment ""` leaves none chosen. `list_environments` lists
+/// the active project's.
 private actor StartInContext: ToolCaller {
     private let projects: [String: [String]] = ["api": ["staging", "production"], "web": ["staging"], "acc": ["dev"]]
     private var active = (project: "api", environment: "staging")
@@ -37,6 +38,13 @@ private actor StartInContext: ToolCaller {
             guard let environments = projects[argument] else { return refusal("no project \(argument)") }
             active = (argument, environments.contains(active.environment) ? active.environment : "")
             return .object([:])
+        case "list_environments":
+            calls.append("list_environments")
+            var rows: [String: JSONValue] = [:]
+            for name in projects[active.project] ?? [] {
+                rows[name] = .object(["readOnly": .bool(false), "production": .bool(name == "production")])
+            }
+            return .object(["structuredContent": .object(["environments": .object(rows)])])
         case "set_environment":
             calls.append("set_environment:\(argument)")
             guard argument.isEmpty || projects[active.project]?.contains(argument) == true else {
@@ -166,7 +174,8 @@ struct HomeStartInTests {
     // window's environment chosen — its line did nothing, as no switch reached a place with none.
     @Test func aLineOfAConversationStartedWithNoEnvironmentOpensIt() async throws {
         let w = await window()
-        await w.model.goTo(Place(organization: "initech", project: "acc", environment: ""))
+        // A bare project switch leaves none chosen (a door from the home now chooses one).
+        await w.model.setProject("acc")
         let none = Place(organization: "initech", project: "acc", environment: "")
         #expect(w.model.place == none)
         #expect(await w.model.send("hi"))
@@ -178,6 +187,50 @@ struct HomeStartInTests {
 
         #expect(await waitUntil { w.model.currentAgent === greeting }, "\(w.model.status)")
         #expect(w.model.place == none)
+    }
+
+    // The walk's empty environment: a door from the home into a project lands on one of its
+    // environments — the one last used there, else Start in's, else the first not production.
+    @Test func aProjectsDoorFromTheHomeLandsOnItsFirstEnvironmentThatIsNotProduction() async {
+        let w = await window()
+        await w.model.setEnvironment("")
+        #expect(w.model.place.environment == "")
+
+        await w.model.openWorkspaceView(nil, in: Place(organization: "initech", project: "api", environment: ""))
+
+        #expect(w.model.place == api, "\(w.model.status)")
+    }
+
+    @Test func aDoorIntoAnotherProjectLandsOnTheEnvironmentLastUsedThere() async {
+        let w = await window()
+        await w.model.goTo(Place(organization: "initech", project: "acc", environment: ""))
+        #expect(w.model.place == Place(organization: "initech", project: "acc", environment: "dev"),
+                "none remembered: the first declared")
+        await w.model.goTo(Place(organization: "initech", project: "api", environment: ""))
+        #expect(w.model.place == api, "staging, used in api before")
+        await w.model.setEnvironment("production")
+        await w.model.goTo(Place(organization: "initech", project: "web", environment: ""))
+        await w.model.goTo(Place(organization: "initech", project: "api", environment: ""))
+        #expect(w.model.place.environment == "production", "the one last used in api, not the first")
+    }
+
+    @Test func startInsEnvironmentIsTheOneAStartInSendLandsOn() async {
+        let w = await window()
+        await w.model.goTo(Place(organization: "initech", project: "web", environment: ""))
+        w.model.chooseStartIn(HomeStartChoice(project: "api", environment: "production", current: false, isProduction: true))
+        #expect(await w.model.enterStartIn())
+        #expect(w.model.place.environment == "production")
+    }
+
+    @Test func aSendFromTheHomeWithNoEnvironmentChosenStartsInOne() async {
+        let w = await window()
+        await w.model.setEnvironment("")
+        let composer = ComposerModel(window: w.model, speech: SpeechRegistry(engines: []), fastPathRunner: { _, _ in .toAgent })
+        composer.edited(draft: "hello", caret: 5)
+        await composer.submit()
+
+        #expect(w.model.place == api, "\(w.model.status)")
+        #expect(w.model.currentAgent?.place == api)
     }
 
     @Test func aLineWhoseConversationEndedOpensItsThreadAsContinueDoes() async throws {

@@ -170,6 +170,9 @@ private let keptPerPlace: Set<String> = [
     // the order they were created in, which one each place shows, and the id each place's next
     // one takes (conversations 1 of 3). `agents` is their projection by place.
     "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
+    // Piece 3 walk: the environment last used in each project, keyed by its organisation and
+    // project — a door back into one of them lands there, whichever organisation is on screen now.
+    "environmentsLastUsed",
     // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
     // canvas held when its conversation went to the background.
     "landingBaselines", "landingsLoading",

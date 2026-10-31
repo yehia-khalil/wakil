@@ -2273,6 +2273,13 @@ public final class WindowModel {
             projectKey = active.projectKey
             pmProjectKey = active.pmProjectKey
             environment = active.environment
+            // A project's first read names the environment it was left on; afterwards only the
+            // operator's own switch does (`switchEnvironment`) — a project switch carrying the last
+            // project's environment over is not one used here.
+            let usedIn = Place(organization: active.org, project: active.projectKey, environment: "")
+            if !active.environment.isEmpty, !active.projectKey.isEmpty, environmentsLastUsed[usedIn] == nil {
+                environmentsLastUsed[usedIn] = active.environment
+            }
             // **The one writer of the gate's view of production**
             // (Decision 26, #182). `get_context` carried the whole project
             // already, so the flags cost nothing extra — and they are set
@@ -3052,6 +3059,9 @@ public final class WindowModel {
         // describes the incoming environment now, so nothing is cleared and nothing re-run: the
         // canvas left keeps its rows and replies for the operator's return.
         await refreshContext()
+        if !environment.isEmpty, !projectKey.isEmpty {
+            environmentsLastUsed[Place(organization: organization, project: projectKey, environment: "")] = environment
+        }
         return true
     }
 
@@ -10369,8 +10379,34 @@ public final class WindowModel {
         }
         if !target.environment.isEmpty || exactEnvironment, target.environment != environment {
             _ = await setEnvironment(target.environment)
+        } else if !exactEnvironment, organization == target.organization,
+                  target.project.isEmpty || target.project == projectKey {
+            await chooseEnvironmentOnEntry()
         }
     }
+
+    /// Entering a project never leaves it with no environment chosen while it declares any (piece 3
+    /// walk; Invariant 8): the one last used there, else the first declared that is not production
+    /// (`environmentOnEntry`). Read only when there is something to decide — none chosen, or another
+    /// remembered — and a listing that cannot be read changes nothing, `status` included.
+    private func chooseEnvironmentOnEntry() async {
+        guard !projectKey.isEmpty else { return }
+        let remembered = environmentsLastUsed[Place(organization: organization, project: projectKey, environment: "")]
+        guard environment.isEmpty || (remembered != nil && remembered != environment) else { return }
+        let before = status
+        let declared = await listEnvironments()
+        guard !declared.isEmpty else {
+            status = before
+            return
+        }
+        if let chosen = environmentOnEntry(declared: declared, current: environment, remembered: remembered) {
+            _ = await setEnvironment(chosen)
+        }
+    }
+
+    /// The environment last used in each project (`Place` with no environment), this launch: what a
+    /// door into the project lands on (`chooseEnvironmentOnEntry`).
+    @ObservationIgnored private var environmentsLastUsed: [Place: String] = [:]
 
     /// The `goTo`s still between switches — a count, as a second click can start one before the
     /// first ends — so a place one lands on may be one it is only passing through.
