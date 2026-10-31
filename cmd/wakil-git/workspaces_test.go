@@ -154,3 +154,53 @@ func TestWorktreeAddFromAChosenBaseOrRefusedWhole(t *testing.T) {
 		t.Fatal("a refused base left a folder")
 	}
 }
+
+// A workspace's view reads Changes and blame in its own checkout (decision 22); an archived
+// workspace's folder is refused as any folder outside the record is (decision 13).
+func TestChangesAndBlameReadARecordedCheckoutAndRefuseAnArchivedOne(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	cs := connectedClient(t)
+	paths := map[string]string{}
+	for _, slug := range []string{"walk-ticket", "old"} {
+		add, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": root, "project": "proj", "slug": slug, "branch": slug, "create": true, "from": "HEAD"})
+		if fail != "" {
+			t.Fatal(fail)
+		}
+		paths[slug] = add["path"].(string)
+	}
+	rec := []wakilcore.Workspace{
+		{ID: "w1", Slug: "walk-ticket", Project: "proj", Checkouts: []wakilcore.WorkspaceCheckout{{Repo: root, Path: paths["walk-ticket"], Branch: "walk-ticket"}}},
+		{ID: "w2", Slug: "old", Project: "proj", Archived: true, Checkouts: []wakilcore.WorkspaceCheckout{{Repo: root, Path: paths["old"], Branch: "old"}}},
+	}
+	if _, fail := callJSON(t, cs, "workspaces_write", map[string]any{"workspaces": rec}); fail != "" {
+		t.Fatal(fail)
+	}
+	entries, _ := os.ReadDir(paths["walk-ticket"])
+	var file string
+	for _, e := range entries {
+		if !e.IsDir() {
+			file = e.Name()
+		}
+	}
+	if file == "" {
+		t.Fatal("no tracked file in the copy")
+	}
+	for _, tool := range []struct {
+		name string
+		args map[string]any
+	}{{"git_status", map[string]any{}}, {"git_diff", map[string]any{"side": "changed"}}, {"git_blame", map[string]any{"path": file}}} {
+		args := map[string]any{"root": paths["walk-ticket"]}
+		for k, v := range tool.args {
+			args[k] = v
+		}
+		if _, fail := callJSON(t, cs, tool.name, args); fail != "" {
+			t.Errorf("%s in the copy: %s", tool.name, fail)
+		}
+		args["root"] = paths["old"]
+		if _, fail := callJSON(t, cs, tool.name, args); !strings.Contains(fail, "is not a root of the active project") {
+			t.Errorf("%s in an archived copy: %q", tool.name, fail)
+		}
+	}
+}

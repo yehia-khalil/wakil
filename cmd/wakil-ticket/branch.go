@@ -201,6 +201,27 @@ func orgRoots(org string) []string {
 	return roots
 }
 
+// orgReadRoots is the roots a read may name: every project's own roots, then each project's live
+// workspace checkouts (decision 22: a workspace's view reads its ticket in its copy), as wakil-git
+// and wakil-files confine to (AllowedRootPaths). A folder the record does not hold — an archived
+// workspace's, or none's — stays refused. In flight still reads Main's roots only (orgProjectRoots).
+func orgReadRoots(org string) []string {
+	roots := orgRoots(org)
+	reg, err := wakilcore.LoadRegistryFor(org)
+	if err != nil {
+		return roots
+	}
+	names := make([]string, 0, len(reg))
+	for n := range reg {
+		names = append(names, n)
+	}
+	sortStrings(names)
+	for _, n := range names {
+		roots = append(roots, wakilcore.WorkspaceRootsFor(org, n)...)
+	}
+	return roots
+}
+
 type projectRoot struct{ Project, Root string }
 
 // orgProjectRoots is orgRoots with the project (its registry name) that holds each root.
@@ -261,7 +282,7 @@ func openRoot(ctx context.Context, org, root string) (*rootRepo, error) {
 // openRootOn is openRoot reading `branch` as if it were the current one (a ticket picked from In
 // flight); "" is the root's current branch. Nothing is checked out.
 func openRootOn(ctx context.Context, org, root, branch string) (*rootRepo, error) {
-	g, err := wakilcore.NewGitRunner(root, orgRoots(org))
+	g, err := wakilcore.NewGitRunner(root, orgReadRoots(org))
 	if err != nil {
 		return nil, err
 	}

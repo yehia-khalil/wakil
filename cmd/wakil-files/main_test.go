@@ -242,3 +242,64 @@ func TestFilesReadFromThroughTheTool(t *testing.T) {
 		t.Fatalf("got %+v %v", out, res.Content)
 	}
 }
+
+// A workspace's view reads and writes its own checkouts (decision 22): Files, Search, the editor's
+// reads and writes and its restore name the copy's path, and the server admits it as a root. An
+// archived workspace's folder, or one the record does not hold, is still outside (decision 13).
+func TestAWorkspacesCheckoutIsARootAndAnUnrecordedOneIsNot(t *testing.T) {
+	pdir := setupProject(t, `"dev":{"databases":[]}`, "")
+	mk := func(slug string) string {
+		p, err := wakilcore.WorkspaceCheckoutPath("initech", "proj", slug, "proj")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "a.go"), []byte("package a // needle\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	live, archived, stray := mk("walk-ticket"), mk("old"), mk("stray")
+	if err := wakilcore.SaveWorkspaces("initech", wakilcore.WorkspacesFile{Workspaces: []wakilcore.Workspace{
+		{ID: "w1", Slug: "walk-ticket", Project: "proj", Checkouts: []wakilcore.WorkspaceCheckout{{Repo: pdir, Path: live}}},
+		{ID: "w2", Slug: "old", Project: "proj", Archived: true, Checkouts: []wakilcore.WorkspaceCheckout{{Repo: pdir, Path: archived}}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if res, list := callFiles(t, "files_list", map[string]any{"root": live}); res.IsError || !slices.Contains(toStrings(list["files"]), "a.go") {
+		t.Fatalf("list the copy: %+v %v", res.Content, list)
+	}
+	if res, out := callFiles(t, "files_read", map[string]any{"path": filepath.Join(live, "a.go")}); res.IsError || out["exists"] != true {
+		t.Fatalf("read in the copy: %+v %v", res.Content, out)
+	}
+	if res, _ := callFiles(t, "files_write", map[string]any{"path": filepath.Join(live, "b.go"), "text": "package a\n", "create": true}); res.IsError {
+		t.Fatalf("write in the copy: %+v", res.Content)
+	}
+	if res, out := callFiles(t, "files_search", map[string]any{"roots": []string{live}, "query": "needle"}); res.IsError || !strings.Contains(mustJSON(t, out), "a.go") {
+		t.Fatalf("search the copy: %+v %v", res.Content, out)
+	}
+	for _, p := range []string{archived, stray} {
+		if res, _ := callFiles(t, "files_list", map[string]any{"root": p}); !res.IsError ||
+			!strings.Contains(res.Content[0].(*mcp.TextContent).Text, "is not a root of the active project") {
+			t.Errorf("list %s: %+v", p, res.Content)
+		}
+		if res, _ := callFiles(t, "files_read", map[string]any{"path": filepath.Join(p, "a.go")}); !res.IsError ||
+			!strings.Contains(res.Content[0].(*mcp.TextContent).Text, "is outside the active project's roots") {
+			t.Errorf("read %s: %+v", p, res.Content)
+		}
+		if res, _ := callFiles(t, "files_search", map[string]any{"roots": []string{p}, "query": "needle"}); !res.IsError {
+			t.Errorf("search %s answered", p)
+		}
+	}
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}

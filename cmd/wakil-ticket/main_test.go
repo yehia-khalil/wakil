@@ -1360,3 +1360,39 @@ func TestHandoffMayPushAndCarryTools(t *testing.T) {
 	}
 	call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"})
 }
+
+// A workspace's view reads its ticket in the view's checkout (decision 22): the copy's path is a
+// root the read admits, as wakil-git's and wakil-files' confinement do (AllowedRootPaths). A
+// folder the record does not hold as a live checkout — an archived workspace's, or one no
+// workspace records — is still refused (decision 13).
+func TestTicketBranchReadsAWorkspacesCheckout(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	copyPath, err := wakilcore.WorkspaceCheckoutPath("initech", "api", "walk-ticket", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	git(t, f.repo, "worktree", "add", "-q", "-b", "ini-150-cache", copyPath)
+	archived, _ := wakilcore.WorkspaceCheckoutPath("initech", "api", "old", "api")
+	git(t, f.repo, "worktree", "add", "-q", "-b", "ini-160-retry", archived)
+	stray, _ := wakilcore.WorkspaceCheckoutPath("initech", "api", "stray", "api")
+	git(t, f.repo, "worktree", "add", "-q", "-b", "ini-142-stray", stray)
+	if err := wakilcore.SaveWorkspaces("initech", wakilcore.WorkspacesFile{Workspaces: []wakilcore.Workspace{
+		{ID: "w1", Slug: "walk-ticket", Project: "api", Checkouts: []wakilcore.WorkspaceCheckout{{Repo: f.repo, Path: copyPath, Branch: "ini-150-cache"}}},
+		{ID: "w2", Slug: "old", Project: "api", Archived: true, Checkouts: []wakilcore.WorkspaceCheckout{{Repo: f.repo, Path: archived, Branch: "ini-160-retry"}}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+	var got TicketBranch
+	if err := json.Unmarshal(call(t, cs, "ticket_branch", map[string]any{"root": copyPath}), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Root != copyPath || got.Branch != "ini-150-cache" || len(got.Tickets) != 1 || got.Tickets[0].Key != "INI-150" {
+		t.Errorf("the copy's ticket = %+v", got)
+	}
+	for _, refused := range []string{archived, stray} {
+		if msg := callErr(t, cs, "ticket_branch", map[string]any{"root": refused}); !strings.Contains(msg, "is not a root of the active project") {
+			t.Errorf("%s: %s", refused, msg)
+		}
+	}
+}
