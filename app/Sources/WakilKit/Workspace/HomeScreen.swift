@@ -193,6 +193,8 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
 /// The ports a running line names (`api running on :41200 · web running on :41201` → `:41200 :41201`),
 /// else `running`: the compact card's token.
 public func homeRunningPorts(_ line: String) -> String {
+    // While a run gets going its line names the step it is on, whole (the walk): `api setup · npm ci · 12 s`.
+    if !line.contains("running") { return line }
     let ports = line.split(whereSeparator: { $0 == " " || $0 == "·" || $0 == "," })
         .filter { $0.hasPrefix(":") && $0.count > 1 && $0.dropFirst().allSatisfy(\.isNumber) }
     return ports.isEmpty ? "running" : ports.joined(separator: " ")

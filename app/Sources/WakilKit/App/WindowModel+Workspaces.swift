@@ -165,8 +165,10 @@ extension WindowModel {
             })
             // Piece 3: the card's running line follows every change, whoever ran it (Rule 5).
             await runner.use(changed: { [weak self, runner] id in
-                let line = runStatusLine(await runner.state(of: id))
-                await self?.runLineChanged(id, line)
+                let states = await runner.state(of: id)
+                await self?.runLineChanged(id, runStatusLine(states))
+                // While a step runs, its time on the card goes on (the walk): read again each second.
+                if states.contains(where: runIsOnAStep) { await self?.tickRunLine(id, runner: runner) }
             })
             // The window may already have its organisation (it was read before the wiring ended).
             self.sweepLeftoverTries()
@@ -200,6 +202,21 @@ extension WindowModel {
 
     public func runningTryProgress(project: String, repo: String) -> TryProgressState? {
         runningTryProgress[runningTryKey(project: project, repo: repo)]
+    }
+
+    /// Reads `workspace`'s run line again each second while one of its repos is getting going on a step.
+    func tickRunLine(_ workspace: String, runner: WorkspaceRunner) {
+        guard runLineTickers[workspace] == nil else { return }
+        runLineTickers[workspace] = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                let states = await runner.state(of: workspace)
+                guard let self else { return }
+                self.runLineChanged(workspace, runStatusLine(states))
+                if !states.contains(where: runIsOnAStep) { break }
+            }
+            self?.runLineTickers[workspace] = nil
+        }
     }
 
     func runLineChanged(_ workspace: String, _ line: String) {
@@ -409,4 +426,10 @@ extension WindowModel {
             await continueSession(session)
         }
     }
+}
+
+/// A repo whose run is getting going on a step: its line's time goes on.
+func runIsOnAStep(_ s: RepoRunState) -> Bool {
+    if case .starting = s.phase { return s.step != nil }
+    return false
 }

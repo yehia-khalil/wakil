@@ -158,6 +158,8 @@ private func screen(_ workspaces: [WorkspaceListing] = [], live: [LiveConversati
     #expect(!screen([listing(none)]).sections[0].cards[0].offersRun, "no copy on disk: nothing to run")
     #expect(homeRunningPorts("api running on :41200 · web running on :41201") == ":41200 :41201")
     #expect(homeRunningPorts("queue running") == "running", "something runs with no port: said so")
+    // The walk: a run getting going reads its step, its command and the time so far, whole.
+    #expect(homeRunningPorts("api setup · composer install · 1 min 4 s") == "api setup · composer install · 1 min 4 s")
 }
 
 @Test func aChildIsDrawnAsItsOwnRowAfterItsParentBranchedOffItsKey() {

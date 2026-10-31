@@ -347,6 +347,7 @@ struct Home: View {
                         Text(ports)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(green)
+                            .fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel(card.running ?? ports)
                             .accessibilityIdentifier("landing.card.\(card.id).running")
                         Button { runOnCard(card) { await model.stopOnCard(card.id) } } label: {
