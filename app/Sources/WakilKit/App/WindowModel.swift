@@ -2194,16 +2194,27 @@ public final class WindowModel {
     /// opened before any organisation kept saying it after a project with
     /// a root was open (found on the 2d-ii walk). The same defect, and the
     /// same fix, as `noActiveProviderNote` below (D3).
+    ///
+    /// **Not with no project** (workspaces, piece 3, the operator's walk of an organisation's
+    /// first-run home): there is no root to have, and the home says what to do. The sentence is for
+    /// a project that has none.
     public var noProjectRootNote: String? {
-        guard !hasProjectRoot else { return nil }
+        guard !hasProjectRoot, !project.isEmpty else { return nil }
         return "no project root available yet, so this session runs in \(rootPath) instead"
     }
 
+    ///
+    /// **Said when it stops something** (workspaces, piece 3, the operator's walk of an
+    /// organisation's first-run home): drawn standing, it put a developer's bootstrap hint above the
+    /// home's composer. It is one plain line from the operator's first send with no provider
+    /// (`startHarness`), naming where to fix it, until one is chosen.
     public var noActiveProviderNote: String? {
-        guard providerId.isEmpty else { return nil }
-        return "no active provider is set for this org yet — pick one in ⌘P, or bootstrap "
-            + "headlessly with `--dispatch ctx_set_provider`"
+        guard providerId.isEmpty, sendNeededProvider else { return nil }
+        return "No provider is set for this organisation — choose one in Settings (⌘,)."
     }
+
+    /// Whether a send in this organisation was stopped for want of a provider (`noActiveProviderNote`).
+    private var sendNeededProvider = false
 
     /// The word this codebase uses for "no provider chosen yet", shared so
     /// the one meaning stays attached to one literal rather than being
@@ -2444,6 +2455,8 @@ public final class WindowModel {
     /// handler can resolve against the outgoing org's context while the
     /// new org's server is coming up.
     func invalidateForOrgChange() async {
+        // The next organisation's first send says its own provider's absence, if it has to.
+        sendNeededProvider = false
         // Invariant 4 for names: nothing of the old org resolves after this line.
         await vocabulary?.dropAll()
         // 3b-viii: nothing answers a ghost request on the outgoing org's providers, and a rebuild
@@ -8054,12 +8067,22 @@ public final class WindowModel {
     /// resumed. How many were dropped is reported rather than swallowed,
     /// for the same reason `SessionList.Skipped` exists on the Go side: an
     /// incomplete listing must say it is incomplete.
+    /// What `wakilcore.Resolve` answers a read that needs a project when none is active
+    /// (`internal/wakilcore/resolve.go`).
+    static let noActiveProjectRefusal = "no active project — run set_project first"
+
     private func sessionPaletteItems() async -> (items: [PaletteItem], note: String?) {
         // The organisation the listing is asked in, taken before it suspends: the sessions are that
         // organisation's, whatever the window has switched to by the time they arrive (Invariant 4).
         let org = organization
         let source = await paletteSource("session_list")
-        guard let structured = source.structured else { return ([], source.note) }
+        guard let structured = source.structured else {
+            // Workspaces, piece 3: with no project on the screen — an organisation's first-run home —
+            // the listing is refused for having none, which the home already explains. That refusal
+            // alone is not drawn; every other failure is, whole (Rule 8).
+            if project.isEmpty, source.note?.contains(Self.noActiveProjectRefusal) == true { return ([], nil) }
+            return ([], source.note)
+        }
         guard case .array(let rows)? = structured["sessions"] else {
             return ([], "session_list: the result carried no \"sessions\" array")
         }
@@ -8154,7 +8177,9 @@ public final class WindowModel {
             // Silent, as in `dispatch`: a palette closed while it loads cancels this.
             return (nil, nil)
         } catch {
-            return (nil, "\(action): \(error)")
+            // Once: a standard action's error already begins with its name (`session_list:
+            // session_list: …` was drawn on the home).
+            return (nil, statusDescribingFailure(action, error))
         }
     }
 
@@ -8460,7 +8485,9 @@ public final class WindowModel {
         in startPlace: Place, provider: String, sessionId: String, conversation: String
     ) async -> StartedSession? {
         guard !provider.isEmpty else {
-            status = "no agent session: no provider is active for this window yet"
+            // Said by `noActiveProviderNote`, once: the line under the composer, not here too.
+            sendNeededProvider = true
+            status = ""
             return nil
         }
         guard let credentials = await resolveCredentials(
@@ -8856,7 +8883,8 @@ public final class WindowModel {
             // on an unexpected `stop()`) without also clearing
             // `sessionId`: without this, `send` would silently become a
             // no-op instead of saying why.
-            if status.isEmpty {
+            // A send stopped for want of a provider is said by `noActiveProviderNote`, alone.
+            if status.isEmpty, noActiveProviderNote == nil {
                 status = "no agent session: nothing to send to"
             }
             return false

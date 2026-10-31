@@ -1,0 +1,15 @@
+{"expect":{"tree":"contains","text":"NO ORGANISATION IS OPEN · NOTHING BEHIND THIS PLANE"}}
+{"do":{"click":"org.plane.create"}}
+{"do":{"type":{"into":"org.create.name","text":"First run"}}}
+{"do":{"click":"org.create.submit"}}
+{"expect":{"tree":"contains","text":"Switch to first-run now"}}
+{"do":{"click":"org.adopt.switchNow"}}
+{"expect":{"frame":"landing.explainer","minWidth":40}}
+{"expect":{"tree":"absent","text":"session_list"}}
+{"expect":{"tree":"absent","text":"no active provider"}}
+{"expect":{"tree":"absent","text":"bootstrap headlessly"}}
+{"expect":{"tree":"absent","text":"no project root available yet"}}
+{"do":{"type":{"into":"window.composer","text":"add the project at ~/code/api"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"No provider is set for this organisation — choose one in Settings (⌘,)."}}
+{"expect":{"tree":"absent","text":"no agent session"}}

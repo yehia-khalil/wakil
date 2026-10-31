@@ -72,7 +72,7 @@ private let orgDerived: Set<String> = [
     "conversationNamingTasks",
     "quickTasksConfigError",
     "providerId",
-    "lookup", "rootPaths", "hasProjectRoot",
+    "lookup", "rootPaths", "hasProjectRoot", "sendNeededProvider",
     "organization", "resumedParentForTesting",
     // 2e (#198): `settings` is the active organisation's whole
     // configuration — its three strings, its accounts, its projects —
