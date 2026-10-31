@@ -1240,12 +1240,14 @@ public func registerEditorActions(
                         "kind": .object(["type": .string("string"), "enum": .array([.string("file"), .string("dir")])])],
                        required: ["path", "kind"]),
         handler: { params in
-            let pane = try await editorPane(params, action: "editor_create")
             guard let raw = optionalString(params, "path") else {
                 throw StandardActionError.missingParam(action: "editor_create", param: "path")
             }
             let kind = optionalString(params, "kind") ?? "file"
+            // Routed before the pane: the route can start a workspace and carry the canvas into its view,
+            // and an editor opened first stood on the canvas the write left — Main's (decision 22).
             let c = try await confine(try await routedPath(raw, action: "editor_create"), action: "editor_create")
+            let pane = try await editorPane(params, action: "editor_create")
             switch try await filesTool(try requireFiles("editor_create"), "files_create",
                                        ["path": .string(c.path), "kind": .string(kind)]) {
             case .failed(let text): throw EditorFilesError(description: text)
@@ -1281,7 +1283,6 @@ public func registerEditorActions(
         schema: schema(["path": .object(["type": .string("string")]), "to": .object(["type": .string("string")])],
                        required: ["path", "to"]),
         handler: { params in
-            let pane = try await editorPane(params, action: "editor_rename")
             guard let rawFrom = optionalString(params, "path") else {
                 throw StandardActionError.missingParam(action: "editor_rename", param: "path")
             }
@@ -1290,6 +1291,7 @@ public func registerEditorActions(
             }
             let from = try await confine(try await routedPath(rawFrom, action: "editor_rename"), action: "editor_rename")
             let to = try await confine(try await routedPath(rawTo, action: "editor_rename"), action: "editor_rename")
+            let pane = try await editorPane(params, action: "editor_rename")
             // Ruling R4: the same name changes nothing — no move, no tab re-pointed, no diff tab closed.
             @Sendable func answer() async -> JSONValue {
                 guard case .object(var o) = await reply(pane) else { return .null }
@@ -1326,11 +1328,13 @@ public func registerEditorActions(
         kind: .mutate, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")])], required: ["path"]),
         handler: { params in
-            let pane = try await editorPane(params, action: "editor_trash")
             guard let raw = optionalString(params, "path") else {
                 throw StandardActionError.missingParam(action: "editor_trash", param: "path")
             }
+            // Routed before the pane: the route can start a workspace and carry the canvas into its view,
+            // and an editor opened first stood on the canvas the write left — Main's (decision 22).
             let c = try await confine(try await routedPath(raw, action: "editor_trash"), action: "editor_trash")
+            let pane = try await editorPane(params, action: "editor_trash")
             switch try await filesTool(try requireFiles("editor_trash"), "files_trash", ["path": .string(c.path)]) {
             case .failed(let text): throw EditorFilesError(description: text)
             case .ok: break
