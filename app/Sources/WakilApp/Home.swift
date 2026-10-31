@@ -666,6 +666,10 @@ struct Home: View {
         .onTapGesture { if !editing { _ = action() } }
         .contextMenu { Button("Rename…") { renaming = line.id } }
         .accessibilityElement(children: .contain)
+        // Named as its title: a `.contain` row's own label is empty, so VoiceOver announced a button
+        // with no name, and a check reading the row by label read "" (the Landing's rows were
+        // `.combine`, whose label is the title). Its Text stays a child, for the tree's text.
+        .accessibilityLabel(editing ? "" : line.title)
         .accessibilityAddTraits(editing ? [] : .isButton)
         .accessibilityAction(.default) { if !editing { _ = action() } }
         .accessibilityIdentifier("landing.row.\(id)")
@@ -794,6 +798,7 @@ struct Home: View {
                         .onTapGesture { _ = resume() }
                         .padding(.leading, 27)
                         .accessibilityElement(children: .contain)
+                        .accessibilityLabel(c.title)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction(.default) { _ = resume() }
                         .accessibilityIdentifier("landing.row.\(c.id)")
