@@ -176,3 +176,16 @@ then a commit `workspaces: <what>`. Everything decided is in WakilKit; `WakilApp
   no environment. Tests first: `HomeScreenTests`, `WindowModelWorkspaceViewsTests`.
 - [x] I2 A card's Run, Stop and run error are addressed by the card's number on the home
   (`landing.card:<n>.run`), not its workspace id (`homeCardNumbers`). Check: `agent/workspaces-home-run.jsonl`.
+
+## Phase J — the walk's empty environment (2026-10-31)
+
+- [x] J1 A door from the home into a project never lands with no environment chosen while the project
+  declares any: `goTo` ends in `chooseEnvironmentOnEntry` — the one last used there
+  (`environmentsLastUsed`), else Start in's when it names one, else the first declared that is not
+  production (`environmentOnEntry`, Rule 9). A send from the home with no choice and no environment
+  enters the window's own project with one (`sendGoesElsewhere`). Tests first:
+  `EnvironmentOnEntryTests`, `HomeStartInTests`.
+- [x] J2 The context line's Environment segment offers the declared environments while none is chosen
+  (`environmentHasChoice`), its badge reading NONE CHOSEN — UNKNOWN only for a project declaring none
+  (`environmentBadgeLabel`); the resting chip opens the picker too (`window.contextLine.environment`,
+  rows `window.contextLine.environment.<name>`). Check: `seeded/workspaces-home-enter-environment.jsonl`.

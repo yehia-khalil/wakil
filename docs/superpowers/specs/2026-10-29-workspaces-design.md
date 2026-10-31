@@ -762,6 +762,23 @@ inside `design-language.md`); this is what was built from it.
 - A home screen longer than today's when only one thing is going on.
 - Agents that keep each other running without the operator.
 
+### Amendment 2026-10-31 — entering a project chooses an environment
+
+From the operator's walk: the home selects no environment, and its doors landed in the project with
+none chosen — the badge read UNKNOWN and no picker drew, though the project declares `staging` and
+`production` (Invariant 8). Calls:
+
+- **Every door from the home into a project lands on one of its environments** when it declares any:
+  the one the operator last used in that project this launch, else the one Start in names, else the
+  first declared that is not production (Rule 9: defaults suggest); a project declaring only production
+  lands on it, red. A Start in row or a workspace naming an environment goes there.
+- **A live conversation started with none chosen still opens where it lives** (piece 3 walk): moving a
+  live agent's place would change the caller its socket answers for (Invariant 4), which renames refuse
+  for the same reason. On its screen the Environment segment offers the project's environments.
+- **The Environment segment always offers the declared environments while none is chosen**, its badge
+  reading *none chosen*; *unknown* stays only for a project declaring none. The resting badge opens the
+  picker too.
+
 ### Amendment 2026-10-30 — piece 1's walk: names and orphan copies
 
 - **The key once** (decision 10's fallback). `<KEY>-<slug of title>` drops the slug's leading copy of

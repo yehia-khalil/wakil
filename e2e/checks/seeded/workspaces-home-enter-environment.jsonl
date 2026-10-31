@@ -1,0 +1,17 @@
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"do":{"click":"landing.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"tree":"absent","text":"UNKNOWN"}}
+{"expect":{"tree":"absent","text":"NONE CHOSEN"}}
+{"expect":{"frame":"window.contextLine.environment","minWidth":10}}
+{"do":{"click":"window.contextLine.environment"}}
+{"expect":{"frame":"window.contextLine.environment.qa","minWidth":40}}
+{"expect":{"frame":"window.contextLine.environment.staging","minWidth":40}}
+{"do":{"click":"window.contextLine.environment.qa"}}
+{"expect":{"tree":"contains","text":"QA"}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"do":{"click":"window.contextLine.home"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"QA"}}

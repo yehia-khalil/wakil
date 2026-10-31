@@ -110,7 +110,8 @@ struct ContextLine: View {
     private func hasChoice(_ segment: Segment) -> Bool {
         switch segment {
         case .project: return projects.count > 1
-        case .environment: return environments.count > 1
+        // Piece 3 walk: while none is chosen, even one declared is a choice to make (Invariant 8).
+        case .environment: return environmentHasChoice(environment: model.environment, declaredCount: environments.count)
         // 3a-iv: the picker always has something to offer (create, fetch) when there is a git root.
         case .branch: return model.branchSegment != nil
         case .none: return false
@@ -285,7 +286,17 @@ struct ContextLine: View {
             // Absent with no project, for the reason the segment is: an
             // environment lives inside a project's own map, so there is
             // nothing here to be unset from.
-            if !model.project.isEmpty { chip }
+            // Pressable at rest too: it opens the Environment picker, so an environment can be chosen
+            // without first hovering the line (piece 3 walk).
+            if !model.project.isEmpty {
+                chip
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggle(.environment) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(.default) { toggle(.environment) }
+                    .accessibilityIdentifier("window.contextLine.environment")
+            }
             // 3a-iv: the active root's branch, an identifier, so monospace (§6).
             if let branch = model.branchSegment {
                 Text(branch)
@@ -308,7 +319,8 @@ struct ContextLine: View {
     /// promoted: Invariant 8's treatment does not change because the pointer
     /// arrived, and only the chevron is added.
     private var chip: some View {
-        Text(model.environmentLabel.uppercased())
+        // *None chosen* while the project declares environments; *unknown* only when it declares none.
+        Text(environmentBadgeLabel(environment: model.environment, declaredCount: environments.count).uppercased())
             .font(.system(size: 8.5, weight: .medium))
             .tracking(1.6)
             .foregroundStyle(Color(EnvironmentBadge.chipColour(isProduction: isProduction)))
@@ -423,6 +435,10 @@ struct ContextLine: View {
                 toggle(.environment)
             }
             .background(reporting(.environment))
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { toggle(.environment) }
+            .accessibilityIdentifier("window.contextLine.environment")
         }
     }
 
@@ -577,7 +593,8 @@ struct ContextLine: View {
                             // moment it is chosen — a list is the last one
                             // before the room turns.
                             tint: row.isProduction
-                                ? Color(red: 0.910, green: 0.361, blue: 0.361) : nil
+                                ? Color(red: 0.910, green: 0.361, blue: 0.361) : nil,
+                            identifier: "window.contextLine.environment.\(row.name)"
                         ) {
                             withAnimation(Self.promote) { open = .none }
                             Task { await model.setEnvironment(row.name) }
@@ -625,6 +642,7 @@ struct ContextLine: View {
         notice: String? = nil,
         isCurrent: Bool,
         tint: Color?,
+        identifier: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let isHovered = hoveredRow == title
@@ -695,6 +713,24 @@ struct ContextLine: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
+        .modifier(MenuRowIdentity(identifier: identifier, action: action))
+    }
+
+    /// An environment row is a named button in the tree, so a check can press it.
+    private struct MenuRowIdentity: ViewModifier {
+        let identifier: String?
+        let action: () -> Void
+        func body(content: Content) -> some View {
+            if let identifier {
+                content
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(.default, action)
+                    .accessibilityIdentifier(identifier)
+            } else {
+                content
+            }
+        }
     }
 
     // MARK: - Opening a segment
