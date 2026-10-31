@@ -279,6 +279,9 @@ private let orgIndependent: Set<String> = [
     // Fix round 1. The operator's environment switch in progress: a task the pump waits on,
     // not org-derived state. An org switch starts no environment switch of its own.
     "operatorEnvironmentSwitch",
+    // Piece 3 walk: set and cleared by that same switch while it holds the view it was made in;
+    // presentation of the switch in flight, not org-derived state.
+    "holdingViewThroughSwitch",
     // Plan 4 final review I1: `goTosInFlight` counts chip clicks between switches, raised and
     // lowered by the `goTo` that runs each, whichever org it ends in — the shape of `switching`.
     "goTosInFlight",

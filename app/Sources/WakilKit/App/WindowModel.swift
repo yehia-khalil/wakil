@@ -3021,10 +3021,16 @@ public final class WindowModel {
     /// whole.
     @discardableResult
     public func setEnvironment(_ name: String) async -> Bool {
+        await setEnvironment(name, keepingView: true)
+    }
+
+    /// `setEnvironment`; `keepingView` false for a switch on the way somewhere else (`goTo`), which
+    /// decides itself what the screen ends on.
+    func setEnvironment(_ name: String, keepingView: Bool) async -> Bool {
         // W12: choosing the environment already active changes nothing, so it dispatches
         // nothing — no plane, no cleared reply, no refetch.
         guard !environmentSwitchIsNoOp(from: environment, to: name) else { return true }
-        return await asOperatorEnvironmentSwitch { [weak self] in
+        return await asOperatorEnvironmentSwitch(keepingView: keepingView) { [weak self] in
             await self?.switchEnvironment(to: name) ?? false
         }
     }
@@ -3034,14 +3040,64 @@ public final class WindowModel {
     /// `observationPump` sees that dispatch too, and waits for this to finish before judging
     /// whether anything changed, so the switch is not done twice. After the switches before it.
     /// `setEnvironment` and the fast path's `ctx_set_environment` (`runFastPath`) both run here.
-    func asOperatorEnvironmentSwitch<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
+    ///
+    /// **It stays in the view it was made in** (piece 3 walk; Rule 6) unless `keepingView` is false:
+    /// a conversation lives in one place, so the new environment is a place with none on screen, and
+    /// the home — drawn wherever no work has begun — came up in the project's view. Main's view, or
+    /// the workspace's, opens there instead (`stayInView`).
+    func asOperatorEnvironmentSwitch<T: Sendable>(
+        keepingView: Bool = true, _ body: @escaping @MainActor () async -> T
+    ) async -> T {
         let previous = operatorEnvironmentSwitch
-        let task = Task { @MainActor () -> T in
+        let task = Task { @MainActor [weak self] () -> T in
             _ = await previous?.value
-            return await body()
+            let view = keepingView ? self?.viewOnScreen : nil
+            let left = self?.place
+            // The home is not drawn between the switch and the view opening (`sessionStarted`).
+            if view != nil { self?.holdingViewThroughSwitch = true }
+            defer { if view != nil { self?.holdingViewThroughSwitch = false } }
+            let result = await body()
+            if let view, let left { await self?.stayInView(view, leaving: left) }
+            return result
         }
         operatorEnvironmentSwitch = Task { @MainActor in _ = await task.value }
         return await task.value
+    }
+
+    /// An environment switch made in a view is between its dispatch and that view opening in the
+    /// new place (`stayInView`): the screen is still a view, so the home is not drawn meanwhile.
+    var holdingViewThroughSwitch = false
+
+    /// Whose view is on screen: nil on the home (or with no project); else Main's or a workspace's.
+    enum ScreenView: Equatable { case main, workspace(String) }
+    var viewOnScreen: ScreenView? {
+        guard sessionStarted, !projectKey.isEmpty, let agent = currentAgent else { return nil }
+        return agent.workspace.map { .workspace($0.id) } ?? .main
+    }
+
+    /// After an environment switch made in `view`, the screen shows that view in the new place —
+    /// Main's as its **Open** does (`openMainView`), a workspace's on its newest live conversation
+    /// there, else a view slot moved into it. The workspace keeps its own environment (decision 28:
+    /// switching the screen's environment never moves a workspace). Nothing when the switch was
+    /// refused, or the place already shows that view.
+    private func stayInView(_ view: ScreenView, leaving left: Place) async {
+        guard place != left, place.organization == left.organization, place.project == left.project,
+              viewOnScreen != view else { return }
+        switch view {
+        case .main:
+            await openMainView()
+        case .workspace(let id):
+            guard let w = await workspaceRouter?.store.workspace(id), !w.archived else {
+                await openMainView()
+                return
+            }
+            if let latest = liveConversations(in: place).filter({ $0.workspace?.id == id })
+                .max(by: { $0.lastActivity < $1.lastActivity }) {
+                await switchToConversation(latest.id)
+                return
+            }
+            await openViewSlot(workspace: w)
+        }
     }
 
     /// The operator's environment switch in progress, if any (fix round 1, item 5).
@@ -9951,13 +10007,7 @@ public final class WindowModel {
             let target = place ?? self.place
             await goTo(target)
             guard self.place.project == target.project else { return }
-            // The newest slot: a pane opened on the home makes another over the home's canvas, and
-            // the door goes back to the panes as the operator left them (decision 23).
-            if let slot = liveConversations(in: self.place).last(where: { $0.workspace == nil && $0.isViewSlot }) {
-                await switchToConversation(slot.id)
-                return
-            }
-            await openViewSlot(workspace: nil)
+            await openMainView()
             return
         }
         guard let w = await workspaceRouter?.store.workspace(workspace) else {
@@ -9971,6 +10021,17 @@ public final class WindowModel {
         await goTo(Place(organization: organization, project: w.project, environment: w.environment))
         guard self.place.project == w.project else { return }
         await openViewSlot(workspace: w)
+    }
+
+    /// Main's view of the screen's place: its newest view slot — a pane opened on the home makes
+    /// another over the home's canvas, and the door goes back to the panes as the operator left them
+    /// (decision 23) — else a fresh one over the place's canvas.
+    private func openMainView() async {
+        if let slot = liveConversations(in: place).last(where: { $0.workspace == nil && $0.isViewSlot }) {
+            await switchToConversation(slot.id)
+            return
+        }
+        await openViewSlot(workspace: nil)
     }
 
     /// Main's view of `place` (piece 3): the canvas of its live view slot — what the project's
@@ -10378,7 +10439,7 @@ public final class WindowModel {
             guard await setProject(target.project) else { return }
         }
         if !target.environment.isEmpty || exactEnvironment, target.environment != environment {
-            _ = await setEnvironment(target.environment)
+            _ = await setEnvironment(target.environment, keepingView: false)
         } else if !exactEnvironment, organization == target.organization,
                   target.project.isEmpty || target.project == projectKey {
             await chooseEnvironmentOnEntry()
@@ -10400,7 +10461,7 @@ public final class WindowModel {
             return
         }
         if let chosen = environmentOnEntry(declared: declared, current: environment, remembered: remembered) {
-            _ = await setEnvironment(chosen)
+            _ = await setEnvironment(chosen, keepingView: false)
         }
     }
 
@@ -10460,7 +10521,9 @@ public final class WindowModel {
     ///
     /// Per place (`PlaceAgent.sessionStarted`): a place where no work has begun draws its
     /// Landing, whatever has begun elsewhere.
-    public var sessionStarted: Bool { currentAgent?.sessionStarted ?? false }
+    /// An environment switch made in a view holds it (`holdingViewThroughSwitch`): the home is
+    /// never drawn on its way to that view in the new environment.
+    public var sessionStarted: Bool { holdingViewThroughSwitch || (currentAgent?.sessionStarted ?? false) }
 
     /// The id Wakil has assigned to this window's session, whether or not the
     /// agent has been started with it yet.

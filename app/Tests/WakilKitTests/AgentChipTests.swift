@@ -652,13 +652,22 @@ struct DraftPerScreenTests {
         let (composer, told) = composer(over: model)
         composer.edited(draft: "drop the users table", caret: 20)
 
+        // Piece 3 walk: production's screen then becomes Main's view there (Rule 6) — the same
+        // screen re-keyed, told as a rename, which moves no draft; only real changes are counted.
+        var renames = 0
+        let counting = model.onScreenChange
+        model.onScreenChange = { from, to, focus in
+            if model.isSameScreenRenamed(from: from, to: to) { renames += 1 }
+            counting?(from, to, focus)
+        }
+
         #expect(await model.setEnvironment("production"))
         #expect(composer.draft.isEmpty, "staging's draft is not staged in production")
-        #expect(told() == 1)
+        #expect(told() - renames == 1)
 
         #expect(await model.setEnvironment("staging"))
         #expect(composer.draft == "drop the users table" && composer.caret == 20)
-        #expect(told() == 2)
+        #expect(told() - renames == 2)
     }
 
     @Test func aDraftStaysWithItsPlaceAcrossAJumpToAnotherOrg() async throws {

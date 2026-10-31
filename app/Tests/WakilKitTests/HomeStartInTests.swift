@@ -181,7 +181,8 @@ struct HomeStartInTests {
         #expect(await w.model.send("hi"))
         let greeting = try #require(w.model.currentAgent)
         await w.model.setEnvironment("dev")
-        #expect(w.model.place.environment == "dev" && !w.model.sessionStarted)
+        #expect(w.model.place.environment == "dev" && w.model.sessionStarted && w.model.currentAgent !== greeting,
+                "Main's view in dev, the greeting left where it lives")
 
         await w.model.openHomeLine(greeting.id, session: greeting.sessionId)
 
@@ -249,3 +250,120 @@ struct HomeStartInTests {
         #expect(screen.sections.first?.main?.lines.first?.session == "s1")
     }
 }
+
+// Workspaces, piece 3 walk (Rule 6): switching the environment in a project's view — the context
+// line's picker, ⌘P's row, the fast path — stays in that view, Main's or the workspace's, in the
+// chosen environment; it never drops the operator on the home.
+@MainActor
+struct EnvironmentSwitchStaysInViewTests {
+    private static let w1 = Workspace(
+        id: "w1", name: "Fix OTP guard order", slug: "fix-otp", project: "api", environment: "staging",
+        checkouts: [WorkspaceCheckout(repo: "/p/core", path: "/h/ws/api/fix-otp/core", branch: "fix-otp")])
+    private let production = Place(organization: "initech", project: "api", environment: "production")
+
+    private func router(_ workspaces: [Workspace]) async -> WorkspaceRouter {
+        let store = WorkspaceStore()
+        await store.use(load: { WorkspacesFile(workspaces: workspaces) }, save: { _ in })
+        let router = WorkspaceRouter(store: store)
+        _ = await router.load(org: "initech")
+        return router
+    }
+
+    @Test func mainsViewStaysMainsViewInTheChosenEnvironment() async throws {
+        let w = await window()
+        w.model.useWorkspaces(await router([]))
+        await w.model.openWorkspaceView(nil)
+        let staging = try #require(w.model.currentAgent)
+
+        #expect(await w.model.setEnvironment("production"))
+
+        #expect(w.model.place == production)
+        #expect(w.model.sessionStarted, "the view, not the home")
+        let view = try #require(w.model.currentAgent)
+        #expect(view.place == production && view.workspace == nil && view.isViewSlot, "Main's view there")
+
+        #expect(await w.model.setEnvironment("staging"))
+        #expect(w.model.currentAgent === staging, "Main keeps one view per environment")
+    }
+
+    @Test func aConversationInMainStaysInMainsViewInTheChosenEnvironment() async throws {
+        let w = await window()
+        w.model.useWorkspaces(await router([]))
+        #expect(await w.model.send("in staging"))
+        let first = try #require(w.model.currentAgent)
+
+        #expect(await w.model.setEnvironment("production"))
+
+        #expect(w.model.sessionStarted, "the view, not the home")
+        #expect(w.model.currentAgent?.place == production && w.model.workspaceOnScreen == nil)
+        #expect(w.model.conversation(id: first.id) === first, "the one left keeps running where it lives")
+    }
+
+    @Test func aWorkspacesViewStaysTheWorkspacesViewAndTheWorkspaceDoesNotMove() async throws {
+        let w = await window()
+        let router = await router([Self.w1])
+        w.model.useWorkspaces(router)
+        await w.model.openWorkspaceView("w1")
+        let staging = try #require(w.model.currentAgent)
+        #expect(w.model.workspaceOnScreen?.id == "w1")
+
+        #expect(await w.model.setEnvironment("production"))
+
+        #expect(w.model.place == production)
+        #expect(w.model.sessionStarted, "the view, not the home")
+        #expect(w.model.workspaceOnScreen?.id == "w1", "the workspace's view")
+        #expect(await router.store.workspace("w1")?.environment == "staging",
+                "switching the screen's environment never moves a workspace (decision 28)")
+
+        #expect(await w.model.setEnvironment("staging"))
+        #expect(w.model.currentAgent === staging)
+    }
+
+    /// The home is not drawn on the way: every screen change the switch tells is of a view.
+    @Test func theHomeIsNeverDrawnOnTheWay() async throws {
+        let w = await window()
+        w.model.useWorkspaces(await router([]))
+        await w.model.openWorkspaceView(nil)
+        let model = w.model
+        var home: [Bool] = []
+        model.onScreenChange = { _, _, _ in home.append(!model.sessionStarted) }
+
+        #expect(await model.setEnvironment("production"))
+
+        #expect(!home.isEmpty && !home.contains(true), "\(home)")
+    }
+
+    /// The fast path ("switch to production") runs its dispatch inside the operator's switch, as
+    /// `runFastPath` does: it stays in the view too.
+    @Test func theFastPathsSwitchStaysInTheView() async throws {
+        let w = await window()
+        w.model.useWorkspaces(await router([]))
+        await w.model.openWorkspaceView(nil)
+        let model = w.model, registry = w.registry
+        _ = await model.asOperatorEnvironmentSwitch { () async -> Bool in
+            _ = try? await registry.dispatch(
+                name: "ctx_set_environment", params: .object(["name": .string("production")]), origin: .ui,
+                caller: DispatchCaller(place: model.place, session: nil, via: "fastPath"), confirmation: nil)
+            await model.refreshContext()
+            return true
+        }
+        #expect(model.place == production && model.sessionStarted && model.workspaceOnScreen == nil)
+    }
+
+    @Test func onTheHomeASwitchStaysOnTheHome() async {
+        let w = await window()
+        w.model.useWorkspaces(await router([]))
+        #expect(await w.model.setEnvironment("production"))
+        #expect(w.model.place == production && !w.model.sessionStarted)
+    }
+
+    @Test func aRefusedSwitchStaysInTheView() async throws {
+        let w = await window()
+        w.model.useWorkspaces(await router([]))
+        await w.model.openWorkspaceView(nil)
+        let view = try #require(w.model.currentAgent)
+        #expect(!(await w.model.setEnvironment("nosuch")))
+        #expect(w.model.currentAgent === view && w.model.place == api)
+    }
+}
+

@@ -779,6 +779,21 @@ none chosen — the badge read UNKNOWN and no picker drew, though the project de
   reading *none chosen*; *unknown* stays only for a project declaring none. The resting badge opens the
   picker too.
 
+### Amendment 2026-10-31 — an environment switch stays in the view
+
+From the operator's walk: in a project's view, choosing another environment on the context line
+took the operator to the home. A conversation lives in one place, so the new environment is a place
+with nothing on screen, and the home is drawn wherever no work has begun. Calls (Rule 6):
+
+- **The operator's environment switch stays in the view it was made in** — the context line's picker,
+  ⌘P's row and the fast path alike. In Main's view, Main's view of the new environment opens as its
+  **Open** does (its newest view slot, else one over that environment's canvas); Main keeps one view
+  per environment, so its data panes are that environment's and the terminals stay in the view left.
+  In a workspace's view, the workspace's view opens there (its newest live conversation in that
+  place, else a view slot); the workspace keeps its environment (decision 28: switching the screen's
+  environment never moves a workspace; `workspace_set_environment` does). On the home it stays on
+  the home. A switch on the way somewhere else (a door, a chip, a line) lands where that goes.
+
 ### Amendment 2026-10-30 — piece 1's walk: names and orphan copies
 
 - **The key once** (decision 10's fallback). `<KEY>-<slug of title>` drops the slug's leading copy of
