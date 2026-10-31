@@ -204,3 +204,122 @@ func TestChangesAndBlameReadARecordedCheckoutAndRefuseAnArchivedOne(t *testing.T
 		}
 	}
 }
+
+// addSecondProject registers a second project of the organisation, not the active one, with a
+// repository as its one root (Settings edits any project of the organisation: its Running → Try
+// makes a copy of that project's repo while another project is on screen).
+func addSecondProject(t *testing.T, org, key string) string {
+	t.Helper()
+	home := os.Getenv("HOME")
+	dir := filepath.Join(home, key)
+	if err := os.MkdirAll(filepath.Join(home, ".wakil", "orgs", org), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".wakil"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pp := filepath.Join(dir, ".wakil", "project.json")
+	if err := os.WriteFile(pp, []byte(`{"name":"`+key+`","org":"`+org+`","roots":[{"path":"."}],"environments":{"local":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := wakilcore.LoadRegistryFor(org)
+	if err != nil {
+		reg = map[string]wakilcore.ProjectEntry{}
+	}
+	reg[key] = wakilcore.ProjectEntry{Path: pp}
+	if err := wakilcore.SaveRegistry(org, reg); err != nil {
+		t.Fatal(err)
+	}
+	gitInit(t, dir)
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
+}
+
+// The walk: Settings → a second project → Running → Try answered "… is not one of the active
+// project's own roots". The workspace tools validate a root against the project they are told
+// (one of the active organisation's, Invariant 4), the active project only when none is named.
+func TestTheWorkspaceToolsActOnTheNamedProjectOfTheOrganisation(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	other := addSecondProject(t, "initech", "parkour")
+	cs := connectedClient(t)
+
+	add, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": other, "project": "parkour", "slug": "try-parkour", "branch": "wakil-try/try-parkour", "create": true, "from": "HEAD"})
+	if fail != "" {
+		t.Fatalf("Try's copy of a second project's repo: %s", fail)
+	}
+	path := add["path"].(string)
+	if !strings.Contains(path, filepath.Join("workspaces", "parkour", "try-parkour")) {
+		t.Fatalf("path %q", path)
+	}
+	if _, fail := callJSON(t, cs, "git_worktree_list", map[string]any{"root": other, "project": "parkour"}); fail != "" {
+		t.Fatalf("list: %s", fail)
+	}
+	if _, fail := callJSON(t, cs, "git_worktree_prune", map[string]any{"root": other, "project": "parkour"}); fail != "" {
+		t.Fatalf("prune: %s", fail)
+	}
+	rec := []wakilcore.Workspace{{ID: "t1", Name: "Try parkour", Slug: "try-parkour", Project: "parkour", Environment: "local",
+		Checkouts: []wakilcore.WorkspaceCheckout{{Repo: other, Path: path, Branch: "wakil-try/try-parkour"}}}}
+	if _, fail := callJSON(t, cs, "workspaces_write", map[string]any{"workspaces": rec}); fail != "" {
+		t.Fatal(fail)
+	}
+	if _, fail := callJSON(t, cs, "git_release_branch", map[string]any{"root": path, "project": "parkour"}); fail != "" {
+		t.Fatalf("release in the copy: %s", fail)
+	}
+	// Try's end archives it: the copy is removed from the second project's repo.
+	if _, fail := callJSON(t, cs, "git_worktree_remove", map[string]any{"root": other, "project": "parkour", "path": path, "snapshot": "refs/wakil/snapshots/try-parkour/parkour"}); fail != "" {
+		t.Fatalf("remove: %s", fail)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("copy left")
+	}
+	if _, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": other, "project": "parkour", "slug": "again", "branch": "again", "create": true, "from": "HEAD"}); fail != "" {
+		t.Fatal(fail)
+	}
+	if _, fail := callJSON(t, cs, "git_worktree_discard", map[string]any{"root": other, "project": "parkour", "slug": "again", "branch": "again"}); fail != "" {
+		t.Fatalf("discard: %s", fail)
+	}
+
+	// Still confined: a root is checked against the project named, the active one when none is.
+	for _, c := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{"root": other, "project": "proj", "slug": "x", "branch": "x", "create": true, "from": "HEAD"}, "is not one of project proj's own roots"},
+		{map[string]any{"root": root, "project": "parkour", "slug": "x", "branch": "x", "create": true, "from": "HEAD"}, "is not one of project parkour's own roots"},
+		{map[string]any{"root": other, "project": "nobody", "slug": "x", "branch": "x", "create": true, "from": "HEAD"}, "unknown project: nobody"},
+	} {
+		if _, fail := callJSON(t, cs, "git_worktree_add", c.args); !strings.Contains(fail, c.want) {
+			t.Errorf("%v: %q, want %q", c.args, fail, c.want)
+		}
+	}
+	if _, fail := callJSON(t, cs, "git_worktree_list", map[string]any{"root": other}); !strings.Contains(fail, "is not one of the active project's own roots") {
+		t.Errorf("list with no project named: %q", fail)
+	}
+}
+
+// A project of another organisation is never named into this one (Invariant 4): its registry
+// is not read, and a project.json filed here that declares another organisation is refused.
+func TestTheWorkspaceToolsRefuseAProjectOfAnotherOrganisation(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	elsewhere := addSecondProject(t, "umbrella", "web")
+	cs := connectedClient(t)
+	if _, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": elsewhere, "project": "web", "slug": "x", "branch": "x", "create": true, "from": "HEAD"}); !strings.Contains(fail, "unknown project: web") {
+		t.Errorf("another organisation's project: %q", fail)
+	}
+	// Filed under this organisation, declaring another.
+	reg, _ := wakilcore.LoadRegistryFor("initech")
+	reg["web"] = wakilcore.ProjectEntry{Path: filepath.Join(elsewhere, ".wakil", "project.json")}
+	if err := wakilcore.SaveRegistry("initech", reg); err != nil {
+		t.Fatal(err)
+	}
+	if _, fail := callJSON(t, cs, "git_worktree_add", map[string]any{"root": elsewhere, "project": "web", "slug": "x", "branch": "x", "create": true, "from": "HEAD"}); !strings.Contains(fail, `org "umbrella"`) {
+		t.Errorf("a project declaring another organisation: %q", fail)
+	}
+}

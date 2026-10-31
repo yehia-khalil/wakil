@@ -297,3 +297,41 @@ private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params:
         #expect(a.kind == (name == "workspace_running" ? .read : .mutate))
     }
 }
+
+/// The walk: Settings → a project other than the screen's → Running → ▶ Try answered "… is not
+/// one of the active project's own roots". Every call Try makes names the project it acts on —
+/// the copy, the plan and Try's end — so Go checks the root against that project's, never the
+/// screen's; and a card's Run of another project's workspace plans that project's recipe.
+@Test func tryAndRunNameTheProjectTheyActOnNotTheScreens() async throws {
+    let (r, ctx, _) = await runner(["web": PlanSpec()])
+    let git = RecordingToolCaller(reply: { name, args in
+        guard case .object(let a) = args else { return .object([:]) }
+        func s(_ k: String) -> String { if case .string(let v)? = a[k] { v } else { "" } }
+        switch name {
+        case "git_worktree_add":
+            return .object(["path": .string("/h/ws/\(s("project"))/\(s("slug"))/web"), "branch": .string(s("branch"))])
+        default: return .object([:])
+        }
+    })
+    await r.router.use(git: git)
+    let (id, _) = try await r.tryRecipe(repo: "web", root: "/q/web", project: "parkour", environment: "", projectPath: nil)
+    let add = try #require(await git.calls.first { $0.name == "git_worktree_add" })
+    guard case .object(let a) = add.arguments else { Issue.record("add args"); return }
+    #expect(a["root"] == .string("/q/web"))
+    #expect(a["project"] == .string("parkour"))
+    let tried = try #require(await ctx.calls.first { $0.name == "recipe_try" })
+    guard case .object(let t) = tried.arguments else { Issue.record("try args"); return }
+    #expect(t["project"] == .string("parkour"))
+    try await r.endTry(id)
+    let rm = try #require(await git.calls.first { $0.name == "git_worktree_remove" })
+    guard case .object(let m) = rm.arguments else { Issue.record("remove args"); return }
+    #expect(m["root"] == .string("/q/web"))
+    #expect(m["project"] == .string("parkour"))
+
+    // A card's Run of a workspace of project estate, with no project.json path read yet: the plan
+    // still names estate, never falling back to the screen's project.
+    _ = try await r.run("w1", repo: "web")
+    let prepare = try #require(await ctx.calls.first { $0.name == "recipe_prepare" })
+    guard case .object(let p) = prepare.arguments else { Issue.record("prepare args"); return }
+    #expect(p["project"] == .string("estate"))
+}

@@ -282,7 +282,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
         }
         // A checkout deleted outside Wakil: git forgets it, and it is re-made below on its branch.
         if let mine, let gone = mine.checkout(of: repo)?.path, !folderExists(gone) {
-            _ = try? await call("git_worktree_prune", ["root": .string(repo)])
+            _ = try? await call("git_worktree_prune", ["root": .string(repo), "project": .string(mine.project)])
             await store.update(mine.id) { w in
                 if let i = w.checkouts.firstIndex(where: { $0.repo == repo }) { w.checkouts[i].path = nil }
             }
@@ -498,7 +498,7 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
                     path = string(r, "path")
                     created = flag(r, "created")
                     if let snap = recorded?.snapshot, let path {
-                        _ = try await call("git_snapshot_apply", ["root": .string(path), "ref": .string(snap)])
+                        _ = try await call("git_snapshot_apply", ["root": .string(path), "project": .string(w.project), "ref": .string(snap)])
                     }
                 case .base:
                     // The workspace's branch, unless another folder holds it (amendment 2026-10-30, the walk).
@@ -569,7 +569,12 @@ public actor WorkspaceRouter: WorkspaceWriteRouting {
                                    states: await hooks?.states() ?? [:], switchTo: branch, switchHeld: held)
         switch decideWrite(input) {
         case .switchTakesOver(let h):
-            _ = try await call("git_release_branch", ["root": .string(h.path)])
+            var release: [String: JSONValue] = ["root": .string(h.path)]
+            // The folder's project: its workspace's, else (Main's folder) the conversation's.
+            var project = mine?.project
+            if let other = h.workspace, let p = await store.workspace(other)?.project { project = p }
+            if let project { release["project"] = .string(project) }
+            _ = try await call("git_release_branch", release)
             if let other = h.workspace {
                 await store.update(other) { w in
                     if let i = w.checkouts.firstIndex(where: { $0.repo == repo }) { w.checkouts[i].branch = "" }

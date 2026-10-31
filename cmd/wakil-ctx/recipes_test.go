@@ -211,3 +211,46 @@ func TestReadyWaitAndPortsAllocate(t *testing.T) {
 		t.Fatalf("blocks: %v", blocks)
 	}
 }
+
+// A workspace's Run names its project by registry key (Workspaces, piece 2, the walk): a card of a
+// project other than the screen's plans that project's recipe, never the active one's, and the key
+// is looked up in the active organisation only (Invariant 4).
+func TestRecipePlanForANamedProjectOfTheOrganisation(t *testing.T) {
+	setupRecipeProject(t)
+	home := os.Getenv("HOME")
+	app := filepath.Join(home, "src", "parkour")
+	os.MkdirAll(app, 0o755)
+	os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"dev":"vite"}}`), 0o644)
+	pdir := filepath.Join(home, "parkour")
+	os.MkdirAll(filepath.Join(pdir, ".wakil"), 0o755)
+	pp := filepath.Join(pdir, ".wakil", "project.json")
+	body := `{"name":"parkour","org":"initech","roots":[{"path":"` + app + `","recipe":"vite"}],"environments":{},` +
+		`"recipes":{"vite":{"processes":[{"name":"dev","command":"pnpm dev --port $WAKIL_PORT"}]}}}`
+	if err := os.WriteFile(pp, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg, _ := wakilcore.LoadRegistryFor("initech")
+	reg["parkour"] = wakilcore.ProjectEntry{Path: pp}
+	if err := wakilcore.SaveRegistry("initech", reg); err != nil {
+		t.Fatal(err)
+	}
+	cs := recipeClient(t)
+	args := func(project string) map[string]any {
+		a := map[string]any{"repo": "parkour", "workspace": "try-parkour",
+			"checkouts": []map[string]any{{"repo": "parkour", "path": app, "port": 41200}}}
+		if project != "" {
+			a["project"] = project
+		}
+		return a
+	}
+	plan, msg := callRecipe(t, cs, "recipe_plan", args("parkour"))
+	if msg != "" || plan["env"].(map[string]any)["WAKIL_PORT"] != "41200" {
+		t.Fatalf("the named project's plan: %v %s", plan, msg)
+	}
+	if _, msg := callRecipe(t, cs, "recipe_plan", args("")); !strings.Contains(msg, "neither a repo of this project") {
+		t.Fatalf("no project named is the active one: %s", msg)
+	}
+	if _, msg := callRecipe(t, cs, "recipe_plan", args("nobody")); !strings.Contains(msg, "unknown project: nobody") {
+		t.Fatalf("a key the organisation does not have: %s", msg)
+	}
+}

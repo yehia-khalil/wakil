@@ -289,7 +289,7 @@ private func asAgent<T: Sendable>(_ conversation: String, _ body: @Sendable () a
     let routed = try await asAgent("c1") { try await r.routeSwitch(root: "/p/core", branch: "feature", action: "editor_changes_switch") }
     #expect(routed == RoutedSwitch(root: "/h/ws/estate/fix-otp-guard-order/core", branch: "feature"))
     let release = try #require(await git.calls.first { $0.name == "git_release_branch" })
-    #expect(release.arguments == .object(["root": .string("/h/ws/estate/other/core")]))
+    #expect(release.arguments == .object(["root": .string("/h/ws/estate/other/core"), "project": .string("estate")]))
 }
 
 @Test func aConversationsCheckoutRootsAreItsOwnWorkspacesOnly() async throws {
@@ -339,7 +339,9 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     #expect(archived.checkouts.first?.path == nil)
     #expect(archived.checkouts.first?.snapshot == "refs/wakil/snapshots/fix-otp-guard-order/core")
     let rm = try #require(await git.calls.first { $0.name == "git_worktree_remove" })
-    #expect(rm.arguments == .object(["root": .string("/p/core"), "path": .string("/h/ws/estate/fix-otp-guard-order/core"),
+    // The workspace's project is named, so wakil-git checks the root against that project's (the walk).
+    #expect(rm.arguments == .object(["root": .string("/p/core"), "project": .string("estate"),
+                                     "path": .string("/h/ws/estate/fix-otp-guard-order/core"),
                                      "snapshot": .string("refs/wakil/snapshots/fix-otp-guard-order/core")]))
     let restored = try await r.restore(id)
     #expect(!restored.archived)
@@ -347,7 +349,7 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     await r.store.move("c1", root: "root-c1", to: id)
     _ = try await asAgent("c1") { try await r.routePath("/p/core/a", action: "editor_save") }
     let apply = try #require(await git.calls.first { $0.name == "git_snapshot_apply" })
-    #expect(apply.arguments == .object(["root": .string("/h/ws/estate/fix-otp-guard-order/core"),
+    #expect(apply.arguments == .object(["root": .string("/h/ws/estate/fix-otp-guard-order/core"), "project": .string("estate"),
                                         "ref": .string("refs/wakil/snapshots/fix-otp-guard-order/core")]))
 }
 
@@ -393,6 +395,11 @@ private func gitWithSnapshot() -> RecordingToolCaller {
     #expect(w.checkouts.first?.path == nil)
     let names = await git.calls.map(\.name)
     #expect(Array(names.suffix(3)) == ["git_worktree_remove", "git_switch", "git_snapshot_apply"])
+    for name in ["git_worktree_remove", "git_snapshot_apply"] {
+        let c = try #require(await git.calls.last { $0.name == name })
+        guard case .object(let a) = c.arguments else { Issue.record("\(name) args"); continue }
+        #expect(a["project"] == .string("estate"), "\(name) names the workspace's project")
+    }
     #expect(await r.store.holder(of: WorkspaceHold(workspace: id, repo: "/p/core")) == nil)
 }
 

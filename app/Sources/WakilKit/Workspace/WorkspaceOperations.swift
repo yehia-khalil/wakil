@@ -108,7 +108,8 @@ extension WorkspaceRouter {
             for i in checkouts.indices {
                 guard let path = checkouts[i].path else { continue }
                 let ref = "refs/wakil/snapshots/\(w.slug)/\(checkouts[i].repoName)"
-                let r = try await self.call("git_worktree_remove", ["root": .string(checkouts[i].repo), "path": .string(path), "snapshot": .string(ref)])
+                let r = try await self.call("git_worktree_remove", ["root": .string(checkouts[i].repo), "project": .string(w.project),
+                                                                     "path": .string(path), "snapshot": .string(ref)])
                 checkouts[i].path = nil
                 if let sha = self.string(r, "snapshot"), !sha.isEmpty { checkouts[i].snapshot = ref }
                 // Saved after each one, so a failure part-way leaves the record true to the disk.
@@ -152,7 +153,8 @@ extension WorkspaceRouter {
             var snapshot = co.snapshot
             if let path = co.path {
                 let ref = "refs/wakil/snapshots/\(w.slug)/\(co.repoName)"
-                let r = try await self.call("git_worktree_remove", ["root": .string(co.repo), "path": .string(path), "snapshot": .string(ref)])
+                let r = try await self.call("git_worktree_remove", ["root": .string(co.repo), "project": .string(w.project),
+                                                                     "path": .string(path), "snapshot": .string(ref)])
                 if let sha = self.string(r, "snapshot"), !sha.isEmpty { snapshot = ref }
                 await self.store.update(id) { ws in
                     if let i = ws.checkouts.firstIndex(where: { $0.repo == co.repo }) {
@@ -164,7 +166,7 @@ extension WorkspaceRouter {
             }
             _ = try await self.call("git_switch", ["root": .string(co.repo), "branch": .string(co.branch), "carry": .string("bring")])
             if let snapshot {
-                _ = try await self.call("git_snapshot_apply", ["root": .string(co.repo), "ref": .string(snapshot)])
+                _ = try await self.call("git_snapshot_apply", ["root": .string(co.repo), "project": .string(w.project), "ref": .string(snapshot)])
             }
             await self.store.update(id) { ws in
                 if let i = ws.checkouts.firstIndex(where: { $0.repo == co.repo }) {

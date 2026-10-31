@@ -333,7 +333,10 @@ public actor WorkspaceRunner {
         try await router.store.save()
         tries.insert(w.id)
         let ready = try await router.ensurePorts(w.id)
-        var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(slug), "checkouts": checkoutsArg(ready)]
+        // The project is named (by key, and by path when Settings has it): Go plans that project's
+        // recipe, never the screen's (the walk).
+        var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(slug), "checkouts": checkoutsArg(ready),
+                                         "project": .string(project)]
         if let projectPath { args["projectPath"] = .string(projectPath) }
         let r = try await call("recipe_try", args, timeout: Self.stepTimeout)
         return (w.id, try decodeRun(RunTryResult.self, r))
@@ -361,7 +364,10 @@ public actor WorkspaceRunner {
     }
 
     private func planArgs(_ w: Workspace, repo: String) async -> [String: JSONValue] {
-        var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(w.slug), "checkouts": checkoutsArg(w)]
+        // The workspace's project by key, so a card of a project other than the screen's never
+        // plans the screen's recipe when its project.json path is not read yet.
+        var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(w.slug), "checkouts": checkoutsArg(w),
+                                         "project": .string(w.project)]
         if let path = await projectPath(w.project) { args["projectPath"] = .string(path) }
         return args
     }

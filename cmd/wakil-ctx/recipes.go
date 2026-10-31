@@ -42,6 +42,7 @@ type recipePlanArgs struct {
 	Workspace   string                    `json:"workspace" jsonschema:"the workspace slug"`
 	Checkouts   []wakilcore.CheckoutPorts `json:"checkouts" jsonschema:"every repo of the workspace: its folder (checkout, or Main's folder) and its block's first port (0 for none)"`
 	ProjectPath string                    `json:"projectPath,omitempty" jsonschema:"a project.json path; default the active project"`
+	Project     string                    `json:"project,omitempty" jsonschema:"the workspace's project by registry key, one of the active organisation's; used when projectPath is not given"`
 }
 
 type readyWaitArgs struct {
@@ -100,7 +101,15 @@ func repoDir(projectPath string, p *wakilcore.Project, repo string) (string, err
 // buildPlan builds a repo's run plan, every folder confined to the project's repos and the
 // organisation's workspaces; it also answers the organisation the plan's secrets are under.
 func buildPlan(a recipePlanArgs) (wakilcore.RunPlan, string, error) {
-	path, p, err := recipeProject(a.ProjectPath)
+	projectPath := a.ProjectPath
+	if projectPath == "" && a.Project != "" {
+		r, err := wakilcore.ResolveProject(a.Project)
+		if err != nil {
+			return wakilcore.RunPlan{}, "", err
+		}
+		projectPath = r.ProjectPath
+	}
+	path, p, err := recipeProject(projectPath)
 	if err != nil {
 		return wakilcore.RunPlan{}, "", err
 	}

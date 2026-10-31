@@ -181,6 +181,11 @@ func writer(root string) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
+	return writerIn(root, r)
+}
+
+// writerIn is writer for a resolved project: its roots and its live workspace checkouts.
+func writerIn(root string, r *wakilcore.Resolved) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	// An unreadable org.json is refused, not read as "no identity": that would commit as git
 	// config's identity, which may be another organisation's (Invariant 4).
 	org, err := wakilcore.LoadOrg()
