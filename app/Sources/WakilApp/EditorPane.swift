@@ -83,6 +83,8 @@ struct EditorPane: View {
     var openCommitDiff: (String, GitCommitRef) -> Void = { _, _ in }
     /// 3c-i: the hover's Open on GitHub, the commit's page, and whether ⌥ was held (`WakilLinks.open`).
     var openLink: (String, Bool) -> Void = { _, _ in }
+    /// The project's Ticket tab with no Jira project set: open Settings at the project to set it.
+    var openProjectSettings: () -> Void = {}
     var timeline = EditorTimelineControls()
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
@@ -162,7 +164,7 @@ struct EditorPane: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 if column.shown {
-                    EditorColumn(openLink: openLink, column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
+                    EditorColumn(openLink: openLink, openProjectSettings: openProjectSettings, column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
                                  gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
                                  dispatchThrowing: dispatchThrowing,

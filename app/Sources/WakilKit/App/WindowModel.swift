@@ -53,6 +53,8 @@ public final class WindowModel {
     /// The active project's registry key (`ContextStore.ActiveContext.projectKey`), which
     /// `WAKIL_PROJECT` is looked up by. Set and cleared with `project`.
     public private(set) var projectKey = ""
+    /// The active project's Jira project (`ActiveContext.pmProjectKey`). Set and cleared with `project`.
+    public private(set) var pmProjectKey = ""
     public private(set) var environment = ""
 
     /// The place on screen now, which a harness is pinned to when it starts.
@@ -2221,6 +2223,7 @@ public final class WindowModel {
             organization = active.org
             project = active.project
             projectKey = active.projectKey
+            pmProjectKey = active.pmProjectKey
             environment = active.environment
             // **The one writer of the gate's view of production**
             // (Decision 26, #182). `get_context` carried the whole project
@@ -2301,6 +2304,7 @@ public final class WindowModel {
             // wrong credential boundary, drawn confidently (spec §6).
             project = ""
             projectKey = ""
+            pmProjectKey = ""
             environment = ""
             // The flags belong to the project that could not be read, so
             // they go with it. Keeping them would price the new org's
@@ -2413,6 +2417,8 @@ public final class WindowModel {
         // authoritative than anything get_context will say (spec §6).
         project = ""
         projectKey = ""
+        pmProjectKey = ""
+        settingsProjectWanted = nil
         environment = ""
         // Org-derived, and a credential boundary rather than a display
         // detail: the declarations describe the OUTGOING org's project.
@@ -3098,6 +3104,19 @@ public final class WindowModel {
     /// The read follows the open rather than the pane asking for itself,
     /// because a pane drawn before its first read has nothing to draw and
     /// a momentarily empty settings pane reads as a broken one.
+    /// The project node Settings should show when it next draws, by registry key (the Ticket tab's
+    /// "Set it in Settings…"); the window takes it and clears it (`settingsProjectTaken`).
+    public private(set) var settingsProjectWanted: String?
+
+    /// Opens Settings at the active project's node, where its Jira project is set.
+    public func openProjectSettings() async {
+        guard !projectKey.isEmpty else { return }
+        settingsProjectWanted = projectKey
+        await openSettings()
+    }
+
+    public func settingsProjectTaken() { settingsProjectWanted = nil }
+
     public func openSettings() async {
         guard (try? await registry.dispatch(
             name: "settings_open", params: .object([:]), origin: .ui,
@@ -3310,6 +3329,23 @@ public final class WindowModel {
         } catch {
             await refreshSettings()
             return statusDescribingFailure("ctx_set_project_agent_instructions", error)
+        }
+    }
+
+    /// Sets a project's Jira project from Settings (`ctx_set_project_pm_key`); the refusal whole, or
+    /// nil. The active project's context is read again, so its Ticket tab scopes by the new key.
+    public func saveProjectPMKey(projectPath: String, _ key: String) async -> String? {
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_project_pm_key",
+                params: .object(["projectPath": .string(projectPath), "projectKey": .string(key)]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            await refreshSettings()
+            await refreshContext()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_set_project_pm_key", error)
         }
     }
 
@@ -4856,7 +4892,8 @@ public final class WindowModel {
         await mirrorEditorFiles()
         let reviews = await panes.editorReviews()
         if reviews != editorReviews { editorReviews = reviews }
-        let ticketView = await panes.editorTicketView()
+        var ticketView = await panes.editorTicketView()
+        ticketView.scope = ticketScope
         if ticketView != editorTicket { editorTicket = ticketView }
         // A read a write or ↻ started lands here too: the needs follow the store's last In flight.
         await mirrorTicketNeeds()

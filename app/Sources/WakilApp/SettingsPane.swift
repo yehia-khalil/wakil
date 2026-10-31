@@ -89,6 +89,8 @@ struct SettingsPane: View {
     /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
     /// or pull requests, exactly one given. Answers the refusal or nil.
     var saveProjectAgentInstructions: (String, String?, String?, String?) async -> String? = { _, _, _, _ in nil }
+    /// The project's Jira project, by project.json path: the refusal whole, or nil.
+    var saveProjectPMKey: (String, String) async -> String? = { _, _ in nil }
     /// Workspaces (decision 10): a project's Branches text.
     var saveProjectBranchInstructions: (String, String) async -> String? = { _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
@@ -1099,6 +1101,16 @@ struct SettingsPane: View {
                         save: { new in await rename(project: name, to: new) },
                         unseen: showUnseenRefusal)
                     .id("name.\(project.path)")
+                    // Its Jira project: the project's Ticket tab and ⌘P's tickets hold its tickets
+                    // and those on its repos (the walk, 2026-10-31).
+                    SettingsRow("Jira project") {
+                        LeaveSavedTextField(
+                            label: nil, stored: project.pmProjectKey, identifier: "settings.project.jiraProject",
+                            prompt: "None — INI, say",
+                            save: { key in await saveProjectPMKey(project.path, key) },
+                            unseen: showUnseenRefusal)
+                    }
+                    .id("jira.\(project.path)")
                     fields([("File", project.path, true)])
                 }
                 // 3a-iii-b: this project's own instructions, after the organisation's.

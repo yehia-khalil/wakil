@@ -415,6 +415,10 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
 - `EditorTicketNeeds.swift` — what needs the operator, pure: `ticketNeedsRows` over the last In flight read,
   the live handed conversations (`TicketHandOffLive`) and the drafts, each row's most urgent state in
   words by tier (`TicketUrgent`), the count and its wording (`4 waiting on you: …`).
+  `TicketScope` and `ticketScoped` hold a read to the project on screen (its Jira project's tickets and
+  those on its repos; `WindowModel.ticketScope`): the Ticket tab, its count and ⌘P's `#` rows; the
+  organisation's whole read stays for NEEDS YOU. `ticketScopeEmptyLine` is the tab's line when a project
+  has none and no Jira project set (Settings' Jira project field, `ctx_set_project_pm_key`).
 - `EditorTicketHandOff.swift` — Hand to agent, pure: `TicketHandOffState` (the popover), the prefilled briefs
   (`handOffThreadBrief`, `handOffHeaderBrief`, reviewer text quoted `> ` line by line), the place and the
   defaults, `TicketHandOffEntryState` (a record's hand-off line) and `TicketHandOffRequest`. Its actions

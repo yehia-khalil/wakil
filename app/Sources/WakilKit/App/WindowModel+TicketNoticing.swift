@@ -13,6 +13,22 @@ private let ticketNeedsRowsOf: @Sendable (InFlightState, [String: TicketHandOffL
 extension WindowModel {
     /// The tickets in flight, one row each, most urgent first: from `ticketNeeds`, the live handed
     /// conversations' states and the organisation's drafts.
+    /// The project the window shows, which its Ticket tab, its count and ⌘P's tickets are held to
+    /// (`ticketScoped`); nil with no project, or before its session started — the Landing (the
+    /// home), which reads the organisation's whole list.
+    public var ticketScope: TicketScope? {
+        projectKey.isEmpty || !sessionStarted ? nil : TicketScope(project: projectKey, pmKey: pmProjectKey)
+    }
+
+    /// `ticketNeeds` held to `ticketScope`: the Ticket label's count and its words.
+    public var ticketNeedsInProject: InFlightState? { ticketScoped(ticketNeeds, to: ticketScope) }
+
+    /// `ticketNeedsRows` held to `ticketScope`: ⌘P's `#` rows.
+    public var ticketNeedsRowsInProject: [TicketNeedsRow] {
+        guard let s = ticketNeedsInProject else { return [] }
+        return ticketNeedsRowsOf(s, ticketHandOffLive, editorReviews.reads.draftRecords)
+    }
+
     public var ticketNeedsRows: [TicketNeedsRow] {
         guard let ticketNeeds else { return [] }
         return ticketNeedsRowsOf(ticketNeeds, ticketHandOffLive, editorReviews.reads.draftRecords)
@@ -50,7 +66,7 @@ extension WindowModel {
     /// row's words are its own most urgent state.
     func paletteTickets() -> [PaletteTicket] {
         let live = ticketHandOffLive, drafts = editorReviews.reads.draftRecords
-        return ticketNeedsRows.map { row in
+        return ticketNeedsRowsInProject.map { row in
             paletteTicket(row, prWords: { r in
                 ticketUrgentState(r, handoffs: live, drafts: r.threads.filter { drafts[$0] != nil }.count).words
             })

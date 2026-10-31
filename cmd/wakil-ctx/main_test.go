@@ -1058,6 +1058,15 @@ func TestEditorSettingsRoundTrip(t *testing.T) {
 	if res := call("set_project_editor_settings", map[string]any{"projectPath": resolved.ProjectPath, "heavyFolders": []string{".git"}}); !res.IsError {
 		t.Fatal(".git was accepted as a heavy folder")
 	}
+	if res := call("set_project_pm_key", map[string]any{"projectPath": resolved.ProjectPath, "projectKey": "ini"}); res.IsError {
+		t.Fatalf("set_project_pm_key: %s", textOf(t, res))
+	}
+	if p, err := wakilcore.LoadProject(resolved.ProjectPath); err != nil || p.Scopes.PM == nil || p.Scopes.PM.ProjectKey != "INI" {
+		t.Errorf("the Jira project after set_project_pm_key: %+v %v", p, err)
+	}
+	if res := call("set_project_pm_key", map[string]any{"projectPath": resolved.ProjectPath, "projectKey": "9X"}); !res.IsError {
+		t.Error("a malformed Jira project key was accepted")
+	}
 	if res := call("set_editor_settings", map[string]any{"fontSize": 99}); !res.IsError {
 		t.Fatal("an out-of-range font size was accepted")
 	}

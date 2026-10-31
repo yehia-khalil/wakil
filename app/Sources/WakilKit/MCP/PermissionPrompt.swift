@@ -128,6 +128,8 @@ public let operatorOnlyActions: Set<String> = [
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.
     "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // Which Jira project a project's tickets come from is the operator's, as its other settings are.
+    "ctx_set_project_pm_key",
     // 3c-i (final review I6). Printing raises the system's print panel over the operator's window.
     "browser_print",
     // 3c-i. Which search engine and start page the operator's browser uses is theirs, as the editor's are.
@@ -402,6 +404,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "— choices that are theirs. You may READ them: ctx_editor_settings "
             + "answers the settings in force. Ask the operator to change them in the settings "
             + "pane (\u{2318},)."
+    case "ctx_set_project_pm_key":
+        return "\(toolName): only the operator sets which Jira project a project's tickets come from. "
+            + "Ask the operator to set it in the settings pane (\u{2318},), under the project."
     case "ctx_update_org":
         return "\(toolName): only the operator edits an organisation's settings. Its default "
             + "account decides which credentials Wakil reaches for when a project names none, "

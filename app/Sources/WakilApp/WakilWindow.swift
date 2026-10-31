@@ -516,6 +516,11 @@ struct WakilWindow: View {
             }
             undoManager?.setActionName("Draft Message")
         }
+        .onChange(of: session?.model.settingsProjectWanted) { _, wanted in
+            guard let wanted, let model = session?.model else { return }
+            settingsSelection = .project(wanted)
+            model.settingsProjectTaken()
+        }
         .onChange(of: session?.model.organization ?? "") { _, _ in
             settingsSelection = .organisation
             settingsExpansion.reset()

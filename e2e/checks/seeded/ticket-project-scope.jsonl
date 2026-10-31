@@ -1,0 +1,35 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api checkout -q main && git -C ../e2e-api branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"main"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"tree":"contains","text":"WAITING ON YOU"}}
+{"expect":{"frame":"editor.ticket.waiting:INI-142","inside":"editor.ticket"}}
+{"expect":{"tree":"absent","text":"Bill per seat"}}
+{"expect":{"tree":"absent","text":"No Jira project is set for this project"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.project.e2e-git"}}
+{"expect":{"tree":"contains","text":"Jira project"}}
+{"do":{"focus":"settings.project.jiraProject"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"type":{"into":"settings.project.jiraProject","text":"9X"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"is not a Jira project key"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"type":{"into":"settings.project.jiraProject","text":"ini"}}}
+{"do":{"press":"Return"}}
+{"expect":{"journal":{"contains":"\"action\":\"ctx_set_project_pm_key\""}}}
+{"expect":{"tree":"absent","text":"is not a Jira project key"}}

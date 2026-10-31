@@ -1769,6 +1769,41 @@ public func registerStandardActions(
         }
     ))
 
+    // The project's Jira project (scopes.pm.projectKey): a project's Ticket tab and its ⌘P tickets
+    // scope by it, so a project with none is set from Settings. Operator-only like every Settings
+    // write (Decision 30).
+    await registry.register(Action(
+        name: "ctx_set_project_pm_key",
+        description: "Set one project's Jira project key (INI) in its project.json; empty clears it. The "
+            + "project's Ticket tab and ⌘P tickets show that Jira project's tickets and those on its repos. "
+            + "Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "projectPath": .object(["type": .string("string")]),
+                "projectKey": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("projectPath"), .string("projectKey")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_set_project_pm_key", role: "context")
+            }
+            guard case .object(let fields) = params, case .string(let path)? = fields["projectPath"], !path.isEmpty else {
+                throw StandardActionError.missingParam(action: "ctx_set_project_pm_key", param: "projectPath")
+            }
+            guard case .string(let key)? = fields["projectKey"] else {
+                throw StandardActionError.missingParam(action: "ctx_set_project_pm_key", param: "projectKey")
+            }
+            return try await callChecked(
+                context, tool: "set_project_pm_key",
+                arguments: .object(["projectPath": .string(path), "projectKey": .string(key)]),
+                action: "ctx_set_project_pm_key", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
     // **`.control`, for the same reason `ctx_create_org` above is, and the
     // other half of the strong case.** `adopt_provider` (Go side) binds an
     // account that already exists on this machine into ANOTHER

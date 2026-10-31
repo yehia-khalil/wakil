@@ -9,6 +9,8 @@ import SwiftUI
 struct EditorColumn: View {
     /// Where a link in the Ticket view opens (`WakilLinks.open`).
     var openLink: (String, Bool) -> Void = { _, _ in }
+    /// The project's Ticket tab with no Jira project set: open Settings at the project to set it.
+    var openProjectSettings: () -> Void = {}
     let column: EditorColumnState
     /// The tree's rows, built once by `EditorPane` (`treeRows`), which also reads them for save-as.
     let rows: [EditorTreeRow]
@@ -159,7 +161,7 @@ struct EditorColumn: View {
                 case .search: searchView
                 case .changes: changesView
                 case .ticket:
-                    EditorTicketView(openLink: openLink, state: ticket, column: column, tab: timelineTab, reviews: reviews,
+                    EditorTicketView(openLink: openLink, openProjectSettings: openProjectSettings, state: ticket, column: column, tab: timelineTab, reviews: reviews,
                                      dispatch: dispatch, dispatchReply: dispatchReply, focused: $ticketFocused,
                                      fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed,
                                      handOffAnchored: handOffAnchored)

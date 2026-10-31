@@ -556,12 +556,16 @@ public struct SettingsProject: Sendable, Equatable, Decodable {
     public var editor: SettingsProjectEditor
     /// 3a-iii-b: the project's agent instructions.
     public var agent: SettingsAgentTexts
+    /// The project's Jira project (`scopes.pm.projectKey`), "" when it has none.
+    public var pmProjectKey: String
 
     public init(
         name: String, path: String = "",
         roots: [SettingsRoot] = [], environments: [SettingsEnvironment] = [],
-        editor: SettingsProjectEditor = .defaults, agent: SettingsAgentTexts = SettingsAgentTexts()
+        editor: SettingsProjectEditor = .defaults, agent: SettingsAgentTexts = SettingsAgentTexts(),
+        pmProjectKey: String = ""
     ) {
+        self.pmProjectKey = pmProjectKey
         self.name = name
         self.path = path
         self.roots = roots
@@ -578,9 +582,15 @@ public struct SettingsProject: Sendable, Equatable, Decodable {
         roots = try container.decodeIfPresent([SettingsRoot].self, forKey: .roots) ?? []
         environments = try container.decodeIfPresent([SettingsEnvironment].self, forKey: .environments) ?? []
         editor = try container.decodeIfPresent(SettingsProjectEditor.self, forKey: .editor) ?? .defaults
+        pmProjectKey = (try? container.decodeIfPresent(Scopes.self, forKey: .scopes))??.pm?.projectKey ?? ""
     }
 
-    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor, agent }
+    private struct Scopes: Decodable {
+        struct PM: Decodable { var projectKey: String? }
+        var pm: PM?
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor, agent, scopes }
 }
 
 public struct SettingsRoot: Sendable, Equatable, Decodable {

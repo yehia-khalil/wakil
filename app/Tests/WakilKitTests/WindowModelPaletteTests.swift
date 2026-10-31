@@ -1085,6 +1085,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_rename_environment", "ctx_rename_project",
     // 3b-v (Decision 38): the editor settings read, and the two operator-only writes.
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // The Ticket tab's scope: a project's Jira project, set from Settings.
+    "ctx_set_project_pm_key",
     // 3c-i: the browser settings read, and the operator-only write.
     "ctx_browser_settings", "ctx_set_browser_settings",
     // Keyboard: the keymap read, and the two operator-only writes.

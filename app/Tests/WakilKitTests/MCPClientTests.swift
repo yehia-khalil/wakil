@@ -58,7 +58,7 @@ private func repoRoot() -> URL {
                       "remove_environment", "remove_project", "rename_environment", "rename_project",
                       "set_api_entry", "set_browser_settings", "set_database_connection", "set_database_dsn", "set_editor_settings", "set_environment", "set_keys", "set_local_provider",
                       "set_project", "set_project_agent_instructions",
-                      "set_project_editor_settings", "set_provider", "unlink_provider", "update_api_entry",
+                      "set_project_editor_settings", "set_project_pm_key", "set_provider", "unlink_provider", "update_api_entry",
                       "update_database", "update_org"])
 }
 

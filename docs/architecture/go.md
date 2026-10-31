@@ -73,6 +73,8 @@ SSH account, no token) rather than failing. The browser's pull-request group rea
 
 The editor settings: `editor_settings` answers both tiers; `set_editor_settings` takes `showIgnored`
 (app-wide); `set_project_editor_settings` takes `heavyFolders`, the whole list (per project).
+`set_project_pm_key` sets a project's Jira project (`scopes.pm.projectKey`, upper-cased; empty clears it),
+which a project's Ticket tab and its ⌘P tickets are scoped by.
 
 ### wakil-db
 

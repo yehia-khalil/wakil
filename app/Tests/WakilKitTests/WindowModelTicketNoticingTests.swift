@@ -370,3 +370,46 @@ private func pickWindow(clock: NeedsClock? = nil) async throws -> (WindowModel, 
         window.stopTicketPoll()
     }
 }
+
+/// The window's `wakil-ctx`, answering `get_context` for one project with `pmKey` as its Jira project.
+private struct ScopedContext: ToolCaller {
+    let project: String
+    let pmKey: String
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        guard name == "get_context" else { return .object(["structuredContent": .object([:])]) }
+        var scopes: [String: JSONValue] = [:]
+        if !pmKey.isEmpty { scopes["pm"] = .object(["provider": .string("jira"), "projectKey": .string(pmKey)]) }
+        return .object(["structuredContent": .object([
+            "Org": .string("initech"), "Environment": .string("staging"), "ProjectKey": .string(project),
+            "Project": .object(["name": .string(project), "scopes": .object(scopes)]),
+            "RootPaths": .array([]), "ActiveProvider": .string(""),
+        ])])
+    }
+}
+
+/// The walk (2026-10-31): in parkour-warriors, which has no Jira project and none of the branches,
+/// the Ticket label counted the organisation's 3 and ⌘P's `#` listed INI-142. A project's count,
+/// its tab and ⌘P hold its own; the organisation's whole read stays for the home.
+@Suite @MainActor struct WindowModelTicketScopeTests {
+    @Test func aProjectHoldsItsOwnTicketsAndTheOrganisationsReadStays() async {
+        for (pmKey, kept) in [("", 0), ("INI", 3)] {
+            let fake = FakeTicket()
+            await fake.set("ticket_in_flight", inFlightJSON(threads: 3))
+            let store = EditorTicketStore(ticket: fake)
+            let window = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "initech",
+                                                context: ContextStore(client: ScopedContext(project: "parkour-warriors", pmKey: pmKey)),
+                                                ticket: store)
+            window.ticketPollSleep = { _ in try await Task.sleep(for: .seconds(3600)) }
+            await window.refreshContext()
+            await window.ticketNeedsRead(force: true)
+            // The Landing (no session yet): ⌘P reads the organisation's whole list.
+            #expect(window.ticketScope == nil)
+            #expect(window.paletteTickets().count == 1)
+            window.markSessionStarted()
+            #expect(window.ticketScope == TicketScope(project: "parkour-warriors", pmKey: pmKey))
+            #expect(window.ticketNeeds?.count == 3, "the home's NEEDS YOU reads the organisation's")
+            #expect(ticketNeedsCount(window.ticketNeedsInProject) == kept)
+            #expect(window.paletteTickets().count == (kept == 0 ? 0 : 1), "⌘P's # rows are the project's")
+        }
+    }
+}

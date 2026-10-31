@@ -176,12 +176,16 @@ public actor ContextStore {
         /// `wakil-ctx` built before the flag existed — both mean "read the
         /// name", which is what every build before this one did.
         public let environmentProduction: EnvironmentProduction
+        /// The project's Jira project (`scopes.pm.projectKey`), "" when it declares none: what a
+        /// project's Ticket tab, its count and ⌘P's tickets are scoped by (`TicketScope`).
+        public let pmProjectKey: String
 
         public init(
             org: String, project: String, projectKey: String? = nil, environment: String,
             rootPaths: [String] = [], activeProvider: String = "",
-            environmentProduction: EnvironmentProduction = .undeclared
+            environmentProduction: EnvironmentProduction = .undeclared, pmProjectKey: String = ""
         ) {
+            self.pmProjectKey = pmProjectKey
             self.org = org
             self.project = project
             self.projectKey = projectKey ?? project
@@ -251,9 +255,14 @@ public actor ContextStore {
             throw ContextStoreError.malformedResult("get_context result has no string \"Environment\"")
         }
         var project = ""
+        var pmProjectKey = ""
         var declarations: [String: Bool] = [:]
         if case .object(let projectObj)? = fields["Project"] {
             if case .string(let name)? = projectObj["name"] { project = name }
+            if case .object(let scopes)? = projectObj["scopes"], case .object(let pm)? = scopes["pm"],
+               case .string(let key)? = pm["projectKey"] {
+                pmProjectKey = key
+            }
             // `environments` is lower-case here — it is a field of
             // `wakilcore.Project`, which tags its fields, unlike the
             // capitalized top level of `Resolved`. Only environments that
@@ -306,7 +315,8 @@ public actor ContextStore {
             org: org, project: project, projectKey: projectKey, environment: environment,
             rootPaths: rootPaths,
             activeProvider: activeProvider,
-            environmentProduction: EnvironmentProduction(declarations: declarations))
+            environmentProduction: EnvironmentProduction(declarations: declarations),
+            pmProjectKey: pmProjectKey)
     }
 
     /// Calls `name` on the underlying client and translates the MCP

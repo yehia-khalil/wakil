@@ -506,6 +506,7 @@ extension WakilWindow {
                         Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
                     },
                     openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
+                    openProjectSettings: { Task { await model.openProjectSettings() } },
                     timeline: EditorTimelineControls(
                         load: { root, path, skip in await model.editorTimeline(root: root, path: path, skip: skip) },
                         openCommit: { root, ref in
@@ -601,8 +602,8 @@ extension WakilWindow {
                         t.liveHandOffs = model.ticketLiveHandOffs
                         return t
                     }(),
-                    ticketCount: ticketNeedsCount(model.ticketNeeds, roots: model.gitRoots),
-                    ticketCountLabel: ticketNeedsLabel(model.ticketNeeds, roots: model.gitRoots),
+                    ticketCount: ticketNeedsCount(model.ticketNeedsInProject, roots: model.gitRoots),
+                    ticketCountLabel: ticketNeedsLabel(model.ticketNeedsInProject, roots: model.gitRoots),
                     dispatchThrowingReply: { name, params in
                         var withPane = params
                         withPane["pane"] = .string(pane.id)
@@ -706,6 +707,7 @@ extension WakilWindow {
                         await model.saveProjectAgentInstructions(
                             projectPath: path, general: general, commits: commits, pullRequests: pullRequests)
                     },
+                    saveProjectPMKey: { path, key in await model.saveProjectPMKey(projectPath: path, key) },
                     saveProjectBranchInstructions: { path, branches in
                         await model.saveProjectAgentInstructions(projectPath: path, branches: branches)
                     },

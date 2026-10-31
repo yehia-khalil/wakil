@@ -230,3 +230,19 @@ func startedClient(bin: URL, home: URL, org: String) async throws -> MCPClient {
     ]))
     #expect(parsed.projectKey == "widgets")
 }
+
+/// The project's Jira project (`scopes.pm.projectKey`) comes with `get_context`'s project: the
+/// window scopes its Ticket tab by it. A project with no pm scope reads as "".
+@Test func activeContextCarriesTheProjectsJiraProject() throws {
+    let scoped = JSONValue.object([
+        "Org": .string("acme"), "Environment": .string("dev"),
+        "Project": .object(["name": .string("widgets"),
+                            "scopes": .object(["pm": .object(["provider": .string("jira"), "projectKey": .string("INI")])])]),
+    ])
+    #expect(try ContextStore.parseActiveContext(scoped).pmProjectKey == "INI")
+    let none = JSONValue.object([
+        "Org": .string("acme"), "Environment": .string("dev"),
+        "Project": .object(["name": .string("widgets"), "scopes": .object([:])]),
+    ])
+    #expect(try ContextStore.parseActiveContext(none).pmProjectKey == "")
+}

@@ -12,6 +12,8 @@ import SwiftUI
 struct EditorTicketView: View {
     /// Where a link opens (`WakilLinks.open`): Wakil's browser pane, the system browser on ⌥-click.
     var openLink: (String, Bool) -> Void = { _, _ in }
+    /// The project's Ticket tab with no Jira project set: open Settings at the project to set it.
+    var openProjectSettings: () -> Void = {}
     let state: EditorTicketViewState
     let column: EditorColumnState
     /// The pane's front tab: the view follows its root, else the project's first.
@@ -354,7 +356,18 @@ struct EditorTicketView: View {
     /// shows it; the branch never switches (Rule 6).
     @ViewBuilder
     private var longLived: some View {
-        if let s = state.inFlight {
+        if let s = state.scopedInFlight {
+            // A project's tab holds the project's tickets only (the walk: "when a project is selected
+            // we scope stuff"); with none and no Jira project set, it says so, with a way to set it.
+            if let line = ticketScopeEmptyLine(s, scope: state.scope) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Text(line).dimmed().font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("editor.ticket.noJiraProject")
+                    Button("Set it in Settings…") { openProjectSettings() }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("editor.ticket.setJiraProject")
+                }
+            }
             let lists = ticketViewLists(s, handoffs: state.handOffLive, drafts: reviews.reads.draftRecords)
             inFlightList("Waiting on you", lists.waiting, id: "waiting")
             inFlightList("In flight", lists.inFlight, id: "inflight")

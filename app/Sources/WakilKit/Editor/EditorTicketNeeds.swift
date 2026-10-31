@@ -217,3 +217,38 @@ func ticketInFlightReply(_ s: InFlightState) -> JSONValue {
     o["needs"] = .array(needs)
     return .object(o)
 }
+
+/// The project a window shows, for scoping what its Ticket tab, its count and ⌘P's tickets hold
+/// (the walk, 2026-10-31: "when a project is selected we scope stuff"): its registry key, which Go's
+/// rows name as `project`, and its Jira project (`scopes.pm.projectKey`), empty when it has none.
+/// No scope is the organisation's whole list — the home's NEEDS YOU.
+public struct TicketScope: Sendable, Equatable {
+    public var project: String
+    public var pmKey: String
+    public init(project: String, pmKey: String) { self.project = project; self.pmKey = pmKey }
+
+    /// Whether `key` is a ticket of the project's Jira project (INI-142 of INI).
+    func holdsKey(_ key: String) -> Bool {
+        !pmKey.isEmpty && key.uppercased().hasPrefix(pmKey.uppercased() + "-")
+    }
+}
+
+/// The read held to `scope`: a ticket is the project's when its key is in the project's Jira project
+/// or any of its branches or PRs is on one of the project's repos — then every row of it stays; a
+/// PR with no ticket by its own repo. `count` is the kept Waiting on you rows' items. Nil scope: as read.
+public func ticketScoped(_ s: InFlightState?, to scope: TicketScope?) -> InFlightState? {
+    guard let s, let scope else { return s }
+    let all = s.waitingOnYou + s.inFlight
+    let keys = Set(all.filter { !$0.key.isEmpty && ($0.project == scope.project || scope.holdsKey($0.key)) }.map(\.key))
+    func kept(_ r: InFlightRowState) -> Bool { r.key.isEmpty ? r.project == scope.project : keys.contains(r.key) }
+    let waiting = s.waitingOnYou.filter(kept)
+    return InFlightState(waitingOnYou: waiting, inFlight: s.inFlight.filter(kept), partial: s.partial,
+                         count: waiting.reduce(0) { $0 + $1.count })
+}
+
+/// The project's Ticket tab with nothing to show and no Jira project set: the one plain line it
+/// reads, beside a way to set it in Settings. Nil otherwise.
+public func ticketScopeEmptyLine(_ s: InFlightState?, scope: TicketScope?) -> String? {
+    guard let s, let scope, scope.pmKey.isEmpty, s.waitingOnYou.isEmpty, s.inFlight.isEmpty else { return nil }
+    return "No Jira project is set for this project"
+}

@@ -350,6 +350,11 @@ type setBrowserSettingsArgs struct {
 }
 
 // setProjectEditorSettingsArgs is one project's editor tier's edit (3b-v).
+type setProjectPMKeyArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	ProjectKey  string `json:"projectKey" jsonschema:"the project's Jira project key (INI); empty clears it"`
+}
+
 type setProjectEditorSettingsArgs struct {
 	ProjectPath  string    `json:"projectPath" jsonschema:"absolute path to the project.json"`
 	TabSize      *int      `json:"tabSize,omitempty" jsonschema:"1 to 16; omit to leave unchanged"`
@@ -859,6 +864,14 @@ func newServer() *mcp.Server {
 			if err := wakilcore.UpdateProjectEditorSettings(a.ProjectPath, wakilcore.EditorProjectPatch{
 				TabSize: a.TabSize, InsertSpaces: a.InsertSpaces, HeavyFolders: a.HeavyFolders,
 			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_project_pm_key", Description: "Set one project's Jira project (scopes.pm.projectKey, provider jira): the key is trimmed and upper-cased and must be a Jira project key (a letter, then letters, digits or _); empty clears it. Written to the project's project.json, read-modify-write. A project's Ticket tab, its ⌘P tickets and recall scope by it. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectPMKeyArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetProjectPMKey(a.ProjectPath, a.ProjectKey); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

@@ -40,7 +40,7 @@ private let orgDerived: Set<String> = [
     // again. `invalidateForOrgChange` empties the one and cancels the other; the switch reads the
     // incoming org and starts the read again (WindowModelTicketNoticingTests.orgSwitchEmptiesNeedsAndReadsTheNewOrg).
     "ticketNeeds", "ticketPollTask",
-    "project", "projectKey", "environment", "environmentProduction",
+    "project", "projectKey", "pmProjectKey", "settingsProjectWanted", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
     "browserSites", "browserAllowedOnScreen", "browserCloseArm", "browserCopiedTip",

@@ -103,6 +103,8 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"set_editor_settings",
 		"set_browser_settings",
 		"set_project_editor_settings",
+		// set_project_pm_key: a project's Jira project, set from Settings (the Ticket tab scopes by it).
+		"set_project_pm_key",
 		// set_local_provider added by 3b-viii — a local endpoint's URL and operations.
 		"set_local_provider",
 		// 2e-ii: a project and an environment, created, renamed and
