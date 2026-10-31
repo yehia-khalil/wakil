@@ -33,7 +33,7 @@
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"type":{"into":"palette.query","text":"new terminal"}}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
 {"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-4","field":"kind","equals":"terminal"}}
 {"expect":{"pane":"terminal-4","field":"grid[0]","contains":" e2e-git %"}}
@@ -51,6 +51,6 @@
 {"expect":{"tree":"contains","text":"STAGING"}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
-{"expect":{"tree":"contains","text":"1 archived workspace"}}
+{"expect":{"tree":"contains","text":"1 ARCHIVED WORKSPACE"}}
 {"expect":{"tree":"contains","text":"write the second note"}}
 {"expect":{"tree":"absent","text":"· branched off"}}

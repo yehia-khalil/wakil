@@ -29,7 +29,7 @@
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"type":{"into":"palette.query","text":"new terminal"}}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
 {"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-4","field":"kind","equals":"terminal"}}
 {"expect":{"pane":"terminal-4","field":"grid[0]","contains":" e2e-git %"}}
