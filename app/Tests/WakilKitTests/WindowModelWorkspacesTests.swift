@@ -407,6 +407,40 @@ struct WindowModelWorkspaceViewsTests {
         await model.shutdown()
     }
 
+    /// Decision 22 and call 9: step 0 left the terminal in the canvas the home reserves for Main's
+    /// next conversation; New conversation here (`workspace_new_conversation`) starts one in the
+    /// workspace's view and must not take that canvas with it. It did: the conversation was created
+    /// under the reserved id, rooted on Main's canvas, then moved into the workspace's view — and
+    /// Main's Open came back without the shell (e2e workspaces-take-over-idle, 2026-10-31).
+    @Test func newConversationHereLeavesMainsTerminalsInMainsView() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        model.useWorkspaces(await router(with: [ws]))
+        #expect(await model.send("fix the guard"))
+        let agent = try #require(model.currentAgent)
+        let before = try #require(agent.layoutScope)
+        let shell = await ScopeRouting.$home.withValue(before) {
+            await w.layout.open(kind: "terminal", title: "core", terminalPath: "/p/core/sub")
+        }
+        await model.refreshLayout()
+        await model.workspaceViewFollows(agent.id, from: nil, to: ws)
+
+        await model.newConversationHere("w1")
+        let here = try #require(model.currentAgent)
+        #expect(here.workspace?.id == "w1")
+        #expect(!model.layoutSnapshot.panes.contains { $0.id == shell.id }, "Main's shell is not in the workspace's view")
+        await model.newConversation()
+        await model.openWorkspaceView(nil)
+
+        #expect(model.currentAgent?.workspace == nil, "Open is Main's view")
+        let kept = try #require(model.layoutSnapshot.panes.first { $0.id == shell.id }, "Main's view holds the shell")
+        #expect(kept.terminalPath == "/p/core/sub")
+        #expect(kept.frame == shell.frame)
+        await model.shutdown()
+    }
+
     /// Piece 2's run on the home (piece 3): the card carries what the runner last said runs there,
     /// and nothing once it stopped.
     @Test func theHomesCardCarriesWhatTheRunnerSaysRuns() async throws {

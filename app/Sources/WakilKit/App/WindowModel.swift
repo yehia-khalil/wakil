@@ -9965,6 +9965,18 @@ public final class WindowModel {
     /// Landing draws over) or moved into `w`'s view. What is on screen goes to the background first,
     /// untouched; the composer takes the keyboard.
     private func openViewSlot(workspace w: Workspace?) async {
+        // **Main's canvas stays Main's** (decision 22, call 9). The id the home reserves for Main's
+        // next conversation files the canvas step 0 left Main's terminals on (`mainViewScope`); a
+        // conversation created under it was rooted there and, moved into `w`'s view, took that
+        // canvas out of Main's reach — Open came back without the shells (e2e, 2026-10-31). One
+        // started in a workspace is minted under an id of its own, over a canvas of its own, and
+        // Main's reservation is put back once it is in the view.
+        let mainsNext = w == nil ? nil : reservedConversations[place]
+        if w != nil {
+            reservedConversations[place] = UUID().uuidString
+            if screenConversations[place] == nil, landingBaselines[place] == nil { landingBaselines[place] = [] }
+        }
+        defer { if let mainsNext { reservedConversations[place] = mainsNext } }
         if screenConversations[place] != nil { await showLanding(in: place) }
         composerFocusForced = true
         defer { composerFocusForced = false }
