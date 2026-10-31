@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -264,6 +265,7 @@ type packageJSON struct {
 	DevDependencies map[string]string `json:"devDependencies"`
 	PackageManager  string            `json:"packageManager"`
 	Private         bool              `json:"private"`
+	Workspaces      json.RawMessage   `json:"workspaces"`
 	Main            string            `json:"main"`
 }
 
@@ -386,6 +388,57 @@ func (t *detector) node(primary bool) {
 	}
 	t.port = true
 	t.readyURL("/", "the dev server answering on $WAKIL_PORT")
+	// A workspace of several apps run together (turbo, a workspace script) cannot share one port.
+	if apps := t.workspaceApps(pkg); len(apps) > 1 {
+		t.ask("%s is a workspace of %d apps (%s) run together by %s; each needs its own port. Give each app its own "+
+			"process on $WAKIL_PORT, $WAKIL_PORT_1 … (its dev script with the port), or say which one serves.",
+			t.repo, len(apps), strings.Join(apps, ", "), run(script, ""))
+	}
+}
+
+// workspaceApps is the workspace's packages that have a dev, start or serve script, by folder:
+// pnpm-workspace.yaml's packages, or package.json's workspaces (a list, or {packages}).
+func (t *detector) workspaceApps(pkg packageJSON) []string {
+	var globs []string
+	if y := t.read("pnpm-workspace.yaml"); y != "" {
+		for _, l := range strings.Split(y, "\n") {
+			l = strings.TrimSpace(l)
+			if strings.HasPrefix(l, "- ") {
+				globs = append(globs, strings.Trim(strings.TrimSpace(l[2:]), `"'`))
+			}
+		}
+	}
+	if len(pkg.Workspaces) > 0 {
+		var list []string
+		if json.Unmarshal(pkg.Workspaces, &list) != nil {
+			var obj struct {
+				Packages []string `json:"packages"`
+			}
+			json.Unmarshal(pkg.Workspaces, &obj)
+			list = obj.Packages
+		}
+		globs = append(globs, list...)
+	}
+	var apps []string
+	for _, g := range globs {
+		if strings.HasPrefix(g, "!") {
+			continue
+		}
+		for _, f := range t.glob(strings.TrimSuffix(g, "/") + "/package.json") {
+			var sub packageJSON
+			if json.Unmarshal([]byte(t.read(f)), &sub) != nil {
+				continue
+			}
+			for _, sc := range []string{"dev", "start", "serve"} {
+				if _, ok := sub.Scripts[sc]; ok {
+					apps = append(apps, filepath.Dir(f))
+					break
+				}
+			}
+		}
+	}
+	slices.Sort(apps)
+	return slices.Compact(apps)
 }
 
 func (t *detector) composerRequires(name string) bool {
@@ -470,6 +523,18 @@ func (t *detector) composerOnly() {
 func (t *detector) rails() {
 	t.d.Kind = "rails"
 	t.setList("setup", &t.r.Setup, "Gemfile", "bundle install")
+	if t.has("config/database.yml") {
+		t.setList("setup", &t.r.Setup, "Gemfile; config/database.yml: the database is created and migrated in setup",
+			"bundle install", "bin/rails db:prepare")
+	}
+	// bin/dev runs Procfile.dev; a process there that pins its port collides between workspaces.
+	for _, l := range strings.Split(t.read("Procfile.dev"), "\n") {
+		if m := pinnedPortPattern.FindStringSubmatch(l); m != nil {
+			name, _, _ := strings.Cut(l, ":")
+			t.ask("Procfile.dev's %s pins port %s, so two workspaces would collide; make it read $PORT (bin/dev passes "+
+				"$WAKIL_PORT as PORT), or write its command here with $WAKIL_PORT.", strings.TrimSpace(name), m[1])
+		}
+	}
 	t.addProcess(Process{Name: "app", Command: "bin/rails server -p $WAKIL_PORT"}, "bin/rails server takes -p")
 	t.port = true
 	if strings.Contains(t.read("config/routes.rb"), "rails/health") {
@@ -480,8 +545,9 @@ func (t *detector) rails() {
 }
 
 var (
-	fastAPIPattern = regexp.MustCompile(`(?m)^(\w+)\s*=\s*FastAPI\(`)
-	flaskPattern   = regexp.MustCompile(`(?m)^(\w+)\s*=\s*Flask\(`)
+	pinnedPortPattern = regexp.MustCompile(`(?:-p|--port)[ =](\d{2,5})\b`)
+	fastAPIPattern    = regexp.MustCompile(`(?m)^(\w+)\s*=\s*FastAPI\(`)
+	flaskPattern      = regexp.MustCompile(`(?m)^(\w+)\s*=\s*Flask\(`)
 )
 
 func (t *detector) python() {
@@ -566,7 +632,12 @@ func (t *detector) golang() {
 		t.d.DoesntRun, t.d.Why = true, "a Go module with no main package"
 		return
 	}
-	t.addProcess(Process{Name: "app", Command: "go run " + main}, "package main in "+map[bool]string{true: "main.go", false: main}[main == "."])
+	if t.has(".air.toml") {
+		// The repo's own live reload comes before go run.
+		t.addProcess(Process{Name: "app", Command: "air"}, ".air.toml: air builds and restarts the server on change")
+	} else {
+		t.addProcess(Process{Name: "app", Command: "go run " + main}, "package main in "+map[bool]string{true: "main.go", false: main}[main == "."])
+	}
 	t.mapPort("PORT", "$WAKIL_PORT", "the usual variable a Go server reads; check main reads it")
 	t.port = true
 }
@@ -755,6 +826,11 @@ func (t *detector) detectCompose() {
 	}
 	// No stack of its own: the compose file is the app (its build services), or only services.
 	t.d.Kind = "compose"
+	if len(dc.AppServices) > 0 {
+		// A first run builds the app's images: in setup, never under the ready timeout.
+		t.setList("setup", &t.r.Setup, file+": the app's images are built in setup, not under the ready timeout",
+			"docker compose build "+strings.Join(dc.AppServices, " "))
+	}
 	for _, s := range dc.AppServices {
 		t.addProcess(Process{Name: s, Command: "docker compose up " + s}, file+": service "+s+" builds the app")
 	}

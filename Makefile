@@ -221,6 +221,11 @@ endif
 		exit 1; \
 	fi; \
 	echo; echo "test-live: all selected tests ran, none skipped."
+	@echo; echo "test-live: Try across the app stacks (each skipped, saying why, when its runtime is missing)"
+	@out=$$(WAKIL_LIVE_TRY=1 go test ./internal/wakilcore/ -count=1 -v -run 'TestLiveTry' 2>&1); \
+	status=$$?; \
+	printf '%s\n' "$$out" | grep -E -- '^(--- |ok|FAIL)|trylive_test.go'; \
+	exit $$status
 
 # ---------------------------------------------------------------------
 # e2e — the checks that drive the shipped bundle

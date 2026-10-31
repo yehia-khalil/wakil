@@ -1,0 +1,1 @@
+{"name":"orders","scripts":{"dev":"node --watch server.js","start":"node server.js"},"dependencies":{"express":"^4.19.2"}}

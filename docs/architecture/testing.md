@@ -43,7 +43,10 @@ The structural tests, which fail on a shape rather than a behaviour:
   server), `register_provider_test.go` (`scripts/register-provider.sh`), and
   `architecture_docs_test.go` (every WakilKit folder, `cmd/` binary and `internal/` package has a
   heading in `docs/architecture/wakilkit.md` or `go.md`).
-- **`make test-live`** — the MySQL and Mongo tests `make test` skips, against Docker containers.
+- **`make test-live`** — the MySQL and Mongo tests `make test` skips, against Docker containers. Then Try across
+  the app stacks (`TestLiveTry*`, `WAKIL_LIVE_TRY=1`): a tiny app per stack in a temp folder, the real Try
+  to ready on `$WAKIL_PORT` and teardown, each skipped, saying why, when its runtime is missing. Detect's
+  answers per stack are goldens under `internal/wakilcore/testdata/recipes`, in `make test`.
 
 ## e2e
 
@@ -79,7 +82,7 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 | `make test` | `docs-check`, then `go test ./...` |
 | `make docs-check` | Fails if `docs/wakil/north-star.md` exceeds 4,000 words |
 | `make merge-check` | Fails if any plan, spec or `docs/wakil/*-acceptance.md` remains; run on the PR that targets `main`, not part of `make test` |
-| `make test-live` | Engine-backed Go tests against Docker MySQL and Mongo |
+| `make test-live` | Engine-backed Go tests against Docker MySQL and Mongo, then Try across the app stacks |
 | `make vet` | `go vet ./...` |
 | `make fmt` | Fails if any Go file is not gofmt-clean |
 | `make shaders` | Compiles `app/Shaders/Void.metal` to `app/Sources/WakilApp/default.metallib` |
