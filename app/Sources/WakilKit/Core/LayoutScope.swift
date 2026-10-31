@@ -92,6 +92,13 @@ public struct LayoutScope: Sendable {
     public var projectSeed: LayoutScope {
         LayoutScope(organization: organization, project: project, environment: environment)
     }
+
+    /// What a workspace's view is filed under (workspaces, decision 22): `workspace-` and its key.
+    public static let workspaceViewPrefix = "workspace-"
+
+    /// Whether this is a workspace's view rather than Main's: its panes stand in a copy, so it never
+    /// seeds Main's next canvas (`LayoutPersistence.save`).
+    public var isWorkspaceView: Bool { lineageRoot?.hasPrefix(Self.workspaceViewPrefix) ?? false }
 }
 
 /// Whether a conversation minted this moment takes the canvas `outgoing` holds, rather than

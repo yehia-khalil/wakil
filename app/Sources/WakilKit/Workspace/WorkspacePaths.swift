@@ -47,7 +47,7 @@ public func confinementRefusal(_ path: String, workspace: Workspace?, all: [Work
 
 /// What a workspace's canvas is filed under (`LayoutScope.lineageRoot`): its view key, marked so it
 /// can never equal a conversation's lineage root.
-public func workspaceCanvasRoot(_ w: Workspace) -> String { "workspace-" + w.viewKey }
+public func workspaceCanvasRoot(_ w: Workspace) -> String { LayoutScope.workspaceViewPrefix + w.viewKey }
 
 /// The tag the editor and a terminal carry for a folder (spec, piece 1): a workspace's copy, or
 /// the operator's own folder in Main.

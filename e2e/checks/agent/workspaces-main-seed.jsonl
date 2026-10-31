@@ -1,0 +1,27 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/write-the-workspace-note/e2e-api/ws-note.txt"}}
+{"expect":{"pane":"terminal-3","field":"cwd","contains":"/write-the-workspace-note/e2e-api"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"pane":"terminal-1","field":"grid[0]","contains":" e2e-git %"}}
+{"do":{"type":{"into":"window.composer","text":"tell me a short joke"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the joke turn arrived with no note"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"absent","text":"the joke turn arrived with no note"}}
+{"expect":{"pane":"terminal-3","field":"kind","equals":"null"}}
+{"expect":{"pane":"editor-2","field":"kind","equals":"null"}}
+{"expect":{"tree":"absent","text":"outside the active project's roots"}}
