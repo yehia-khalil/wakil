@@ -88,12 +88,17 @@ func NewTryTracker(plan RunPlan) *TryTracker {
 		add(TryStep{Phase: PhaseBuild, Command: plan.Build.Command})
 	}
 	for _, s := range plan.Steps {
-		if s.Phase == PhaseProcess {
+		if s.Phase == PhaseProcess && !s.AfterReady {
 			add(TryStep{Phase: PhaseProcess, Name: s.Name, Command: s.Command})
 		}
 	}
 	if plan.Ready != nil {
 		add(TryStep{Phase: PhaseReady, Command: readyWhat(plan.Ready)})
+	}
+	for _, s := range plan.Steps {
+		if s.Phase == PhaseProcess && s.AfterReady {
+			add(TryStep{Phase: PhaseProcess, Name: s.Name, Command: s.Command})
+		}
 	}
 	for _, s := range plan.Teardown {
 		add(TryStep{Phase: PhaseTeardown, Command: s.Command})

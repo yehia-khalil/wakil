@@ -77,7 +77,7 @@ func TestDraftAllGroupsAlikeReposAndKeepsDifferences(t *testing.T) {
 	if !ok {
 		t.Fatalf("no laravel-sail recipe: %v", sortedKeys(all.Recipes))
 	}
-	if !reflect.DeepEqual(sail.Processes, []Process{{"app", "./vendor/bin/sail up laravel.test"}}) {
+	if !reflect.DeepEqual(sail.Processes, []Process{{Name: "app", Command: "./vendor/bin/sail up laravel.test"}}) {
 		t.Fatalf("shared processes: %+v", sail.Processes)
 	}
 	if !reflect.DeepEqual(sail.Needs, []string{"umbrella-services"}) {
@@ -97,7 +97,7 @@ func TestDraftAllGroupsAlikeReposAndKeepsDifferences(t *testing.T) {
 	}
 	res := all.Repos["reservations"]
 	if res.Recipe != "laravel-sail" || res.Overrides == nil ||
-		!reflect.DeepEqual(res.Overrides.Processes, []Process{{"queue", "./vendor/bin/sail artisan queue:work"}}) {
+		!reflect.DeepEqual(res.Overrides.Processes, []Process{{Name: "queue", Command: "./vendor/bin/sail artisan queue:work"}}) {
 		t.Fatalf("reservations keeps its queue: %+v", res.Overrides)
 	}
 	if all.Repos["pricing"].Overrides != nil {
@@ -155,9 +155,9 @@ func TestDraftAllGroupsAlikeReposAndKeepsDifferences(t *testing.T) {
 
 func TestSplitSharedTakesTheMajorityAndOverridesTheRest(t *testing.T) {
 	rs := []Recipe{
-		{Setup: []string{"a"}, Build: ptr("b"), Ports: map[string]string{"P": "$WAKIL_PORT"}, Processes: []Process{{"app", "x"}}},
-		{Setup: []string{"a"}, Ports: map[string]string{"P": "$WAKIL_PORT", "Q": "$WAKIL_PORT_1"}, Processes: []Process{{"app", "y"}}},
-		{Setup: []string{"c"}, Build: ptr("b"), Ports: map[string]string{"P": "$WAKIL_PORT"}, Processes: []Process{{"app", "x"}}},
+		{Setup: []string{"a"}, Build: ptr("b"), Ports: map[string]string{"P": "$WAKIL_PORT"}, Processes: []Process{{Name: "app", Command: "x"}}},
+		{Setup: []string{"a"}, Ports: map[string]string{"P": "$WAKIL_PORT", "Q": "$WAKIL_PORT_1"}, Processes: []Process{{Name: "app", Command: "y"}}},
+		{Setup: []string{"c"}, Build: ptr("b"), Ports: map[string]string{"P": "$WAKIL_PORT"}, Processes: []Process{{Name: "app", Command: "x"}}},
 	}
 	shared, over := splitShared(rs)
 	if !reflect.DeepEqual(shared.Setup, []string{"a"}) || *shared.Build != "b" || shared.Ports["P"] != "$WAKIL_PORT" || len(shared.Ports) != 1 {

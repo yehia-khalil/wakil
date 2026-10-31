@@ -221,7 +221,7 @@ public actor WorkspaceRunner {
             }
             var running = alreadyRunning
             let env = plan.env.merging(secretEnv) { _, s in s }
-            for p in procs where !running.contains(where: { $0.name == p.name }) {
+            for p in procs where !p.afterReady && !running.contains(where: { $0.name == p.name }) {
                 guard let terminals else { throw RunError("Run needs the window's terminals; none are open.") }
                 let pane = try await terminals.start(
                     title: "\(name) · \(p.name)", workspace: w, dir: p.dir.isEmpty ? plan.dir : p.dir,
@@ -244,6 +244,17 @@ public actor WorkspaceRunner {
                 }
                 setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: running,
                                                  phase: .running, ready: r.detail))
+            }
+            // What needs the app up starts once it is (a queue worker).
+            for p in procs where p.afterReady && !running.contains(where: { $0.name == p.name }) {
+                guard let terminals else { throw RunError("Run needs the window's terminals; none are open.") }
+                let pane = try await terminals.start(
+                    title: "\(name) · \(p.name)", workspace: w, dir: p.dir.isEmpty ? plan.dir : p.dir,
+                    environment: env, command: p.command)
+                running.append((p.name, pane))
+                report.processes[p.name] = pane
+                setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: running,
+                                                 phase: .running, ready: report.ready?.detail))
             }
             return report
         } catch {

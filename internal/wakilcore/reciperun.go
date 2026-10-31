@@ -377,10 +377,7 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 	var procs []running
 	procCtx, stopProcs := context.WithCancel(ctx)
 	defer stopProcs()
-	for _, s := range plan.Steps {
-		if s.Phase != PhaseProcess {
-			continue
-		}
+	start := func(s PlanStep) bool {
 		buf := &lockedBuffer{}
 		pi := pg.begin(PhaseProcess, s.Name, s.Command)
 		cmd := shellCommand(procCtx, plan.Dir, s.Command, env)
@@ -391,14 +388,21 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 				ExitCode: -1, Detail: fmt.Sprintf("%s could not start: %v", s.Command, err)}
 			pg.end(pi, failed)
 			out.Steps = append(out.Steps, failed)
-			stopProcs()
-			teardown(ctx, plan, env, opt, &out)
-			return out
+			return false
 		}
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
 		procs = append(procs, running{name: s.Name, cmd: cmd, out: buf, done: done})
 		pg.end(pi, StepResult{OK: true, Detail: "started"})
+		return true
+	}
+	// The processes, then the ready check, then those that start once the app is ready.
+	for _, s := range plan.Steps {
+		if s.Phase == PhaseProcess && !s.AfterReady && !start(s) {
+			stopProcs()
+			teardown(ctx, plan, env, opt, &out)
+			return out
+		}
 	}
 	ri := -1
 	if plan.Ready != nil {
@@ -419,6 +423,24 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 	})
 	if ready != nil {
 		pg.end(ri, StepResult{OK: ready.Ready, Detail: ready.Detail})
+	}
+	if ready == nil || ready.Ready {
+		late := false
+		for _, s := range plan.Steps {
+			if s.Phase == PhaseProcess && s.AfterReady {
+				late = true
+				if !start(s) {
+					break
+				}
+			}
+		}
+		if late {
+			// A moment for what started after ready to show it runs.
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * opt.PollInterval):
+			}
+		}
 	}
 	stopProcs()
 	allOK := ready == nil || ready.Ready

@@ -53,6 +53,21 @@ extension WindowModel {
         recipeDraftBook.end(key)
     }
 
+    /// The drafting line's conversation name, pressed: that conversation, in Main of its project.
+    public func openRecipeDraftConversation(projectPath: String, repo: String) async {
+        guard let d = recipeDraftBook.draft(RecipeDraftKey(projectPath: projectPath, repo: repo)),
+              let agent = conversation(id: d.conversation) else { return }
+        await switchToConversation(agent.id, in: agent.place)
+    }
+
+    /// Ask again: a turn that ended without a proposal is sent the same request once more.
+    public func askRecipeDraftAgain(projectPath: String, repo: String) async {
+        let key = RecipeDraftKey(projectPath: projectPath, repo: repo)
+        guard let d = recipeDraftBook.draft(key), let agent = conversation(id: d.conversation),
+              let text = recipeDraftBook.askAgain(key) else { return }
+        await sendRecipeDraft(key, text, to: agent.id, root: d.root, place: agent.place)
+    }
+
     /// `running_draft_propose`'s handler, through `RecipeDraftLookup`.
     func receiveRecipeDraft(conversation: String?, _ proposal: RunningDetected) throws {
         _ = try recipeDraftBook.propose(conversation: conversation, proposal)
@@ -72,6 +87,7 @@ extension WindowModel {
 
     private func sendRecipeDraft(_ key: RecipeDraftKey, _ text: String, to id: String, root: String, place: Place? = nil) async {
         guard let agent = conversation(id: id) else { return }
+        recipeDraftBook.asked(key, text, root: root)
         let scope = TurnScope(place: place ?? agent.place, rootPath: root, providerId: agent.providerId, conversation: id)
         let before = status
         guard await send(text, scope: scope) else {

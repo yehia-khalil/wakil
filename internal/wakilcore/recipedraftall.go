@@ -391,14 +391,14 @@ func splitShared(rs []Recipe) (Recipe, []Recipe) {
 		})
 		cmd, ok := cmdOf(rs[at], name)
 		if ok {
-			shared.Processes = append(shared.Processes, Process{name, cmd})
+			shared.Processes = append(shared.Processes, Process{Name: name, Command: cmd})
 		}
 		for i := range rs {
 			c, has := cmdOf(rs[i], name)
 			if jsonKey([]any{has, c}) == k {
 				continue
 			}
-			over[i].Processes = append(over[i].Processes, Process{name, c})
+			over[i].Processes = append(over[i].Processes, Process{Name: name, Command: c})
 		}
 	}
 	if len(shared.Notes) == 0 {

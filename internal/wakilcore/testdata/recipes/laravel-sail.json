@@ -18,7 +18,8 @@
       "./vendor/bin/sail up -d mysql redis"
     ],
     "setup": [
-      "composer install"
+      "composer install",
+      "./vendor/bin/sail build"
     ],
     "processes": [
       {
@@ -27,7 +28,8 @@
       },
       {
         "name": "queue",
-        "command": "./vendor/bin/sail artisan queue:work"
+        "command": "./vendor/bin/sail artisan queue:work",
+        "afterReady": true
       }
     ],
     "ready": {
@@ -44,10 +46,10 @@
       "ports.FORWARD_REDIS_PORT": "docker-compose.yml publishes redis's port from $FORWARD_REDIS_PORT, so nothing in it is rewritten",
       "ports.VITE_PORT": "docker-compose.yml publishes laravel.test's port from $VITE_PORT, so nothing in it is rewritten",
       "processes.app": "docker-compose.yml (Sail) laravel.test",
-      "processes.queue": ".env.example QUEUE_CONNECTION=rabbitmq",
+      "processes.queue": ".env.example QUEUE_CONNECTION=rabbitmq; it starts once the app is ready, as it needs laravel.test up",
       "ready": "the app answering on $WAKIL_PORT",
       "services": "docker-compose.yml (Sail)",
-      "setup": "composer.json",
+      "setup": "composer.json; the images are built in setup, not under the ready timeout",
       "teardown": "docker-compose.yml (Sail)"
     }
   },

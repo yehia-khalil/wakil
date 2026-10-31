@@ -35,6 +35,9 @@ struct RunningSettingsForm: View {
         var title: String
         var lines: [String]
         var saving: JSONValue
+        /// The drafting conversation the title names, drawn as a control that opens it.
+        var conversation: String? = nil
+        var repo: String? = nil
     }
 
     /// A Try in flight or done: its throwaway workspace, and its report.
@@ -277,9 +280,12 @@ struct RunningSettingsForm: View {
 
     private func proposalBox(_ p: Proposal, id: String = "settings.running.proposal", settle: @escaping () -> Void = {}) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(p.title)
+            Text(linkingConversation(p.title, p.conversation))
                 .font(.system(size: SettingsScale.body, weight: .medium))
                 .foregroundStyle(SettingsPalette.coolWhite.opacity(0.92))
+                .fixedSize(horizontal: false, vertical: true)
+                .environment(\.openURL, openingConversation(p.repo))
+                .accessibilityIdentifier("\(id).title")
             FormHint("Nothing changes until you save. Each line says what it was based on.")
             ForEach(Array(p.lines.enumerated()), id: \.offset) { _, line in
                 Text(line)
@@ -314,7 +320,9 @@ struct RunningSettingsForm: View {
         if let line = d.line {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if d.inFlight { ProgressView().controlSize(.small) }
-                Text(line)
+                Text(d.lineParts.map { linkingConversation($0.before + $0.conversation + $0.after, $0.conversation) }
+                     ?? AttributedString(line))
+                    .environment(\.openURL, openingConversation(d.key.repo))
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(d.inFlight ? SettingsPalette.coolWhite.opacity(0.7) : SettingsPalette.caution)
                     .fixedSize(horizontal: false, vertical: true)
@@ -325,12 +333,17 @@ struct RunningSettingsForm: View {
                         Task { await drafting.stop(d.key.repo) }
                     }
                 }
+                if d.canAskAgain {
+                    FormButton(title: "Ask again", tone: SettingsPalette.accent, identifier: "settings.running.draftAskAgain") {
+                        Task { await drafting.askAgain(d.key.repo) }
+                    }
+                }
             }
         }
         if let p = d.proposal {
             proposalBox(Proposal(
                 title: d.isFix ? "Fix proposed by ‘\(d.title)’ — \(d.key.repo)" : "Drafted in ‘\(d.title)’ — \(d.key.repo)",
-                lines: p.lines, saving: s.savingDraft(p, of: d.key.repo)),
+                lines: p.lines, saving: s.savingDraft(p, of: d.key.repo), conversation: d.title, repo: d.key.repo),
                 id: "settings.running.draft", settle: { drafting.settle(d.key.repo) })
         }
     }
@@ -424,6 +437,27 @@ struct RunningSettingsForm: View {
                 }
                 .accessibilityIdentifier("settings.running.tryOutput")
             }
+        }
+    }
+
+    /// `text` with the conversation's name a link that opens it (the walk: the drafting lines named
+    /// a conversation nothing could open); it wraps with the line, whole.
+    private func linkingConversation(_ text: String, _ conversation: String?) -> AttributedString {
+        var a = AttributedString(text)
+        if let conversation, !conversation.isEmpty, let r = a.range(of: conversation) {
+            a[r].link = URL(string: "wakil-draft://open")
+            a[r].underlineStyle = .single
+        }
+        return a
+    }
+
+    /// Pressing the conversation's name opens it, in Main of the project (the operator asked for the
+    /// jump, so Rule 6 allows it).
+    private func openingConversation(_ repo: String?) -> OpenURLAction {
+        OpenURLAction { url in
+            guard url.scheme == "wakil-draft", let repo else { return .systemAction }
+            Task { await drafting.open(repo) }
+            return .handled
         }
     }
 
@@ -590,6 +624,10 @@ struct RunningDrafting {
     var fix: (_ repo: String, _ root: String, _ recipe: Recipe, _ report: RunTryResult) async -> Void = { _, _, _, _ in }
     var settle: (String) -> Void = { _ in }
     var stop: (String) async -> Void = { _ in }
+    /// Opens the repo's drafting conversation (it lives in Main of the project).
+    var open: (String) async -> Void = { _ in }
+    /// Ask again: the last request sent once more to the repo's drafting conversation.
+    var askAgain: (String) async -> Void = { _ in }
 
     static var none: RunningDrafting { RunningDrafting() }
 }

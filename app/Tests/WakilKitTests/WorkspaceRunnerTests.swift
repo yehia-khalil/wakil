@@ -29,6 +29,8 @@ private struct PlanSpec: Sendable {
     var ready: JSONValue? = .object(["output": .string("Local:"), "timeoutSeconds": .integer(2)])
     var failPhase: String?
     var build: String? = "pnpm build"
+    /// Processes that start once the app is ready.
+    var late: [(String, String)] = []
 }
 
 private func plan(_ repo: String, _ spec: PlanSpec, port: Int) -> JSONValue {
@@ -36,6 +38,8 @@ private func plan(_ repo: String, _ spec: PlanSpec, port: Int) -> JSONValue {
     steps += spec.services.map { .object(["phase": .string("service"), "command": .string($0), "once": .string("workspace")]) }
     steps += spec.setup.map { .object(["phase": .string("setup"), "command": .string($0), "once": .string("checkout")]) }
     steps += spec.processes.map { .object(["phase": .string("process"), "name": .string($0.0), "command": .string($0.1), "longRunning": .bool(true)]) }
+    steps += spec.late.map { .object(["phase": .string("process"), "name": .string($0.0), "command": .string($0.1), "longRunning": .bool(true),
+                                      "afterReady": .bool(true)]) }
     var o: [String: JSONValue] = [
         "repo": .string(repo), "dir": .string("/h/ws/estate/fix/\(repo)"),
         "env": .object(["WAKIL_PORT": .string("\(port)")]), "secrets": .object(["STRIPE": .string("wakil:initech:s")]),
@@ -396,4 +400,19 @@ private final class Counter: @unchecked Sendable {
 private actor ProgressLog {
     var all: [TryProgressState] = []
     func add(_ p: TryProgressState) { all.append(p) }
+}
+
+/// A process marked afterReady starts once the ready check passed (the walk: a Sail queue failed
+/// before laravel.test was up), and never when the app does not come up.
+@Test func anAfterReadyProcessStartsOnlyOnceTheAppIsReady() async throws {
+    let (r, _, terms) = await runner(["web": PlanSpec(late: [("queue", "php artisan queue:work")])])
+    let report = try await r.run("w1", repo: "web")
+    #expect(await terms.started.map(\.title) == ["web · dev", "web · queue"])
+    #expect(report.processes.keys.sorted() == ["dev", "queue"])
+
+    let never = PlanSpec(ready: .object(["output": .string("never shows"), "timeoutSeconds": .integer(1)]),
+                         late: [("queue", "php artisan queue:work")])
+    let (r2, _, terms2) = await runner(["web": never])
+    await #expect(throws: RunError.self) { try await r2.run("w1", repo: "web") }
+    #expect(await terms2.started.map(\.title) == ["web · dev"])
 }

@@ -222,7 +222,7 @@ func TestEffectiveRecipeMergesAndSaysWhereEachFieldCameFrom(t *testing.T) {
 	if eff.RecipeName != "laravel-sail" || eff.DoesntRun {
 		t.Fatalf("header: %+v", eff)
 	}
-	wantProcs := []Process{{"app", "./vendor/bin/sail up laravel.test"}, {"queue", "sail artisan queue:work rabbitmq"}}
+	wantProcs := []Process{{Name: "app", Command: "./vendor/bin/sail up laravel.test"}, {Name: "queue", Command: "sail artisan queue:work rabbitmq"}}
 	if !reflect.DeepEqual(eff.Recipe.Processes, wantProcs) {
 		t.Fatalf("processes: %#v", eff.Recipe.Processes)
 	}
@@ -248,14 +248,14 @@ func TestMergeReplacesListsAndScalarsAndRemovesAProcess(t *testing.T) {
 		Setup:     []string{"a"},
 		Clone:     []string{"vendor"},
 		Build:     ptr("make"),
-		Processes: []Process{{"app", "serve"}, {"queue", "work"}},
+		Processes: []Process{{Name: "app", Command: "serve"}, {Name: "queue", Command: "work"}},
 		Ports:     map[string]string{"A": "$WAKIL_PORT"},
 	}
 	over := Recipe{
 		Setup:     []string{"b", "c"},
 		Clone:     []string{},
 		Build:     ptr("make all"),
-		Processes: []Process{{"queue", ""}},
+		Processes: []Process{{Name: "queue", Command: ""}},
 		Ports:     map[string]string{"B": "$WAKIL_PORT_1"},
 	}
 	r, from := MergeRecipe(shared, over)
@@ -268,7 +268,7 @@ func TestMergeReplacesListsAndScalarsAndRemovesAProcess(t *testing.T) {
 	if *r.Build != "make all" || from["build"] != FieldRepo {
 		t.Errorf("build: %v", *r.Build)
 	}
-	if !reflect.DeepEqual(r.Processes, []Process{{"app", "serve"}}) {
+	if !reflect.DeepEqual(r.Processes, []Process{{Name: "app", Command: "serve"}}) {
 		t.Errorf("an empty override command removes the process: %#v", r.Processes)
 	}
 	if _, ok := from["processes.queue"]; ok {
@@ -307,12 +307,12 @@ func TestValidateRecipesListsEveryProblemWhole(t *testing.T) {
 				Env:       map[string]EnvValue{"A-B": {Value: "x"}, "S": {Secret: "has space"}, "OK": {Value: "y"}, "COMPOSE_FILE": {Value: "z"}},
 				Copy:      []string{"/etc/passwd", "../up", ""},
 				Setup:     []string{" "},
-				Processes: []Process{{"app", ""}, {"app", "x"}, {"Bad", "y"}},
+				Processes: []Process{{Name: "app", Command: ""}, {Name: "app", Command: "x"}, {Name: "Bad", Command: "y"}},
 				Build:     ptr(""),
 				Ready:     &Ready{URL: "localhost:1", TimeoutSeconds: -1},
 				In:        ptr("nowhere"),
 			},
-			"app-recipe": {Services: []string{"x"}, Processes: []Process{{"p", "q"}}},
+			"app-recipe": {Services: []string{"x"}, Processes: []Process{{Name: "p", Command: "q"}}},
 			"both":       {Ready: &Ready{URL: "http://x", Output: "y"}},
 			"neither":    {Ready: &Ready{}},
 			"badre":      {Ready: &Ready{Output: "/(/"}},
@@ -372,7 +372,7 @@ func TestApplyRecipePatchValidatesAndReplaces(t *testing.T) {
 	}
 	p = loadFull(t)
 	err = ApplyRecipePatch(&p, RecipePatch{
-		Recipes: map[string]*Recipe{"go": {Processes: []Process{{"app", "go run ."}}}},
+		Recipes: map[string]*Recipe{"go": {Processes: []Process{{Name: "app", Command: "go run ."}}}},
 		Repos:   map[string]RepoRun{"core-db": {Recipe: "go"}},
 	})
 	if err != nil {

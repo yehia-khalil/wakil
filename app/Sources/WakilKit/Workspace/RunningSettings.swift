@@ -31,11 +31,17 @@ public enum RecipeEnvValue: Codable, Sendable, Equatable {
 public struct RecipeProcess: Codable, Sendable, Equatable {
     public var name: String
     public var command: String
-    public init(name: String, command: String) {
+    /// Starts only once the ready check passed (a queue worker that needs the app up); nil is false.
+    public var afterReady: Bool?
+    public init(name: String, command: String, afterReady: Bool = false) {
         self.name = name
         self.command = command
+        self.afterReady = afterReady ? true : nil
     }
 }
+
+/// How the Processes box marks a process that starts once the app is ready.
+let afterReadyMark = " (after ready)"
 
 public struct RecipeReady: Codable, Sendable, Equatable {
     public var url: String?
@@ -199,7 +205,7 @@ public enum RecipeField: String, CaseIterable, Sendable {
         case .setup: (r.setup ?? []).joined(separator: "\n")
         case .teardown: (r.teardown ?? []).joined(separator: "\n")
         case .ports: (r.ports ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
-        case .processes: (r.processes ?? []).map { "\($0.name): \($0.command)" }.joined(separator: "\n")
+        case .processes: (r.processes ?? []).map { "\($0.name): \($0.command)\($0.afterReady == true ? afterReadyMark : "")" }.joined(separator: "\n")
         case .build: r.build ?? ""
         case .ready: r.ready?.url ?? r.ready?.output ?? ""
         }
@@ -227,7 +233,10 @@ public enum RecipeField: String, CaseIterable, Sendable {
             r.ports = m
         case .processes:
             var out: [RecipeProcess] = []
-            for l in lines {
+            for var l in lines {
+                let late = l.hasSuffix(afterReadyMark)
+                if late { l = String(l.dropLast(afterReadyMark.count)).trimmingCharacters(in: .whitespaces) }
+                defer { if late, !out.isEmpty { out[out.count - 1].afterReady = true } }
                 if let colon = l.firstIndex(of: ":"), !l[..<colon].contains(" "), !l[..<colon].isEmpty {
                     out.append(RecipeProcess(name: String(l[..<colon]), command: l[l.index(after: colon)...].trimmingCharacters(in: .whitespaces)))
                 } else {

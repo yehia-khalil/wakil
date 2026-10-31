@@ -116,3 +116,15 @@ private let listed: JSONValue = {
     guard case .object(let o) = d.saving(existing: [:]), case .object(let repos)? = o["repos"] else { Issue.record("no repos"); return }
     #expect(repos["web"] == .object(["recipe": .string("vite")]))
 }
+
+/// A process that starts once the app is ready (the walk: a Sail queue failed before laravel.test
+/// was up): `(after ready)` at the end of its line in the Processes box, kept as `afterReady`.
+@Test func aProcessLineMarkedAfterReadyKeepsItAndSaysIt() throws {
+    let r = RecipeField.processes.set("app: ./vendor/bin/sail up laravel.test\nqueue: ./vendor/bin/sail artisan queue:work (after ready)", in: Recipe())
+    #expect(r.processes == [RecipeProcess(name: "app", command: "./vendor/bin/sail up laravel.test"),
+                            RecipeProcess(name: "queue", command: "./vendor/bin/sail artisan queue:work", afterReady: true)])
+    #expect(RecipeField.processes.text(in: r)
+        == "app: ./vendor/bin/sail up laravel.test\nqueue: ./vendor/bin/sail artisan queue:work (after ready)")
+    let json = String(data: try JSONEncoder().encode(r.processes), encoding: .utf8) ?? ""
+    #expect(json.contains("\"afterReady\":true") && !json.contains("\"afterReady\":false"))
+}

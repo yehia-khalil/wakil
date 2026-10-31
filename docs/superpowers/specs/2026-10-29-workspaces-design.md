@@ -657,6 +657,25 @@ branch (step 2) or Main's commit (step 0).
   instructions for the base and call the tool first; the Branches box's placeholder gives an
   example (*from staging; a hotfix from production*). No separate Settings field.
 
+### Amendment 2026-10-31 — piece 2's walk: Try in steps, a process after ready
+
+- **Try shows its steps as they run.** Go runs Try as a job the window follows
+  (`recipe_try_start`, `recipe_try_status`, `recipe_try_cancel`): every step is listed before it
+  runs — copy made, prepared, each services, setup and build command, each process started, ready,
+  teardown — and is ✓ done with its time, ● running with its time and last line, ○ to come, or ✗
+  failed with its output whole. Show output opens the running or failed step's output; Cancel stops
+  the running step, teardown still run. A card's Run runs each services and setup step on its own and
+  reads `<step> · <command> · <time>` until ready, then `running on :<port>`.
+- **A process may start after ready.** A recipe's process takes `afterReady: true` when it needs
+  the app up (a Sail queue failed because laravel.test was not up yet); Run and Try start it once the
+  ready check passed, and never when it fails. The Processes box marks it `(after ready)`. Detect marks
+  a Sail queue so, and a first run's image build (`sail build`, `docker compose build`) goes in setup,
+  never under the ready timeout; the drafting and fix briefs say both.
+- **The drafting line's conversation opens.** Its name in "Drafting … in ‘…’", "‘…’ is proposing a
+  fix…", "‘…’ ended its turn without proposing …" and "Drafted in ‘…’" is a control that opens it in
+  Main of the project (the operator asked for the jump, Rule 6), and a turn that ended without a
+  proposal offers **Ask again**, which sends the same request once more.
+
 ## Errors and edges
 
 - `git worktree add` fails: the write is not made; git's message whole in the thread (Rule 8).

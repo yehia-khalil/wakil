@@ -721,7 +721,9 @@ extension WakilWindow {
                                 await model.proposeRecipeFix(project: project, repo: repo, root: root, recipe: recipe, report: report)
                             },
                             settle: { model.settleRecipeDraft(projectPath: project.path, repo: $0) },
-                            stop: { await model.stopRecipeDraft(projectPath: project.path, repo: $0) })
+                            stop: { await model.stopRecipeDraft(projectPath: project.path, repo: $0) },
+                            open: { await model.openRecipeDraftConversation(projectPath: project.path, repo: $0) },
+                            askAgain: { await model.askRecipeDraftAgain(projectPath: project.path, repo: $0) })
                     },
                     saveProjectBranchInstructions: { path, branches in
                         await model.saveProjectAgentInstructions(projectPath: path, branches: branches)

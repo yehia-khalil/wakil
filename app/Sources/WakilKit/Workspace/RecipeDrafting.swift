@@ -28,7 +28,9 @@ public struct RecipeDraft: Sendable, Equatable {
         case proposed
         /// Nothing pending: the proposal was saved or discarded.
         case idle
-        /// The conversation could not start, or ended its turn without a proposal — said whole.
+        /// The conversation ended its turn without a proposal: its thread says why; Ask again.
+        case noProposal
+        /// The conversation could not start — said whole.
         case failed(String)
     }
 
@@ -41,16 +43,38 @@ public struct RecipeDraft: Sendable, Equatable {
     public var proposal: RunningDetected?
     /// Whether the proposal answers a failed Try.
     public var isFix: Bool
+    /// The last request sent to the conversation (the drafting brief, or the fix's), for Ask again.
+    public var lastAsk: String?
+    /// Where the last fix was asked from, so Ask again puts the line back as it was.
+    public var failedAt: String?
+    /// The repo's folder the requests are sent for.
+    public var root: String = ""
 
     /// The line the form shows for this drafting; nil when there is nothing to say.
     public var line: String? {
+        if let p = lineParts { return p.before + p.conversation + p.after }
+        if case .failed(let why) = phase { return why }
+        return nil
+    }
+
+    /// The line in three parts, the conversation's name its own (the walk: the form draws it as a
+    /// control that opens the conversation); nil when the line names no conversation.
+    public var lineParts: RecipeDraftLine? {
         switch phase {
-        case .drafting: "Drafting how \(key.repo) runs from its docs in ‘\(title)’, a conversation in Main…"
-        case .fixing(let at): "Try failed at \(at). ‘\(title)’ is proposing a fix…"
-        case .proposed, .idle: nil
-        case .failed(let why): why
+        case .drafting:
+            RecipeDraftLine(before: "Drafting how \(key.repo) runs from its docs in ‘", conversation: title,
+                            after: "’, a conversation in Main…")
+        case .fixing(let at):
+            RecipeDraftLine(before: "Try failed at \(at). ‘", conversation: title, after: "’ is proposing a fix…")
+        case .noProposal:
+            RecipeDraftLine(before: "‘", conversation: title,
+                            after: "’ ended its turn without proposing a recipe for \(key.repo); its thread says why.")
+        case .proposed, .idle, .failed: nil
         }
     }
+
+    /// A turn that ended without a proposal can be asked again: the same request, sent again.
+    public var canAskAgain: Bool { phase == .noProposal && lastAsk != nil && !conversation.isEmpty }
 
     public var inFlight: Bool {
         switch phase {
@@ -58,6 +82,13 @@ public struct RecipeDraft: Sendable, Equatable {
         default: false
         }
     }
+}
+
+/// A drafting line with the conversation's name as its own part.
+public struct RecipeDraftLine: Sendable, Equatable {
+    public var before: String
+    public var conversation: String
+    public var after: String
 }
 
 /// Why a proposal was refused.
@@ -82,11 +113,26 @@ public struct RecipeDraftBook: Sendable, Equatable {
     public mutating func begin(_ key: RecipeDraftKey, conversation: String, title: String, kind: String, fixing failedAt: String? = nil) {
         drafts[key] = RecipeDraft(
             key: key, conversation: conversation, title: title, kind: kind,
-            phase: failedAt.map { .fixing(failedAt: $0) } ?? .drafting, proposal: nil, isFix: failedAt != nil)
+            phase: failedAt.map { .fixing(failedAt: $0) } ?? .drafting, proposal: nil, isFix: failedAt != nil,
+            failedAt: failedAt)
+    }
+
+    /// What was sent to the conversation last, for Ask again.
+    public mutating func asked(_ key: RecipeDraftKey, _ text: String, root: String? = nil) {
+        drafts[key]?.lastAsk = text
+        if let root { drafts[key]?.root = root }
+    }
+
+    /// Ask again: the drafting is in flight again as it was asked, and the request to send answered.
+    public mutating func askAgain(_ key: RecipeDraftKey) -> String? {
+        guard let d = drafts[key], d.canAskAgain, let text = d.lastAsk else { return nil }
+        drafts[key]?.phase = d.failedAt.map { .fixing(failedAt: $0) } ?? .drafting
+        return text
     }
 
     /// Try failed: the same conversation is asked for a fix.
     public mutating func askFix(_ key: RecipeDraftKey, failedAt: String) {
+        drafts[key]?.failedAt = failedAt
         drafts[key]?.phase = .fixing(failedAt: failedAt)
         drafts[key]?.proposal = nil
         drafts[key]?.isFix = true
@@ -121,8 +167,7 @@ public struct RecipeDraftBook: Sendable, Equatable {
     /// The conversation's turn ended: one still drafting or fixing proposed nothing, said whole.
     public mutating func turnEnded(conversation: String) {
         guard let key = key(ofConversation: conversation), let d = drafts[key], d.inFlight else { return }
-        drafts[key]?.phase = .failed(
-            "‘\(d.title)’ ended its turn without proposing a recipe for \(key.repo); its thread says why.")
+        drafts[key]?.phase = .noProposal
     }
 
     /// The conversation ended (Stop, or closed): forgotten.
@@ -162,7 +207,7 @@ private let recipeAnswer = """
 Answer by calling running_draft_propose once with {"repo", "recipe", "questions"?, "recipeName"?} — \
 or {"repo", "doesntRun": true, "why"} when it has nothing to run. The recipe's fields: needs, copy, \
 clone, ports {VAR: "$WAKIL_PORT…"}, env {VAR: value}, services [command], setup [command], \
-processes [{name, command}], build "command", ready {url} or {output} with timeoutSeconds, \
+processes [{name, command, afterReady?}], build "command", ready {url} or {output} with timeoutSeconds, \
 teardown [command], and notes {field: where it came from}. Nothing is saved: the operator reads \
 your draft in the Running settings and saves it or not.
 """
@@ -172,8 +217,10 @@ private let recipeRules = """
 Rules: every port goes through $WAKIL_PORT (and $WAKIL_PORT_1 … $WAKIL_PORT_9), never a fixed one — \
 the workspace runs beside others; the repo's own scripts (Makefile, justfile, Taskfile, Procfile, \
 bin/dev, scripts/) come before any guess; databases, queues and caches go in services, started \
-once per workspace before the app. Change nothing: you are in Main, reading only — a write would \
-make a workspace.
+once per workspace before the app. A process that needs the app up first (a queue worker such as \
+`sail artisan queue:work`, a scheduler) takes "afterReady": true and starts once the ready check \
+passed. A first run's image build (`sail build`, `docker compose build`) goes in setup, never under \
+the ready timeout. Change nothing: you are in Main, reading only — a write would make a workspace.
 """
 
 /// The drafting conversation's first message: the detected facts whole, the docs to read, the

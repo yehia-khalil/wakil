@@ -509,3 +509,5 @@ settings.running.draft	a container (workspaces, piece 2): the drafting conversat
 settings.running.tryOutput	see running_try: drawn only while a Try runs or after one failed; seeded/workspaces-running-try-steps.jsonl reads the step list around it, TryProgressTests decide which step it opens.
 settings.running.tryStep.<…>	read, not pressed: each row of a Try's step list (seeded/workspaces-running-try-steps.jsonl reads them by their words).
 settings.running.tryStep.lastLine	read, not pressed: the running step's last line, read by seeded/workspaces-running-try-steps.jsonl.
+settings.running.draftAskAgain	drawn only after the drafting conversation ends a turn without proposing; the scripted agent (e2e/stub) always proposes. RecipeDraftingTests.aDraftingLineNamesItsConversationAsAPartAndATurnWithNoProposalCanBeAskedAgain decides when it shows and what it sends.
+settings.running.proposal.title	read, not pressed: Detect's or Draft all's proposal title; seeded/workspaces-running-settings.jsonl reads its words.

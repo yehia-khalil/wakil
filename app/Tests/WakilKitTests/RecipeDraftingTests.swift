@@ -67,7 +67,8 @@ private let key = RecipeDraftKey(projectPath: "/p/project.json", repo: "api")
     var book = RecipeDraftBook()
     book.begin(key, conversation: "c1", title: "Draft how api runs", kind: "")
     book.turnEnded(conversation: "c1")
-    guard case .failed(let why)? = book.draft(key)?.phase else { Issue.record("not failed"); return }
+    #expect(book.draft(key)?.phase == .noProposal)
+    let why = book.draft(key)?.line ?? ""
     #expect(why.contains("‘Draft how api runs’") && why.contains("without proposing"))
     // A turn that ends after its proposal leaves the proposal.
     book.begin(key, conversation: "c1", title: "Draft how api runs", kind: "")
@@ -90,6 +91,9 @@ private let key = RecipeDraftKey(projectPath: "/p/project.json", repo: "api")
     #expect(brief.contains("README"))
     #expect(brief.contains("Change nothing"))
     #expect(brief.contains("running_draft_propose"))
+    // A process that needs the app up is marked to start after ready; a first run's image build is setup's.
+    #expect(brief.contains("\"afterReady\": true"))
+    #expect(brief.contains("docker compose build") && brief.contains("in setup"))
 }
 
 @Test func theFixBriefCarriesTheFailingStepWholeAndTheRecipeAsTried() {
@@ -171,4 +175,32 @@ private actor Seen {
         _ = try await registry.dispatch(name: "running_draft_propose", params: json(#"{"repo":"api","recipe":{}}"#),
                                         origin: .agent, caller: caller, confirmation: nil)
     }
+}
+
+/// The walk: "‘Draft how parkour-warriors runs’ ended its turn without proposing a recipe …" with
+/// nothing pressable. The conversation's name in every drafting line is its own part, drawn as a
+/// control that opens it; a turn that ended without a proposal offers Ask again, which sends the
+/// same request again and puts the drafting back in flight.
+@Test func aDraftingLineNamesItsConversationAsAPartAndATurnWithNoProposalCanBeAskedAgain() throws {
+    var book = RecipeDraftBook()
+    book.begin(key, conversation: "c1", title: "Draft how api runs", kind: "")
+    book.asked(key, "the drafting brief")
+    #expect(book.draft(key)?.lineParts?.conversation == "Draft how api runs")
+    #expect(book.draft(key)?.lineParts?.before == "Drafting how api runs from its docs in ‘")
+    #expect(book.draft(key)?.canAskAgain == false, "nothing to ask again while it drafts")
+    book.askFix(key, failedAt: "setup `composer install`")
+    book.asked(key, "the fix brief")
+    #expect(book.draft(key)?.lineParts.map { $0.before + $0.conversation + $0.after }
+        == "Try failed at setup `composer install`. ‘Draft how api runs’ is proposing a fix…")
+    book.turnEnded(conversation: "c1")
+    let parts = try #require(book.draft(key)?.lineParts)
+    #expect(parts.conversation == "Draft how api runs")
+    #expect(parts.after == "’ ended its turn without proposing a recipe for api; its thread says why.")
+    #expect(book.draft(key)?.canAskAgain == true)
+    #expect(book.askAgain(key) == "the fix brief")
+    #expect(book.draft(key)?.phase == .fixing(failedAt: "setup `composer install`"))
+    // A conversation that never started has nothing to ask again.
+    book.fail(key, "could not start")
+    #expect(book.draft(key)?.canAskAgain == false)
+    #expect(book.draft(key)?.lineParts == nil)
 }

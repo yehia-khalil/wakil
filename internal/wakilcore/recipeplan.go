@@ -47,6 +47,7 @@ type PlanStep struct {
 	Command     string   `json:"command,omitempty"`
 	Dir         string   `json:"dir,omitempty"`
 	LongRunning bool     `json:"longRunning"`
+	AfterReady  bool     `json:"afterReady,omitempty"`
 	Once        string   `json:"once,omitempty"`
 	Target      string   `json:"target,omitempty"`
 	TargetKind  string   `json:"targetKind,omitempty"`
@@ -224,7 +225,7 @@ func BuildRunPlan(p Project, in PlanInput) (RunPlan, error) {
 		plan.Steps = append(plan.Steps, PlanStep{Phase: PhaseSetup, Command: c, Dir: dir, Once: OnceCheckout})
 	}
 	for _, proc := range recipe.Processes {
-		plan.Steps = append(plan.Steps, PlanStep{Phase: PhaseProcess, Name: proc.Name, Command: proc.Command, Dir: dir, LongRunning: true})
+		plan.Steps = append(plan.Steps, PlanStep{Phase: PhaseProcess, Name: proc.Name, Command: proc.Command, Dir: dir, LongRunning: true, AfterReady: proc.AfterReady})
 	}
 	if recipe.Build != nil && strings.TrimSpace(*recipe.Build) != "" {
 		plan.Build = &PlanStep{Phase: PhaseBuild, Command: *recipe.Build, Dir: dir}

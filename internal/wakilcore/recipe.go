@@ -56,6 +56,8 @@ type Recipe struct {
 type Process struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
+	// AfterReady starts it only once the ready check passed (a queue worker that needs the app up).
+	AfterReady bool `json:"afterReady,omitempty"`
 }
 
 // Ready is a URL that answers (200–399) or a line in the output: a substring, or /a regexp/.

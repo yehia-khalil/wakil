@@ -2,6 +2,8 @@ package wakilcore
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -89,5 +91,35 @@ func TestTryProgressMarksTheFailedStepAndLeavesTheRestToCome(t *testing.T) {
 	}
 	if s.Steps[3].State != TryStepDone || !s.Finished {
 		t.Errorf("teardown: %+v", s.Steps[3])
+	}
+}
+
+// A process marked afterReady starts only once the ready check passed (the walk: a Sail queue
+// failed because laravel.test was not up yet); its row comes after ready's.
+func TestTryStartsAnAfterReadyProcessOnlyOnceTheAppIsReady(t *testing.T) {
+	useSh(t)
+	dir := t.TempDir()
+	plan := RunPlan{
+		Dir: dir, Env: map[string]string{},
+		Steps: []PlanStep{
+			{Phase: PhaseProcess, Name: "queue", Command: "test -f app.up && echo ok > queue.ok; sleep 30", AfterReady: true},
+			{Phase: PhaseProcess, Name: "app", Command: "sleep 0.3; touch app.up; echo Local: up; sleep 30"},
+		},
+		Ready: &ReadyPlan{Output: "Local:", TimeoutSeconds: 5},
+	}
+	tracker := NewTryTracker(plan)
+	var order []string
+	for _, s := range tracker.Snapshot().Steps {
+		order = append(order, s.Phase+":"+s.Name)
+	}
+	if strings.Join(order, ",") != "prepare:,process:app,ready:,process:queue" {
+		t.Fatalf("rows: %v", order)
+	}
+	res := TryRecipe(context.Background(), plan, TryOptions{PollInterval: 20 * time.Millisecond, Progress: tracker})
+	if !res.Passed {
+		t.Fatalf("%+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "queue.ok")); err != nil {
+		t.Fatal("the afterReady process started before the app was up")
 	}
 }

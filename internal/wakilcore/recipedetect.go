@@ -413,17 +413,22 @@ func (t *detector) laravel() {
 	if t.composerRequires("laravel/sail") && compose != "" && strings.Contains(t.read(compose), "laravel.test") {
 		t.d.Kind = "laravel-sail"
 		sail := "./vendor/bin/sail"
-		t.addProcess(Process{"app", sail + " up laravel.test"}, compose+" (Sail) laravel.test")
+		t.addProcess(Process{Name: "app", Command: sail + " up laravel.test"}, compose+" (Sail) laravel.test")
 		if queue {
-			t.addProcess(Process{"queue", sail + " artisan queue:work"}, queueNote)
+			// The queue needs laravel.test up (the walk: a Sail queue failed before it was).
+			t.addProcess(Process{Name: "queue", Command: sail + " artisan queue:work", AfterReady: true},
+				queueNote+"; it starts once the app is ready, as it needs laravel.test up")
 		}
 		t.setList("teardown", &t.r.Teardown, compose+" (Sail)", sail+" down")
+		// A first run builds Sail's images: in setup, never under the ready timeout.
+		t.setList("setup", &t.r.Setup, "composer.json; the images are built in setup, not under the ready timeout",
+			"composer install", sail+" build")
 		t.port = true
 	} else {
 		t.d.Kind = "laravel"
-		t.addProcess(Process{"app", "php artisan serve --port=$WAKIL_PORT"}, "artisan serve takes --port")
+		t.addProcess(Process{Name: "app", Command: "php artisan serve --port=$WAKIL_PORT"}, "artisan serve takes --port")
 		if queue {
-			t.addProcess(Process{"queue", "php artisan queue:work"}, queueNote)
+			t.addProcess(Process{Name: "queue", Command: "php artisan queue:work"}, queueNote)
 		}
 		t.port = true
 	}
@@ -438,7 +443,7 @@ func (t *detector) yii() {
 	t.d.Kind = "yii"
 	t.setList("setup", &t.r.Setup, "composer.json", "composer install")
 	t.clone("vendor", "composer.json")
-	t.addProcess(Process{"app", "php yii serve --port=$WAKIL_PORT"}, "yii serve takes --port")
+	t.addProcess(Process{Name: "app", Command: "php yii serve --port=$WAKIL_PORT"}, "yii serve takes --port")
 	t.port = true
 	t.readyURL("/", "the app answering on $WAKIL_PORT")
 }
@@ -456,7 +461,7 @@ func (t *detector) composerOnly() {
 	}
 	t.d.Kind = "php"
 	if t.has("public/index.php") {
-		t.addProcess(Process{"app", "php -S localhost:$WAKIL_PORT -t public"}, "public/index.php, PHP's built-in server")
+		t.addProcess(Process{Name: "app", Command: "php -S localhost:$WAKIL_PORT -t public"}, "public/index.php, PHP's built-in server")
 		t.port = true
 		t.readyURL("/", "the app answering on $WAKIL_PORT")
 	}
@@ -465,7 +470,7 @@ func (t *detector) composerOnly() {
 func (t *detector) rails() {
 	t.d.Kind = "rails"
 	t.setList("setup", &t.r.Setup, "Gemfile", "bundle install")
-	t.addProcess(Process{"app", "bin/rails server -p $WAKIL_PORT"}, "bin/rails server takes -p")
+	t.addProcess(Process{Name: "app", Command: "bin/rails server -p $WAKIL_PORT"}, "bin/rails server takes -p")
 	t.port = true
 	if strings.Contains(t.read("config/routes.rb"), "rails/health") {
 		t.readyURL("/up", "the health route in config/routes.rb")
@@ -502,7 +507,7 @@ func (t *detector) python() {
 	}
 	if t.has("manage.py") {
 		t.d.Kind = "django-" + mgr
-		t.addProcess(Process{"app", pyCmd + " manage.py runserver 127.0.0.1:$WAKIL_PORT"}, "manage.py (Django) runserver takes the address")
+		t.addProcess(Process{Name: "app", Command: pyCmd + " manage.py runserver 127.0.0.1:$WAKIL_PORT"}, "manage.py (Django) runserver takes the address")
 		t.port = true
 		t.readyURL("/", "the app answering on $WAKIL_PORT")
 		return
@@ -520,7 +525,7 @@ func (t *detector) python() {
 		}
 		if m := fastAPIPattern.FindStringSubmatch(body); m != nil {
 			t.d.Kind = "fastapi-" + mgr
-			t.addProcess(Process{"app", fmt.Sprintf("%suvicorn %s:%s --reload --port $WAKIL_PORT", prefix, module, m[1])},
+			t.addProcess(Process{Name: "app", Command: fmt.Sprintf("%suvicorn %s:%s --reload --port $WAKIL_PORT", prefix, module, m[1])},
 				fmt.Sprintf("%s creates FastAPI() as %s; uvicorn takes --port", file, m[1]))
 			t.port = true
 			t.readyURL("/docs", "FastAPI's docs page on $WAKIL_PORT")
@@ -528,7 +533,7 @@ func (t *detector) python() {
 		}
 		if m := flaskPattern.FindStringSubmatch(body); m != nil {
 			t.d.Kind = "flask-" + mgr
-			t.addProcess(Process{"app", fmt.Sprintf("%sflask --app %s run --port $WAKIL_PORT", prefix, module)},
+			t.addProcess(Process{Name: "app", Command: fmt.Sprintf("%sflask --app %s run --port $WAKIL_PORT", prefix, module)},
 				fmt.Sprintf("%s creates Flask() as %s; flask run takes --port", file, m[1]))
 			t.port = true
 			t.readyURL("/", "the app answering on $WAKIL_PORT")
@@ -561,7 +566,7 @@ func (t *detector) golang() {
 		t.d.DoesntRun, t.d.Why = true, "a Go module with no main package"
 		return
 	}
-	t.addProcess(Process{"app", "go run " + main}, "package main in "+map[bool]string{true: "main.go", false: main}[main == "."])
+	t.addProcess(Process{Name: "app", Command: "go run " + main}, "package main in "+map[bool]string{true: "main.go", false: main}[main == "."])
 	t.mapPort("PORT", "$WAKIL_PORT", "the usual variable a Go server reads; check main reads it")
 	t.port = true
 }
@@ -576,7 +581,7 @@ func (t *detector) rust() {
 		t.d.DoesntRun, t.d.Why = true, "a Rust library (no src/main.rs, no [[bin]])"
 		return
 	}
-	t.addProcess(Process{"app", "cargo run"}, map[bool]string{true: "src/main.rs", false: "Cargo.toml [[bin]]"}[t.has("src/main.rs")])
+	t.addProcess(Process{Name: "app", Command: "cargo run"}, map[bool]string{true: "src/main.rs", false: "Cargo.toml [[bin]]"}[t.has("src/main.rs")])
 	t.mapPort("PORT", "$WAKIL_PORT", "the usual variable a Rust server reads; check main reads it")
 	t.port = true
 }
@@ -588,14 +593,14 @@ func (t *detector) elixir() {
 	t.clone("_build", "mix.exs")
 	if strings.Contains(mix, ":phoenix") {
 		t.d.Kind = "phoenix"
-		t.addProcess(Process{"app", "mix phx.server"}, "mix.exs depends on :phoenix")
+		t.addProcess(Process{Name: "app", Command: "mix phx.server"}, "mix.exs depends on :phoenix")
 		t.mapPort("PORT", "$WAKIL_PORT", "Phoenix's config/dev.exs reads PORT")
 		t.port = true
 		t.readyURL("/", "the app answering on $WAKIL_PORT")
 		return
 	}
 	t.d.Kind = "elixir"
-	t.addProcess(Process{"app", "mix run --no-halt"}, "mix.exs")
+	t.addProcess(Process{Name: "app", Command: "mix run --no-halt"}, "mix.exs")
 }
 
 func (t *detector) springReady(build string) {
@@ -620,7 +625,7 @@ func (t *detector) maven() {
 		return
 	}
 	t.d.Kind = "spring-maven"
-	t.addProcess(Process{"app", mvn + " spring-boot:run"}, "pom.xml uses spring-boot")
+	t.addProcess(Process{Name: "app", Command: mvn + " spring-boot:run"}, "pom.xml uses spring-boot")
 	t.mapPort("SERVER_PORT", "$WAKIL_PORT", "Spring Boot reads SERVER_PORT")
 	t.port = true
 	t.springReady("pom.xml")
@@ -639,7 +644,7 @@ func (t *detector) gradle() {
 		return
 	}
 	t.d.Kind = "spring-gradle"
-	t.addProcess(Process{"app", gradle + " bootRun"}, file+" applies org.springframework.boot")
+	t.addProcess(Process{Name: "app", Command: gradle + " bootRun"}, file+" applies org.springframework.boot")
 	t.mapPort("SERVER_PORT", "$WAKIL_PORT", "Spring Boot reads SERVER_PORT")
 	t.port = true
 	t.springReady(file)
@@ -669,7 +674,7 @@ func (t *detector) dotnet() {
 	if strings.Contains(web, "/") || len(projects) > 1 {
 		cmd = "dotnet run --project " + web + " --urls http://localhost:$WAKIL_PORT"
 	}
-	t.addProcess(Process{"app", cmd}, web+" uses Microsoft.NET.Sdk.Web; dotnet run takes --urls")
+	t.addProcess(Process{Name: "app", Command: cmd}, web+" uses Microsoft.NET.Sdk.Web; dotnet run takes --urls")
 	t.port = true
 	t.readyURL("/", "the app answering on $WAKIL_PORT")
 }
@@ -751,7 +756,7 @@ func (t *detector) detectCompose() {
 	// No stack of its own: the compose file is the app (its build services), or only services.
 	t.d.Kind = "compose"
 	for _, s := range dc.AppServices {
-		t.addProcess(Process{s, "docker compose up " + s}, file+": service "+s+" builds the app")
+		t.addProcess(Process{Name: s, Command: "docker compose up " + s}, file+": service "+s+" builds the app")
 	}
 	if len(dc.AppServices) > 0 && t.r.Ports != nil {
 		for _, v := range t.r.Ports {
@@ -787,7 +792,7 @@ func (t *detector) detectDockerfile() {
 		t.ask("%s's Dockerfile exposes no port; write how to run its container by hand.", t.repo)
 		return
 	}
-	t.addProcess(Process{"app", fmt.Sprintf("docker build -t $COMPOSE_PROJECT_NAME . && docker run --rm -p $WAKIL_PORT:%s $COMPOSE_PROJECT_NAME", m[1])},
+	t.addProcess(Process{Name: "app", Command: fmt.Sprintf("docker build -t $COMPOSE_PROJECT_NAME . && docker run --rm -p $WAKIL_PORT:%s $COMPOSE_PROJECT_NAME", m[1])},
 		"Dockerfile EXPOSE "+m[1]+"; the image is named for the workspace")
 	t.port = true
 	t.readyURL("/", "the container's port on $WAKIL_PORT")
@@ -820,7 +825,7 @@ func (t *detector) detectEntryPoints() {
 		}
 	}
 	if t.has("bin/dev") {
-		t.setProcesses("bin/dev — the repo's own entry point", Process{"dev", "bin/dev"})
+		t.setProcesses("bin/dev — the repo's own entry point", Process{Name: "dev", Command: "bin/dev"})
 		usePort("bin/dev reads PORT")
 		processSet = true
 		if t.d.Kind == "" {
@@ -837,7 +842,7 @@ func (t *detector) detectEntryPoints() {
 			if !ok || name == "" || strings.HasPrefix(name, "#") || !recipeNamePattern.MatchString(name) {
 				continue
 			}
-			procs = append(procs, Process{name, cmd})
+			procs = append(procs, Process{Name: name, Command: cmd})
 			usesPort = usesPort || strings.Contains(cmd, "$PORT") || strings.Contains(cmd, "${PORT")
 		}
 		if len(procs) > 0 {
@@ -866,7 +871,7 @@ func (t *detector) detectEntryPoints() {
 		return ""
 	}
 	if s := scriptFile("server", "dev", "start"); s != "" && !processSet {
-		t.setProcesses(s+" — the repo's own entry point", Process{"app", s})
+		t.setProcesses(s+" — the repo's own entry point", Process{Name: "app", Command: s})
 		usePort(s + " — check it reads PORT")
 		processSet = true
 	}
@@ -906,7 +911,7 @@ func (t *detector) detectEntryPoints() {
 			return ""
 		}
 		if n := pick("dev", "serve", "run", "start", "up"); n != "" && !processSet {
-			t.setProcesses(fmt.Sprintf("%s target %s — the repo's own entry point", src.file, n), Process{"app", src.runner + " " + n})
+			t.setProcesses(fmt.Sprintf("%s target %s — the repo's own entry point", src.file, n), Process{Name: "app", Command: src.runner + " " + n})
 			usePort(fmt.Sprintf("%s %s — check it reads PORT", src.runner, n))
 			processSet = true
 		}

@@ -11,6 +11,7 @@
 {"do":{"click":"settings.running.detect"}}
 {"expect":{"tree":"contains","text":"Detect — e2e-api"}}
 {"expect":{"tree":"contains","text":"Drafted in ‘Draft how e2e-api runs’ — e2e-api"}}
+{"expect":{"frame":"settings.running.draft.title","inside":"settings.pane"}}
 {"expect":{"journal":{"contains":"\"action\":\"running_draft_propose\""}}}
 {"expect":{"tree":"contains","text":"Processes: web: python3 -m http.server $WAKIL_PORT"}}
 {"do":{"click":"settings.running.proposal.discard"}}

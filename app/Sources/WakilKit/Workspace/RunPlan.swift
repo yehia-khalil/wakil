@@ -16,9 +16,12 @@ public struct RunPlanStep: Decodable, Sendable, Equatable {
     public var target: String
     /// `repo` or `service`, for a need.
     public var targetKind: String
+    /// A process that starts only once the ready check passed.
+    public var afterReady: Bool = false
 
     public init(phase: String, name: String = "", command: String = "", dir: String = "", longRunning: Bool = false,
-                once: String = "", target: String = "", targetKind: String = "") {
+                once: String = "", target: String = "", targetKind: String = "", afterReady: Bool = false) {
+        self.afterReady = afterReady
         self.phase = phase
         self.name = name
         self.command = command
@@ -29,7 +32,7 @@ public struct RunPlanStep: Decodable, Sendable, Equatable {
         self.targetKind = targetKind
     }
 
-    enum CodingKeys: String, CodingKey { case phase, name, command, dir, longRunning, once, target, targetKind }
+    enum CodingKeys: String, CodingKey { case phase, name, command, dir, longRunning, once, target, targetKind, afterReady }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         phase = try c.decode(String.self, forKey: .phase)
@@ -40,6 +43,7 @@ public struct RunPlanStep: Decodable, Sendable, Equatable {
         once = try c.decodeIfPresent(String.self, forKey: .once) ?? ""
         target = try c.decodeIfPresent(String.self, forKey: .target) ?? ""
         targetKind = try c.decodeIfPresent(String.self, forKey: .targetKind) ?? ""
+        afterReady = try c.decodeIfPresent(Bool.self, forKey: .afterReady) ?? false
     }
 }
 
