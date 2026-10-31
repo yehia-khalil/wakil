@@ -26,9 +26,15 @@
 {"expect":{"tree":"absent","text":"branched off"}}
 {"do":{"click":"landing.project.e2e-git"}}
 {"expect":{"tree":"contains","text":"STAGING"}}
-{"expect":{"pane":"terminal-1","field":"grid[0]","contains":" e2e-git %"}}
-{"do":{"click":"rail.terminal-1"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-4","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-4","field":"grid[0]","contains":" e2e-git %"}}
+{"do":{"click":"rail.terminal-4"}}
 {"do":{"keys":"git -C ../e2e-api worktree list --porcelain | grep -c '^worktree '; test -e \"$(git -C ../e2e-api worktree list --porcelain | sed -n 's/^worktree //p' | tail -1)/second-note.txt\" && echo SAME-COPY"}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"2"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].output[1]","equals":"SAME-COPY"}}
+{"expect":{"pane":"terminal-4","field":"blocks[-1].output[0]","equals":"2"}}
+{"expect":{"pane":"terminal-4","field":"blocks[-1].output[1]","equals":"SAME-COPY"}}
