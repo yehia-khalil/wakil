@@ -292,6 +292,7 @@ struct ContextLine: View {
             project
             environment
             branch
+            workspace
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)
@@ -346,6 +347,26 @@ struct ContextLine: View {
             }
             .background(reporting(.branch))
             .accessibilityIdentifier("window.contextLine.branch")
+        }
+    }
+
+    /// Workspaces, piece 1: the view's workspace, kept when the line is promoted — a fact of *where
+    /// I am* does not leave because the pointer arrived (the resting cluster's `›`, same words, so a
+    /// reader of either state reads one thing). Not a control: no chevron, no press.
+    @ViewBuilder
+    private var workspace: some View {
+        if let workspace = model.workspaceOnScreen {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WORKSPACE")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(1.7)
+                    .foregroundStyle(coolWhite.opacity(0.52))
+                Text("› \(workspace.name)")
+                    .font(.system(size: 14.5))
+                    .foregroundStyle(coolWhite.opacity(0.82))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("window.contextLine.workspace")
+            }
         }
     }
 
