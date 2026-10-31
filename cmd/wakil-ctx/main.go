@@ -798,6 +798,7 @@ func newServer() *mcp.Server {
 	// (Decision 30), and read-modify-write from disk here.
 	registerRecipeTools(s)
 	registerRecipeRunTools(s)
+	registerRecipeTryJobTools(s)
 
 	mcp.AddTool(s, &mcp.Tool{Name: "editor_settings", Description: "Read the editor settings in force: font size, word wrap, autosave (off, pause or focus) and whether gitignored files are shown, from the operator's app-wide settings; tab size, tabs-or-spaces and the heavy folders (.git is always heavy besides) from the active project. Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.EditorSettings, error) {

@@ -95,6 +95,8 @@ struct SettingsPane: View {
     /// environment a Try's throwaway workspace records.
     var runningDispatch: (String, JSONValue) async -> (result: JSONValue?, error: String?) = { _, _ in (nil, "no window") }
     var runningEnvironment: String = ""
+    /// A Try's progress as it runs, by project key and repo.
+    var runningTryProgress: (String, String) -> TryProgressState? = { _, _ in nil }
     /// Workspaces, piece 2: Detect's drafting conversation and Try's fix, per project.
     var runningDrafting: (SettingsProject) -> RunningDrafting = { _ in .none }
     /// Workspaces (decision 10): a project's Branches text.
@@ -1102,7 +1104,8 @@ struct SettingsPane: View {
                 // Workspaces, piece 2: how the project's repos run. Keyed to the project, so one
                 // project's drafts and Try never carry into another's.
                 RunningSettingsForm(project: project, environment: runningEnvironment, dispatch: runningDispatch,
-                                    drafting: runningDrafting(project))
+                                    drafting: runningDrafting(project),
+                                    tryProgress: { repo in runningTryProgress(project.name, repo) })
                     .id(project.path)
             } else {
                 gone(name)

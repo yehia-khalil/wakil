@@ -81,6 +81,12 @@ private func fakeCtx(_ specs: [String: PlanSpec]) -> RecordingToolCaller {
             })])
         case "recipe_ready_wait":
             return .object(["ready": .bool(true), "detail": .string("\(s("url")) answered 200")])
+        case "recipe_try_start":
+            return .object(["job": .string("try-1")])
+        case "recipe_try_status":
+            return .object(["finished": .bool(true), "steps": .array([
+                .object(["phase": .string("setup"), "command": .string("pnpm install"), "state": .string("done"), "seconds": .number(3)]),
+            ]), "result": .object(["passed": .bool(true), "steps": .array([])])])
         default:
             return .object([:])
         }
@@ -319,7 +325,7 @@ private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params:
     guard case .object(let a) = add.arguments else { Issue.record("add args"); return }
     #expect(a["root"] == .string("/q/web"))
     #expect(a["project"] == .string("parkour"))
-    let tried = try #require(await ctx.calls.first { $0.name == "recipe_try" })
+    let tried = try #require(await ctx.calls.first { $0.name == "recipe_try_start" })
     guard case .object(let t) = tried.arguments else { Issue.record("try args"); return }
     #expect(t["project"] == .string("parkour"))
     try await r.endTry(id)
@@ -334,4 +340,60 @@ private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params:
     let prepare = try #require(await ctx.calls.first { $0.name == "recipe_prepare" })
     guard case .object(let p) = prepare.arguments else { Issue.record("prepare args"); return }
     #expect(p["project"] == .string("estate"))
+}
+
+/// Try's steps as they run (the walk): the copy row first, then Go's rows as each status answers;
+/// Cancel asks Go to stop the running step and the job is still followed until it finished.
+@Test func tryReportsEveryStepAsItRunsAndCancelStopsTheRunningStep() async throws {
+    let (r, _, _) = await runner(["web": PlanSpec()])
+    let git = RecordingToolCaller(reply: { name, args in
+        guard case .object(let a) = args, name == "git_worktree_add", case .string(let slug)? = a["slug"] else { return .object([:]) }
+        return .object(["path": .string("/h/ws/estate/\(slug)/web"), "branch": .string("wakil-try/\(slug)")])
+    })
+    await r.router.use(git: git)
+    let polls = Counter()
+    let ctx = RecordingToolCaller(reply: { name, _ in
+        switch name {
+        case "ports_allocate": return .object(["blocks": .object([:])])
+        case "recipe_try_start": return .object(["job": .string("try-7")])
+        case "recipe_try_status":
+            let n = polls.next()
+            let running: JSONValue = .object(["phase": .string("setup"), "command": .string("npm ci"), "state": .string("running"),
+                                              "seconds": .number(2), "output": .string("added 1"), "lastLine": .string("added 1")])
+            let failed: JSONValue = .object(["phase": .string("setup"), "command": .string("npm ci"), "state": .string("failed"),
+                                             "detail": .string("npm ci was cancelled.")])
+            return n < 3 ? .object(["finished": .bool(false), "steps": .array([running])])
+                : .object(["finished": .bool(true), "steps": .array([failed]),
+                           "result": .object(["passed": .bool(false), "steps": .array([])])])
+        default: return .object([:])
+        }
+    })
+    await r.router.use(ctx: ctx)
+    await r.use(ctx: ctx)
+    let seen = ProgressLog()
+    let task = Task {
+        try await r.tryRecipe(repo: "web", root: "/p/web", project: "estate", environment: "", projectPath: nil,
+                              progress: { p in await seen.add(p) })
+    }
+    for _ in 0..<500 where await seen.all.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+    task.cancel()
+    let (_, result) = try await task.value
+    #expect(!result.passed)
+    let all = await seen.all
+    #expect(all.first?.steps.map(\.title) == ["copy made"])
+    #expect(all.dropFirst().first?.steps.map(\.mark) == ["✓", "●"], "the copy row, then Go's running step")
+    #expect(all.last?.finished == true)
+    #expect(all.last?.steps.last?.state == .failed)
+    #expect(await ctx.calls.contains { $0.name == "recipe_try_cancel" })
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func next() -> Int { lock.withLock { n += 1; return n } }
+}
+
+private actor ProgressLog {
+    var all: [TryProgressState] = []
+    func add(_ p: TryProgressState) { all.append(p) }
 }

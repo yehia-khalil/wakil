@@ -34,9 +34,12 @@ public struct RepoRunState: Sendable, Equatable {
     public var phase: Phase
     /// The ready check's sentence, once it answered.
     public var ready: String?
+    /// The step a run is on while it gets going (the walk): its line reads it with the time so far.
+    public var step: RunStepNow?
 
     public init(repo: String, port: Int? = nil, processes: [(name: String, pane: String)] = [], phase: Phase,
-                ready: String? = nil) {
+                ready: String? = nil, step: RunStepNow? = nil) {
+        self.step = step
         self.repo = repo
         self.port = port
         self.processes = processes
@@ -45,14 +48,20 @@ public struct RepoRunState: Sendable, Equatable {
     }
 
     public static func == (a: RepoRunState, b: RepoRunState) -> Bool {
-        a.repo == b.repo && a.port == b.port && a.phase == b.phase && a.ready == b.ready
+        a.repo == b.repo && a.port == b.port && a.phase == b.phase && a.ready == b.ready && a.step == b.step
             && a.processes.map(\.name) == b.processes.map(\.name) && a.processes.map(\.pane) == b.processes.map(\.pane)
     }
 
-    /// `api running on :41200 · queue running`; `api setting up`; `api failed`.
-    public var line: String {
+    /// `api running on :41200 · queue running`; `api setup · composer install · 1 min 4 s`; `api failed`.
+    public var line: String { line(now: Date()) }
+
+    public func line(now: Date) -> String {
         switch phase {
-        case .starting(let what): return "\(repo) \(what)"
+        case .starting(let what):
+            if let step {
+                return "\(repo) \(step.step) · \(step.command) · \(runElapsed(now.timeIntervalSince(step.started)))"
+            }
+            return "\(repo) \(what)"
         case .building: return "\(repo) building"
         case .failed: return "\(repo) failed"
         case .running:
@@ -131,6 +140,9 @@ public actor WorkspaceRunner {
     public func use(terminals: (any RunTerminals)?) { self.terminals = terminals }
     public func use(projectPath: @escaping @Sendable (String) async -> String?) { self.projectPath = projectPath }
     public func use(say: @escaping @Sendable (String, String, Bool) async -> Void) { self.say = say }
+    /// Where a Try's progress goes as it runs, by project and repo (the window's Running settings).
+    private var tryProgressSink: @Sendable (_ project: String, _ repo: String, _ progress: TryProgressState) async -> Void = { _, _, _ in }
+    public func use(tryProgress: @escaping @Sendable (String, String, TryProgressState) async -> Void) { tryProgressSink = tryProgress }
     func setPollInterval(_ d: Duration) { pollInterval = d }
 
     /// Every repo's state in workspace `id`, in the order runs started.
@@ -179,15 +191,23 @@ public actor WorkspaceRunner {
                 }
             }
             if !plan.steps(RunPhase.service).isEmpty, !(started[id] ?? []).contains("services:\(name)") {
-                setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: alreadyRunning, phase: .starting("starting services")))
-                try await oneShot(w, repo: name, phases: [RunPhase.service])
+                for step in plan.steps(RunPhase.service) {
+                    setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: alreadyRunning,
+                                                     phase: .starting("starting services"),
+                                                     step: RunStepNow(step: "service", command: step.command, started: Date())))
+                    try await oneShot(w, repo: name, phases: [RunPhase.service], command: step.command)
+                }
                 started[id, default: []].insert("services:\(name)")
                 if !(withServices[id] ?? []).contains(name) { withServices[id, default: []].append(name) }
             }
             if !checkout.setUp {
                 if !plan.steps(RunPhase.setup).isEmpty {
-                    setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: alreadyRunning, phase: .starting("setting up")))
-                    try await oneShot(w, repo: name, phases: [RunPhase.setup])
+                    for step in plan.steps(RunPhase.setup) {
+                        setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: alreadyRunning,
+                                                         phase: .starting("setting up"),
+                                                         step: RunStepNow(step: "setup", command: step.command, started: Date())))
+                        try await oneShot(w, repo: name, phases: [RunPhase.setup], command: step.command)
+                    }
                 }
                 await router.markSetUp(id, repo: checkout.repo)
             }
@@ -212,7 +232,8 @@ public actor WorkspaceRunner {
                                    processes: Dictionary(running.map { ($0.name, $0.pane) }, uniquingKeysWith: { a, _ in a }),
                                    warnings: plan.warnings, prepared: prepared)
             setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: running,
-                                             phase: plan.ready == nil ? .running : .starting("waiting for ready")))
+                                             phase: plan.ready == nil ? .running : .starting("waiting for ready"),
+                                             step: plan.ready.map { RunStepNow(step: "ready", command: $0.url ?? $0.output ?? "", started: Date()) }))
             if let ready = plan.ready, !running.isEmpty {
                 let r = try await waitReady(ready, w: w, panes: running.map(\.pane))
                 report.ready = r
@@ -316,7 +337,11 @@ public actor WorkspaceRunner {
     /// its own ports; Go runs services, setup, the processes headless and the ready check, then
     /// stops them and runs teardown. Answers the workspace (for `endTry`) and the report.
     public func tryRecipe(repo: String, root: String, project: String, environment: String,
-                          projectPath: String?) async throws -> (String, RunTryResult) {
+                          projectPath: String?,
+                          progress: (@Sendable (TryProgressState) async -> Void)? = nil) async throws -> (String, RunTryResult) {
+        let began = Date()
+        let sink = tryProgressSink
+        let progress = progress ?? { p in await sink(project, repo, p) }
         let all = await router.store.all()
         let slug = uniqueSlug("try-" + branchSlug(repo), taken: Set(all.filter { $0.project == project }.map(\.slug)))
         let branch = "wakil-try/\(slug)"
@@ -332,14 +357,40 @@ public actor WorkspaceRunner {
         await router.store.add(w)
         try await router.store.save()
         tries.insert(w.id)
+        let copied = TryStepState(phase: "copy", command: path, state: .done, seconds: Date().timeIntervalSince(began))
+        await progress(TryProgressState(steps: [copied]))
         let ready = try await router.ensurePorts(w.id)
         // The project is named (by key, and by path when Settings has it): Go plans that project's
         // recipe, never the screen's (the walk).
         var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(slug), "checkouts": checkoutsArg(ready),
                                          "project": .string(project)]
         if let projectPath { args["projectPath"] = .string(projectPath) }
-        let r = try await call("recipe_try", args, timeout: Self.stepTimeout)
-        return (w.id, try decodeRun(RunTryResult.self, r))
+        // Go runs Try as a job the window follows step by step; Cancel stops the running step (Rule 4)
+        // and the job is followed until teardown ran.
+        let started = try await call("recipe_try_start", args, timeout: MCPClient.mutationReplyTimeout)
+        guard let job = router.string(started, "job"), !job.isEmpty else { throw RunError("recipe_try_start answered no job") }
+        var cancelled = false
+        while true {
+            // After a cancel the calls and the wait are unstructured, so they are not cancelled with
+            // the press: the job is followed until its teardown ran.
+            if Task.isCancelled, !cancelled {
+                cancelled = true
+                _ = await Task { try? await self.call("recipe_try_cancel", ["job": .string(job)], timeout: MCPClient.mutationReplyTimeout) }.value
+            }
+            let r = try await Task {
+                try await self.call("recipe_try_status", ["job": .string(job)], timeout: MCPClient.readReplyTimeout)
+            }.value
+            var value = r
+            if case .object(let o) = r, let sc = o["structuredContent"] { value = sc }
+            var now = try decodeRun(TryProgressState.self, value)
+            now.steps.insert(copied, at: 0)
+            await progress(now)
+            if now.finished {
+                return (w.id, now.result ?? RunTryResult(passed: false, steps: []))
+            }
+            let wait = pollInterval
+            await Task { try? await Task.sleep(for: wait) }.value
+        }
     }
 
     /// Ends a Try: its workspace archived (the copy removed; its `wakil-try/` branch stays, as
@@ -409,9 +460,11 @@ public actor WorkspaceRunner {
     }
 
     @discardableResult
-    private func oneShot(_ w: Workspace, repo: String, phases: [String]) async throws -> [RunStepResult] {
+    private func oneShot(_ w: Workspace, repo: String, phases: [String], command: String? = nil) async throws -> [RunStepResult] {
         var args = await planArgs(w, repo: repo)
         args["phases"] = .array(phases.map { .string($0) })
+        // One step of the phase, so the card names the step it is on (the walk).
+        if let command { args["commands"] = .array([.string(command)]) }
         let r = try await call("recipe_run_steps", args, timeout: Self.stepTimeout)
         var value = r
         if case .object(let o) = r, let s = o["structuredContent"] { value = s }

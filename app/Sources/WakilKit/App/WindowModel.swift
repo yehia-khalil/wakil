@@ -55,6 +55,8 @@ public final class WindowModel {
     public private(set) var projectKey = ""
     /// The active project's Jira project (`ActiveContext.pmProjectKey`). Set and cleared with `project`.
     public private(set) var pmProjectKey = ""
+    /// Workspaces, piece 2: each Try's progress as it runs, by `runningTryKey` (the Running settings).
+    public internal(set) var runningTryProgress: [String: TryProgressState] = [:]
     public private(set) var environment = ""
 
     /// The place on screen now, which a harness is pinned to when it starts.
@@ -2422,6 +2424,7 @@ public final class WindowModel {
         projectKey = ""
         pmProjectKey = ""
         settingsProjectWanted = nil
+        runningTryProgress = [:]
         environment = ""
         // Org-derived, and a credential boundary rather than a display
         // detail: the declarations describe the OUTGOING org's project.

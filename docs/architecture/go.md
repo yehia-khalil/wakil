@@ -88,7 +88,9 @@ repos and the organisation's `workspaces/` (`ConfineRunDir`). Compose files are 
 (the Running settings as stored, each repo's effective recipe), `recipe_prepare` (the plan's files,
 copy and clone on a first run, the `.env` lines, and the secrets read for the processes' terminals),
 `recipe_run_steps` (the saved one-shot steps by phase, in the operator's login shell, output whole,
-cancellable), `recipe_try` (Try headless: services, setup, processes, ready, stop, teardown) and
+cancellable), `recipe_try` (Try headless: services, setup, processes, ready, stop, teardown; `recipe_try_start`,
+`recipe_try_status` and `recipe_try_cancel` run it as a job the window follows step by step,
+`wakilcore.TryTracker` listing every step before it runs) and
 `recipe_secret_set` (a Running secret under `run:<project>:<owner>:<variable>`). None runs a command
 the caller names: only the saved recipe's.
 

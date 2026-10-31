@@ -118,7 +118,7 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		// Workspaces piece 2: how a repo runs.
 		"recipe_detect", "recipe_draft_all", "recipe_effective", "recipe_save",
 		"recipe_plan", "recipe_ready_wait", "ports_allocate", "compose_override",
-		"recipe_prepare", "recipe_run_steps", "recipe_try", "recipe_secret_set", "recipe_list",
+		"recipe_prepare", "recipe_run_steps", "recipe_try", "recipe_try_start", "recipe_try_status", "recipe_try_cancel", "recipe_secret_set", "recipe_list",
 	})
 }
 

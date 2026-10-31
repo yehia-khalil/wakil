@@ -155,7 +155,19 @@ extension WindowModel {
                 await self?.sayRun(conversation, text, isError: isError)
             })
             await runner.use(projectPath: { [weak self] project in await self?.projectFilePath(project) })
+            await runner.use(tryProgress: { [weak self] project, repo, progress in
+                await self?.setRunningTryProgress(project: project, repo: repo, progress)
+            })
         }
+    }
+
+    /// A Try's progress as it runs (the walk), by project and repo: the Running settings draw it.
+    func setRunningTryProgress(project: String, repo: String, _ progress: TryProgressState) {
+        runningTryProgress[runningTryKey(project: project, repo: repo)] = progress
+    }
+
+    public func runningTryProgress(project: String, repo: String) -> TryProgressState? {
+        runningTryProgress[runningTryKey(project: project, repo: repo)]
     }
 
     func sayRun(_ conversation: String, _ text: String, isError: Bool) {

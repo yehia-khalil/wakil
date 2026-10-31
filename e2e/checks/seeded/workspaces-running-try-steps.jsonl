@@ -1,0 +1,14 @@
+{"dispatch":{"action":"running_save","params":{"projectPath":"{fixtureRoot}/e2e-git/.wakil/project.json","recipes":{"e2e-steps":{"setup":["echo first; sleep 3; echo first done","echo second; sleep 3; echo second done"],"processes":[{"name":"web","command":"python3 -u -m http.server $WAKIL_PORT"}],"ready":{"output":"Serving HTTP"}}},"repos":{"e2e-api":{"recipe":"e2e-steps"}}}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.projectRunning.e2e-git"}}
+{"do":{"click":"settings.running.repo.e2e-api"}}
+{"expect":{"tree":"contains","text":"uses e2e-steps"}}
+{"do":{"click":"settings.running.try"}}
+{"expect":{"tree":"contains","text":"copy made"}}
+{"expect":{"tree":"contains","text":"setup · echo first; sleep 3; echo first done"}}
+{"expect":{"tree":"contains","text":"setup · echo second; sleep 3; echo second done"}}
+{"expect":{"tree":"contains","text":"ready · Serving HTTP"}}
+{"expect":{"frame":"settings.running.tryStep.lastLine","inside":"settings.running.tryBox"}}
+{"expect":{"tree":"contains","text":"second"}}
+{"expect":{"tree":"contains","text":"Last Try passed"}}
+{"expect":{"tree":"contains","text":"web started · python3 -u -m http.server $WAKIL_PORT"}}

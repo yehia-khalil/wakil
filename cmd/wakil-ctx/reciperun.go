@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,6 +41,7 @@ type recipeStepsArgs struct {
 	recipePlanArgs
 	Phases         []string `json:"phases" jsonschema:"the plan's one-shot phases to run, in order: service, setup, build, teardown"`
 	TimeoutSeconds int      `json:"timeoutSeconds,omitempty" jsonschema:"per step; default 900"`
+	Commands       []string `json:"commands,omitempty" jsonschema:"only the steps of those phases with these commands, each one the recipe has; default every step"`
 }
 
 type recipeStepsResult struct {
@@ -155,6 +158,22 @@ func registerRecipeRunTools(s *mcp.Server) {
 			if want[wakilcore.PhaseTeardown] {
 				steps = append(steps, plan.Teardown...)
 			}
+			if len(a.Commands) > 0 {
+				var only []wakilcore.PlanStep
+				for _, c := range a.Commands {
+					found := false
+					for _, st := range steps {
+						if st.Command == c {
+							only, found = append(only, st), true
+							break
+						}
+					}
+					if !found {
+						return toolErr(wakilcore.UserError(fmt.Sprintf("%q is not a step of %s's %s; only the recipe's own commands run", c, a.Repo, strings.Join(a.Phases, ", ")))), recipeStepsResult{}, nil
+					}
+				}
+				steps = only
+			}
 			out := recipeStepsResult{OK: true, Steps: []wakilcore.StepResult{}}
 			for _, s := range steps {
 				r := wakilcore.ExecStep(ctx, plan.Dir, env, s.Command, timeout)
@@ -214,4 +233,88 @@ func scrubAll(text string, secrets map[string]string) string {
 		}
 	}
 	return text
+}
+
+// Try as a job the window follows (the walk: one line for minutes): recipe_try_start runs Try in
+// the background and answers its id; recipe_try_status answers its progress (every step's state,
+// the running one's output so far) and, once finished, the result — after which the job is
+// forgotten; recipe_try_cancel stops it (teardown still runs).
+type tryJob struct {
+	tracker *wakilcore.TryTracker
+	cancel  context.CancelFunc
+}
+
+var (
+	tryJobsMu sync.Mutex
+	tryJobs   = map[string]*tryJob{}
+	tryJobSeq int
+)
+
+type tryJobArgs struct {
+	Job string `json:"job" jsonschema:"the Try's id, as recipe_try_start answered it"`
+}
+
+type tryStartResult struct {
+	Job string `json:"job"`
+}
+
+func lookupTryJob(id string) (*tryJob, error) {
+	tryJobsMu.Lock()
+	defer tryJobsMu.Unlock()
+	j, ok := tryJobs[id]
+	if !ok {
+		return nil, wakilcore.UserError("there is no Try " + id + " (it finished and was read, or never started)")
+	}
+	return j, nil
+}
+
+func registerRecipeTryJobTools(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "recipe_try_start", Description: "Start recipe_try in the background and answer its job id at once. Follow it with recipe_try_status; stop it with recipe_try_cancel."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a recipePlanArgs) (*mcp.CallToolResult, tryStartResult, error) {
+			plan, org, err := buildPlan(a)
+			if err != nil {
+				return toolErr(err), tryStartResult{}, nil
+			}
+			secrets, err := wakilcore.ReadPlanSecrets(org, plan.Secrets)
+			if err != nil {
+				return toolErr(err), tryStartResult{}, nil
+			}
+			tracker := wakilcore.NewTryTracker(plan)
+			jctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+			tryJobsMu.Lock()
+			tryJobSeq++
+			id := fmt.Sprintf("try-%d", tryJobSeq)
+			tryJobs[id] = &tryJob{tracker: tracker, cancel: cancel}
+			tryJobsMu.Unlock()
+			go func() {
+				defer cancel()
+				wakilcore.TryRecipe(jctx, plan, wakilcore.TryOptions{SecretValues: secrets, Progress: tracker, Scrub: func(s string) string { return scrubAll(s, secrets) }})
+			}()
+			return nil, tryStartResult{Job: id}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "recipe_try_status", Description: "A Try's progress: every step in order (phase, name, command, state to come / running / done / failed, seconds so far or taken, output so far or whole, lastLine, detail), finished, and the result (as recipe_try answers) once finished, after which the job is forgotten."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a tryJobArgs) (*mcp.CallToolResult, wakilcore.TryProgress, error) {
+			j, err := lookupTryJob(a.Job)
+			if err != nil {
+				return toolErr(err), wakilcore.TryProgress{}, nil
+			}
+			p := j.tracker.Snapshot()
+			if p.Finished {
+				tryJobsMu.Lock()
+				delete(tryJobs, a.Job)
+				tryJobsMu.Unlock()
+			}
+			return nil, p, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "recipe_try_cancel", Description: "Stop a Try: its running step is stopped, the processes ended, teardown still run. Follow recipe_try_status until finished."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a tryJobArgs) (*mcp.CallToolResult, tryStartResult, error) {
+			j, err := lookupTryJob(a.Job)
+			if err != nil {
+				return toolErr(err), tryStartResult{}, nil
+			}
+			j.cancel()
+			return nil, tryStartResult{Job: a.Job}, nil
+		})
 }

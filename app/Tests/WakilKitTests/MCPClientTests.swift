@@ -56,7 +56,7 @@ private func repoRoot() -> URL {
                       "list_orgs", "list_projects", "list_providers", "list_sessions",
                       "ports_allocate", "read_session", "recipe_detect", "recipe_draft_all", "recipe_effective",
                       "recipe_list", "recipe_plan", "recipe_prepare", "recipe_ready_wait", "recipe_run_steps",
-                      "recipe_save", "recipe_secret_set", "recipe_try", "record_capacity", "record_session_parent", "remove_api_entry", "remove_database",
+                      "recipe_save", "recipe_secret_set", "recipe_try", "recipe_try_cancel", "recipe_try_start", "recipe_try_status", "record_capacity", "record_session_parent", "remove_api_entry", "remove_database",
                       "remove_environment", "remove_project", "rename_environment", "rename_project",
                       "set_api_entry", "set_browser_settings", "set_database_connection", "set_database_dsn", "set_editor_settings", "set_environment", "set_keys", "set_local_provider",
                       "set_project", "set_project_agent_instructions",

@@ -14,6 +14,8 @@ struct RunningSettingsForm: View {
     let dispatch: (String, JSONValue) async -> (result: JSONValue?, error: String?)
     /// Detect's drafting conversation and Try's fix (decision 13): the window's.
     var drafting: RunningDrafting = .none
+    /// A Try's progress as Go runs it, by repo (`WindowModel.runningTryProgress`): the step list.
+    var tryProgress: (String) -> TryProgressState? = { _ in nil }
 
     @State private var settings: RunningSettings?
     @State private var loadError: String?
@@ -26,6 +28,7 @@ struct RunningSettingsForm: View {
     @State private var newVariable = ""
     @State private var newValue = ""
     @State private var newSecret = false
+    @State private var showingTryOutput = false
 
     /// What Draft all or Detect proposes, before anything is saved.
     struct Proposal: Equatable {
@@ -334,7 +337,9 @@ struct RunningSettingsForm: View {
 
     private func tryBox(_ t: TryState) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if t.running {
+            if let p = tryProgress(t.repo) {
+                tryStepList(p)
+            } else if t.running {
                 Text("Trying \(t.repo) in a throwaway workspace…")
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(SettingsPalette.coolWhite.opacity(0.7))
@@ -346,7 +351,7 @@ struct RunningSettingsForm: View {
                     .foregroundStyle(passed ? SettingsPalette.accent : SettingsPalette.caution)
                     .accessibilityIdentifier("settings.running.tryResult")
             }
-            ForEach(Array(t.steps.enumerated()), id: \.offset) { _, step in
+            ForEach(Array((tryProgress(t.repo) == nil ? t.steps : []).enumerated()), id: \.offset) { _, step in
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(step.ok ? "✓" : "✗") \(step.phase)\(step.name.isEmpty ? "" : " \(step.name)")"
                         + (step.command.isEmpty ? "" : " — \(step.command)"))
@@ -370,6 +375,56 @@ struct RunningSettingsForm: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.running.tryBox")
+    }
+
+    /// Try's steps as they run (the walk): ✓ done with its time, ● running with its time so far and
+    /// its last line, ○ to come, ✗ failed with its output whole (Rule 8); Show output opens the
+    /// running or failed step's whole output. Every line wraps whole.
+    private func tryStepList(_ p: TryProgressState) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(p.steps.enumerated()), id: \.offset) { i, step in
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(step.mark)
+                        Text(step.title).fixedSize(horizontal: false, vertical: true)
+                        if let time = step.time { Text(time).foregroundStyle(SettingsPalette.coolWhite.opacity(0.52)) }
+                    }
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(step.state == .failed ? SettingsPalette.caution
+                        : step.state == .toCome ? SettingsPalette.coolWhite.opacity(0.42) : SettingsPalette.coolWhite.opacity(0.84))
+                    if step.state == .running, !step.lastLine.isEmpty {
+                        Text(step.lastLine)
+                            .font(.system(size: SettingsScale.meta, design: .monospaced))
+                            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.62))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("settings.running.tryStep.lastLine")
+                    }
+                    if step.state == .failed {
+                        Text([step.detail, step.output].filter { !$0.isEmpty }.joined(separator: "\n"))
+                            .font(.system(size: SettingsScale.meta, design: .monospaced))
+                            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("settings.running.tryStep.\(i)")
+            }
+            if let shown = p.shown, !shown.output.isEmpty {
+                DisclosureGroup(isExpanded: $showingTryOutput) {
+                    Text(shown.output)
+                        .font(.system(size: SettingsScale.meta, design: .monospaced))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } label: {
+                    Text("Show output — \(shown.title)").font(.system(size: SettingsScale.body))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityIdentifier("settings.running.tryOutput")
+            }
+        }
     }
 
     private func errorText(_ text: String, id: String) -> some View {

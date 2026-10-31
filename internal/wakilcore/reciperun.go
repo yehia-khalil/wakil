@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -230,6 +231,11 @@ func shellCommand(ctx context.Context, dir, command string, env map[string]strin
 // ExecStep runs one command to its end in dir: combined output whole, exit code, and why it
 // stopped when it was cancelled or ran out of time (the whole process group goes with it).
 func ExecStep(ctx context.Context, dir string, env map[string]string, command string, timeout time.Duration) StepResult {
+	return execStepTee(ctx, dir, env, command, timeout, io.Discard)
+}
+
+// execStepTee is ExecStep with the output also written to tee as it comes (Try's progress).
+func execStepTee(ctx context.Context, dir string, env map[string]string, command string, timeout time.Duration, tee io.Writer) StepResult {
 	start := time.Now()
 	res := StepResult{Command: command}
 	if timeout > 0 {
@@ -239,8 +245,9 @@ func ExecStep(ctx context.Context, dir string, env map[string]string, command st
 	}
 	var buf bytes.Buffer
 	cmd := shellCommand(ctx, dir, command, env)
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	w := io.MultiWriter(&buf, tee)
+	cmd.Stdout = w
+	cmd.Stderr = w
 	err := cmd.Run()
 	res.Seconds = time.Since(start).Seconds()
 	res.Output = buf.String()
@@ -297,6 +304,10 @@ type TryOptions struct {
 	PollInterval  time.Duration
 	SecretValues  map[string]string
 	ReadyURLCheck func(ctx context.Context, url string, timeout time.Duration) ReadyResult
+	// Progress, when given, follows every step as it runs (NewTryTracker of the same plan).
+	Progress *TryTracker
+	// Scrub takes the secrets out of an output before the progress shows it.
+	Scrub func(string) string
 }
 
 // TryRecipe proves a plan in a throwaway checkout (decision 13's Try): prepare as a first run,
@@ -317,29 +328,44 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 		env[k] = v
 	}
 	out := TryResult{Steps: []StepResult{}}
-	fail := func(s StepResult) TryResult {
-		out.Steps = append(out.Steps, s)
-		return out
+	pg := opt.Progress
+	pg.useScrub(opt.Scrub)
+	defer func() { pg.finish(out) }()
+	oneShot := func(s PlanStep) bool {
+		i := pg.begin(s.Phase, "", s.Command)
+		r := execStepTee(ctx, plan.Dir, env, s.Command, opt.StepTimeout, pg.writer(i))
+		r.Phase = s.Phase
+		pg.end(i, r)
+		out.Steps = append(out.Steps, r)
+		return r.OK
 	}
+	i := pg.begin("prepare", "", "")
 	prep, err := PrepareRun(plan, true, opt.SecretValues)
 	if err != nil {
-		return fail(StepResult{Phase: "prepare", Detail: err.Error()})
+		r := StepResult{Phase: "prepare", Detail: err.Error()}
+		pg.end(i, r)
+		out.Steps = append(out.Steps, r)
+		return out
 	}
-	out.Steps = append(out.Steps, StepResult{Phase: "prepare", OK: true, Output: prepareSummary(prep)})
+	r := StepResult{Phase: "prepare", OK: true, Output: prepareSummary(prep)}
+	pg.end(i, r)
+	out.Steps = append(out.Steps, r)
 	for _, s := range plan.Steps {
 		switch s.Phase {
 		case PhaseNeed:
 			out.Steps = append(out.Steps, StepResult{Phase: PhaseNeed, Name: s.Target, OK: true,
 				Detail: fmt.Sprintf("Try does not start %s; Run starts it first.", s.Target)})
 		case PhaseService, PhaseSetup:
-			r := ExecStep(ctx, plan.Dir, env, s.Command, opt.StepTimeout)
-			r.Phase = s.Phase
-			out.Steps = append(out.Steps, r)
-			if !r.OK {
+			if !oneShot(s) {
 				teardown(ctx, plan, env, opt, &out)
 				return out
 			}
 		}
+	}
+	// The build, when the recipe has one: Try proves it as setup's last step.
+	if plan.Build != nil && !oneShot(*plan.Build) {
+		teardown(ctx, plan, env, opt, &out)
+		return out
 	}
 	// The processes, headless, each in its own process group.
 	type running struct {
@@ -356,11 +382,15 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 			continue
 		}
 		buf := &lockedBuffer{}
+		pi := pg.begin(PhaseProcess, s.Name, s.Command)
 		cmd := shellCommand(procCtx, plan.Dir, s.Command, env)
-		cmd.Stdout, cmd.Stderr = buf, buf
+		w := io.MultiWriter(buf, pg.writer(pi))
+		cmd.Stdout, cmd.Stderr = w, w
 		if err := cmd.Start(); err != nil {
-			out.Steps = append(out.Steps, StepResult{Phase: PhaseProcess, Name: s.Name, Command: s.Command,
-				ExitCode: -1, Detail: fmt.Sprintf("%s could not start: %v", s.Command, err)})
+			failed := StepResult{Phase: PhaseProcess, Name: s.Name, Command: s.Command,
+				ExitCode: -1, Detail: fmt.Sprintf("%s could not start: %v", s.Command, err)}
+			pg.end(pi, failed)
+			out.Steps = append(out.Steps, failed)
 			stopProcs()
 			teardown(ctx, plan, env, opt, &out)
 			return out
@@ -368,6 +398,11 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
 		procs = append(procs, running{name: s.Name, cmd: cmd, out: buf, done: done})
+		pg.end(pi, StepResult{OK: true, Detail: "started"})
+	}
+	ri := -1
+	if plan.Ready != nil {
+		ri = pg.begin(PhaseReady, "", readyWhat(plan.Ready))
 	}
 	ready := tryReady(ctx, plan, opt, func() (string, string) {
 		var all strings.Builder
@@ -382,6 +417,9 @@ func TryRecipe(ctx context.Context, plan RunPlan, opt TryOptions) TryResult {
 		}
 		return all.String(), ""
 	})
+	if ready != nil {
+		pg.end(ri, StepResult{OK: ready.Ready, Detail: ready.Detail})
+	}
 	stopProcs()
 	allOK := ready == nil || ready.Ready
 	for _, p := range procs {
@@ -465,8 +503,10 @@ func teardown(ctx context.Context, plan RunPlan, env map[string]string, opt TryO
 	// Teardown runs even after a cancel, so containers do not outlive Try.
 	tctx := context.WithoutCancel(ctx)
 	for _, s := range plan.Teardown {
-		r := ExecStep(tctx, plan.Dir, env, s.Command, opt.StepTimeout)
+		i := opt.Progress.begin(PhaseTeardown, "", s.Command)
+		r := execStepTee(tctx, plan.Dir, env, s.Command, opt.StepTimeout, opt.Progress.writer(i))
 		r.Phase = PhaseTeardown
+		opt.Progress.end(i, r)
 		out.Steps = append(out.Steps, r)
 	}
 }
