@@ -26,6 +26,15 @@ type recipePrepareResult struct {
 	Steps     []wakilcore.StepResult  `json:"steps,omitempty"`
 }
 
+// newRecipePrepareResult keeps secretEnv an object when the plan has no secrets: the output schema says
+// object, and a nil map would marshal as null.
+func newRecipePrepareResult(plan map[string]any, prep wakilcore.PrepareResult, secrets map[string]string) recipePrepareResult {
+	if secrets == nil {
+		secrets = map[string]string{}
+	}
+	return recipePrepareResult{Plan: plan, Prepared: prep, SecretEnv: secrets}
+}
+
 type recipeStepsArgs struct {
 	recipePlanArgs
 	Phases         []string `json:"phases" jsonschema:"the plan's one-shot phases to run, in order: service, setup, build, teardown"`
@@ -101,7 +110,7 @@ func registerRecipeRunTools(s *mcp.Server) {
 			if err != nil {
 				return toolErr(err), recipePrepareResult{}, nil
 			}
-			return nil, recipePrepareResult{Plan: asObject(plan), Prepared: prep, SecretEnv: secrets}, nil
+			return nil, newRecipePrepareResult(asObject(plan), prep, secrets), nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "recipe_run_steps", Description: "Run a repo's saved one-shot steps in its checkout, by phase (service, setup, build, teardown), in the plan's order, in the operator's login shell with the plan's environment and secrets; stops at the first that fails. Each step answers its command, ok, exit code, output whole and seconds. Runs only the recipe's own commands. Cancelling the call stops the running step and its children."},

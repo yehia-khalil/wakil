@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,5 +105,19 @@ func TestRecipeSecretSetNeedsEveryPart(t *testing.T) {
 	}
 	if _, msg := callRecipe(t, cs, "recipe_secret_set", map[string]any{"project": "proj", "owner": "web", "variable": "X", "value": " "}); !strings.Contains(msg, "is empty") {
 		t.Fatalf("%s", msg)
+	}
+}
+
+// A plan with no secrets answers secretEnv as an empty object: the tool's output schema says object, and a
+// nil map marshals as null, which the SDK refuses ("has type null, want object") — the card's ▶ said so.
+func TestRecipePrepareResultSecretEnvIsAnObjectWithNoSecrets(t *testing.T) {
+	data, err := json.Marshal(newRecipePrepareResult(nil, wakilcore.PrepareResult{}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	json.Unmarshal(data, &out)
+	if _, ok := out["secretEnv"].(map[string]any); !ok {
+		t.Fatalf("secretEnv is %#v, want an object", out["secretEnv"])
 	}
 }
