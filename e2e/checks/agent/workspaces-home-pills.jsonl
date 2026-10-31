@@ -1,4 +1,4 @@
-{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"frame":"window.composer","minWidth":40}}
 {"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}

@@ -4,10 +4,10 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.project:e2e-git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"dispatch":{"action":"running_save","params":{"recipes":{"e2e-static":{"processes":[{"name":"web","command":"python3 -m http.server $WAKIL_PORT"}],"ready":{"output":"Serving HTTP"}}},"repos":{"e2e-api":{"recipe":"e2e-static"}}}}}
 {"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"dispatch":{"action":"running_save","params":{"recipes":{"e2e-static":{"processes":[{"name":"web","command":"python3 -m http.server $WAKIL_PORT"}],"ready":{"output":"Serving HTTP"}}},"repos":{"e2e-api":{"recipe":"e2e-static"}}}}}
 {"dispatch":{"action":"workspace_run","params":{"repo":"e2e-api"}}}
 {"do":{"hotkey":"cmd+shift+h"}}
 {"expect":{"frame":"landing","minWidth":40}}
