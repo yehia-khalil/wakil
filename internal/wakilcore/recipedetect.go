@@ -115,6 +115,7 @@ func DetectRecipe(dir string, opts DetectOptions) (Draft, error) {
 	t.detectEntryPoints()
 	t.detectRuntimes()
 	t.detectEnvExample()
+	t.detectEnvFileWrite()
 
 	if !t.d.DoesntRun && len(t.r.Processes) == 0 && len(t.r.Services) == 0 && t.d.Kind == "" {
 		t.d.Kind = "unknown"
@@ -1108,6 +1109,48 @@ func (t *detector) detectRuntimes() {
 // ---- env ----
 
 var hostKeyPattern = regexp.MustCompile(`(^|_)HOST$`)
+
+// sourcesDotEnv matches a script line that reads .env itself: `. ./.env`, `source .env`,
+// `export $(cat .env …)`, `< .env`.
+var sourcesDotEnv = regexp.MustCompile(`(?m)(^|[\s;&|(])(\.|source)\s+["']?(\./)?\.env["']?(\s|;|$)|\$\(\s*cat\s+["']?(\./)?\.env\b|<\s*["']?(\./)?\.env["']?(\s|;|$)`)
+
+// detectEnvFileWrite turns on writing the mapped ports into the copy's .env when what runs reads
+// .env itself (the walk: Sail's script sources it, so the copied APP_PORT=8001 beat the exported
+// $WAKIL_PORT and the app answered only on 8001). The writer replaces the copy's own lines.
+func (t *detector) detectEnvFileWrite() {
+	if t.d.DoesntRun || len(t.r.Ports) == 0 {
+		return
+	}
+	reader := ""
+	if t.d.Kind == "laravel-sail" {
+		reader = "Sail's script"
+	}
+	for _, p := range t.r.Processes {
+		if reader != "" {
+			break
+		}
+		fields := strings.Fields(p.Command)
+		if len(fields) > 1 && (fields[0] == "sh" || fields[0] == "bash" || fields[0] == "zsh") {
+			fields = fields[1:]
+		}
+		if len(fields) == 0 {
+			continue
+		}
+		script := strings.TrimPrefix(fields[0], "./")
+		if strings.Contains(script, "..") || filepath.IsAbs(script) {
+			continue
+		}
+		if body := t.read(script); body != "" && sourcesDotEnv.MatchString(body) {
+			reader = script
+		}
+	}
+	if reader == "" {
+		return
+	}
+	on := true
+	t.r.AlsoWriteEnvFile = &on
+	t.note("alsoWriteEnvFile", reader+" reads .env itself, so the copy's .env is given the mapped ports; else its own lines win over Wakil's")
+}
 
 func (t *detector) detectEnvExample() {
 	example := t.firstOf(".env.example", ".env.dist", ".env.sample")

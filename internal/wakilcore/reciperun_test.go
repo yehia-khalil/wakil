@@ -2,7 +2,11 @@ package wakilcore
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -152,5 +156,71 @@ func TestTryRecipeFailsWhenAProcessEndsBeforeReady(t *testing.T) {
 func TestRunSecretRefIsDerived(t *testing.T) {
 	if got := RunSecretRef("estate", "api", "STRIPE_SECRET"); got != "run:estate:api:STRIPE_SECRET" {
 		t.Fatal(got)
+	}
+}
+
+// freePort is a loopback port nothing listens on.
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+// The walk: Main's .env set the app's own port (Sail's APP_PORT=8001), the run script read .env
+// itself, so the exported port lost and the app answered only on Main's port. Detect, plan and Try
+// of a repo whose script sources .env: the app answers on $WAKIL_PORT.
+func TestTryOfAScriptThatSourcesDotEnvAnswersOnTheWorkspacesPort(t *testing.T) {
+	useSh(t)
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 serves the fixture's app")
+	}
+	fixture := filepath.Join("testdata", "recipes", "script-sources-env")
+	main, copyDir := filepath.Join(t.TempDir(), "api"), filepath.Join(t.TempDir(), "api")
+	own, wakil := freePort(t), freePort(t)
+	server, err := os.ReadFile(filepath.Join(fixture, "script", "server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{main, copyDir} {
+		os.MkdirAll(filepath.Join(d, "script"), 0o755)
+		os.WriteFile(filepath.Join(d, "script", "server"), server, 0o755)
+	}
+	// Main's own .env, which the copy step brings into the workspace's copy.
+	os.WriteFile(filepath.Join(main, ".env"), []byte(fmt.Sprintf("PORT=%d\n", own)), 0o644)
+
+	draft, err := DetectRecipe(main, DetectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe := draft.Recipe
+	recipe.Ready.TimeoutSeconds = 10
+	raw, _ := json.Marshal(map[string]any{
+		"name": "estate", "org": "initech",
+		"roots":   []map[string]any{{"path": main, "recipe": "app"}},
+		"recipes": map[string]Recipe{"app": recipe},
+	})
+	var p Project
+	if err := json.Unmarshal(raw, &p); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildRunPlan(p, PlanInput{Org: "initech", Workspace: "ini-142", Repo: "api", MainDir: main,
+		Checkouts: []CheckoutPorts{{Repo: "api", Path: copyDir, Port: wakil}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := TryRecipe(context.Background(), plan, TryOptions{PollInterval: 50 * time.Millisecond})
+	if !res.Passed || res.Ready == nil || !res.Ready.Ready || !strings.Contains(res.Ready.Detail, fmt.Sprintf(":%d/", wakil)) {
+		t.Fatalf("the app did not answer on $WAKIL_PORT %d (its .env said %d): %+v", wakil, own, res)
+	}
+	env, _ := os.ReadFile(filepath.Join(copyDir, ".env"))
+	if strings.Count(string(env), "PORT=") != 1 || !strings.Contains(string(env), fmt.Sprintf("PORT=%d", wakil)) {
+		t.Fatalf("the copy's .env:\n%s", env)
+	}
+	if main, _ := os.ReadFile(filepath.Join(main, ".env")); string(main) != fmt.Sprintf("PORT=%d\n", own) {
+		t.Fatalf("Main's .env changed: %s", main)
 	}
 }

@@ -1,0 +1,34 @@
+{
+  "repo": "script-sources-env",
+  "kind": "scripts",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "alsoWriteEnvFile": true,
+    "copy": [
+      ".env"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "script/server"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "alsoWriteEnvFile": "script/server reads .env itself, so the copy's .env is given the mapped ports; else its own lines win over Wakil's",
+      "copy": "the ignored env files in your folder",
+      "ports.PORT": "script/server — check it reads PORT",
+      "processes.app": "script/server — the repo's own entry point",
+      "ready": "the app answering on $WAKIL_PORT"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

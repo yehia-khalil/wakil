@@ -8,6 +8,7 @@
       "FORWARD_REDIS_PORT": "$WAKIL_PORT_3",
       "VITE_PORT": "$WAKIL_PORT_1"
     },
+    "alsoWriteEnvFile": true,
     "copy": [
       ".env"
     ],
@@ -39,6 +40,7 @@
       "./vendor/bin/sail down"
     ],
     "notes": {
+      "alsoWriteEnvFile": "Sail's script reads .env itself, so the copy's .env is given the mapped ports; else its own lines win over Wakil's",
       "clone": "composer.json",
       "copy": "the ignored env files in your folder",
       "ports.APP_PORT": "docker-compose.yml publishes laravel.test's port from $APP_PORT, so nothing in it is rewritten",
