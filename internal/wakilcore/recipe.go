@@ -60,7 +60,7 @@ type Process struct {
 	AfterReady bool `json:"afterReady,omitempty"`
 }
 
-// Ready is a URL that answers (200–399) or a line in the output: a substring, or /a regexp/.
+// Ready is a URL that answers (any HTTP status below 500) or a line in the output: a substring, or /a regexp/.
 type Ready struct {
 	URL            string `json:"url,omitempty"`
 	Output         string `json:"output,omitempty"`

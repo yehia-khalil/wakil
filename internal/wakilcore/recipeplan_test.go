@@ -2,6 +2,7 @@ package wakilcore
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -201,5 +202,30 @@ func TestWaitReadyURL(t *testing.T) {
 	res = WaitReadyURL(ctx, nil, down.URL, 10*time.Second, 10*time.Millisecond)
 	if res.Ready || res.Detail != "the ready check was cancelled" {
 		t.Fatalf("cancel: %+v", res)
+	}
+}
+
+// Ready means the URL answered with an HTTP response below 500 on its own host and port (the walk:
+// a Laravel app whose /up is missing still answers 404, and it is up); nothing listening is not.
+func TestWaitReadyURLIsAnyAnswerBelow500OnThatPortAndNeverARefusal(t *testing.T) {
+	missing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) }))
+	defer missing.Close()
+	res := WaitReadyURL(context.Background(), nil, missing.URL+"/up", time.Second, 10*time.Millisecond)
+	if !res.Ready || !strings.Contains(res.Detail, "answered 404") {
+		t.Fatalf("404: %+v", res)
+	}
+
+	// Another port answers; the ready URL's own port refuses.
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer elsewhere.Close()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := "http://" + l.Addr().String() + "/up"
+	l.Close()
+	res = WaitReadyURL(context.Background(), nil, refused, 150*time.Millisecond, 10*time.Millisecond)
+	if res.Ready || !strings.Contains(res.Detail, "connection refused") {
+		t.Fatalf("refused: %+v", res)
 	}
 }

@@ -320,7 +320,9 @@ func MatchReadyOutput(pattern, text string) (bool, error) {
 	return strings.Contains(text, pattern), nil
 }
 
-// WaitReadyURL polls url until it answers 200–399, the timeout passes or ctx is cancelled.
+// WaitReadyURL polls url until it answers with an HTTP response below 500 (the app is up even when
+// that path is missing or asks to sign in), the timeout passes or ctx is cancelled. A refused or
+// failed connection is never ready.
 func WaitReadyURL(ctx context.Context, client *http.Client, url string, timeout, interval time.Duration) ReadyResult {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -336,7 +338,7 @@ func WaitReadyURL(ctx context.Context, client *http.Client, url string, timeout,
 		resp, err := client.Do(req)
 		if err == nil {
 			resp.Body.Close()
-			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			if resp.StatusCode < 500 {
 				return ReadyResult{true, fmt.Sprintf("%s answered %d", url, resp.StatusCode)}
 			}
 			last = fmt.Sprintf("it last answered %d", resp.StatusCode)

@@ -233,7 +233,7 @@ public actor WorkspaceRunner {
                                    warnings: plan.warnings, prepared: prepared)
             setState(id, name, RepoRunState(repo: name, port: checkout.ports?.first, processes: running,
                                              phase: plan.ready == nil ? .running : .starting("waiting for ready"),
-                                             step: plan.ready.map { RunStepNow(step: "ready", command: $0.url ?? $0.output ?? "", started: Date()) }))
+                                             step: plan.ready.map { RunStepNow.readyCheck($0.url ?? $0.output ?? "", started: Date()) }))
             if let ready = plan.ready, !running.isEmpty {
                 let r = try await waitReady(ready, w: w, panes: running.map(\.pane))
                 report.ready = r

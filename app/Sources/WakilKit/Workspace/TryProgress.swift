@@ -46,6 +46,15 @@ public struct TryStepState: Decodable, Sendable, Equatable {
             let what = state == .done ? output.trimmingCharacters(in: .whitespacesAndNewlines) : ""
             return what.isEmpty ? "prepared" : "prepared — \(what)"
         case RunPhase.process: return "\(name.isEmpty ? "process" : name) started · \(command)"
+        case "ready":
+            // The walk: `ready · <url>` while it waited read as the answer. It says so only once it is.
+            let what = switch state {
+            case .toCome: "ready check"
+            case .running: "waiting for ready"
+            case .done: "ready"
+            case .failed: "not ready"
+            }
+            return command.isEmpty ? what : "\(what) · \(command)"
         default: return command.isEmpty ? phase : "\(phase) · \(command)"
         }
     }
@@ -101,6 +110,12 @@ public struct RunStepNow: Sendable, Equatable {
     public var started: Date
     public init(step: String, command: String, started: Date) {
         self.step = step; self.command = command; self.started = started
+    }
+
+    /// The ready check while it waits: `<repo> waiting for ready · <url> · <time>`, never `ready ·`
+    /// before the URL answered (the walk read that as the result).
+    public static func readyCheck(_ what: String, started: Date) -> RunStepNow {
+        RunStepNow(step: "waiting for ready", command: what, started: started)
     }
 }
 

@@ -46,7 +46,7 @@ type recipePlanArgs struct {
 }
 
 type readyWaitArgs struct {
-	URL            string `json:"url,omitempty" jsonschema:"a loopback URL to poll until it answers 200 to 399"`
+	URL            string `json:"url,omitempty" jsonschema:"a loopback URL to poll until it answers with any HTTP status below 500"`
 	Output         string `json:"output,omitempty" jsonschema:"a ready line: a substring, or /a regexp/"`
 	Text           string `json:"text,omitempty" jsonschema:"the output so far, matched once against output"`
 	TimeoutSeconds int    `json:"timeoutSeconds,omitempty" jsonschema:"how long to poll the url; default 120"`
@@ -230,7 +230,7 @@ func registerRecipeTools(s *mcp.Server) {
 			return nil, asObject(plan), nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "recipe_ready_wait", Description: "Check that an app is up. With url (on this machine: localhost, 127.0.0.1 or ::1), poll it until it answers 200 to 399, the timeout passes (default 120 s) or the call is cancelled. With output and text, say once whether text holds the ready line (a substring, or /a regexp/). Answers ready and a detail sentence."},
+	mcp.AddTool(s, &mcp.Tool{Name: "recipe_ready_wait", Description: "Check that an app is up. With url (on this machine: localhost, 127.0.0.1 or ::1), poll it until it answers with any HTTP status below 500 (a refused connection is never ready), the timeout passes (default 120 s) or the call is cancelled. With output and text, say once whether text holds the ready line (a substring, or /a regexp/). Answers ready and a detail sentence."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a readyWaitArgs) (*mcp.CallToolResult, wakilcore.ReadyResult, error) {
 			switch {
 			case a.URL != "" && a.Output != "":
