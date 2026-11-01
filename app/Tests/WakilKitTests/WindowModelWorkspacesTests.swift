@@ -450,12 +450,19 @@ struct WindowModelWorkspaceViewsTests {
         show(placeA, in: model)
         model.useWorkspaces(await router(with: [ws]))
 
-        model.runLineChanged("w1", "core running on :41200", ports: [41200])
+        model.runLineChanged("w1", "core running on :41200", ports: [41200], tone: .ready)
         var screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
         #expect(screen.sections.first?.cards.first?.running == "core running on :41200")
         #expect(screen.sections.first?.cards.first?.appLinks.map(\.url) == ["http://localhost:41200/"])
+        #expect(screen.sections.first?.cards.first?.runTone == .ready)
+
+        // The walk: "parkour-warriors failed" read in the running green; failed is red (§5).
+        model.runLineChanged("w1", "core failed", tone: .failed)
+        screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
+        #expect(screen.sections.first?.cards.first?.runTone == .failed)
 
         model.runLineChanged("w1", "")
+        #expect(model.homeRunTones["w1"] == nil)
         #expect(model.homeRunLines["w1"] == nil)
         #expect(model.homeRunPorts["w1"] == nil)
         screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)

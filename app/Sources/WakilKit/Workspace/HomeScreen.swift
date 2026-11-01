@@ -55,6 +55,8 @@ public struct HomeInput: Sendable {
     public var running: [String: String]
     /// The ports of each workspace's ready repos (piece 2's `runAppPorts`): the card links each app.
     public var runningPorts: [String: [Int]]
+    /// Each workspace's run tone (`runTone`): the colour its running line reads in.
+    public var runningTones: [String: RunTone]
     /// Each project's default environment, where known: a card in another environment tags it. The
     /// window's own project defaults to the window's environment.
     public var defaultEnvironments: [String: String]
@@ -65,7 +67,7 @@ public struct HomeInput: Sendable {
                 workspaces: [WorkspaceListing] = [], live: [LiveConversation] = [], tickets: [TicketNeedsRow] = [],
                 past: [HomePastConversation] = [], filter: String? = nil,
                 branchPRs: [HomeBranch: [PullRequestState]] = [:], running: [String: String] = [:],
-                runningPorts: [String: [Int]] = [:], defaultEnvironments: [String: String] = [:],
+                runningPorts: [String: [Int]] = [:], runningTones: [String: RunTone] = [:], defaultEnvironments: [String: String] = [:],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -79,6 +81,7 @@ public struct HomeInput: Sendable {
         self.branchPRs = branchPRs
         self.running = running
         self.runningPorts = runningPorts
+        self.runningTones = runningTones
         self.defaultEnvironments = defaultEnvironments
         self.isProduction = isProduction
     }
@@ -195,6 +198,8 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     public let merged: String?
     /// A ready run's apps, each `:41210 ↗` opening its root (design-language §5); none until ready.
     public var appLinks: [HomeAppLink] = []
+    /// The colour `running` reads in (design-language §5): red once it failed, never the green.
+    public var runTone: RunTone? = nil
     /// ▶ Run…'s repos: those with a copy on disk, where the app runs (decision 12).
     public var runnable: [HomeRepo] { repos.filter { $0.made && !$0.inMain } }
     /// The compact row's running token: its ports (`:41200`), else `running`; nil while nothing runs.
@@ -459,7 +464,8 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             hue: need?.hue ?? (working ? .working : .idle), working: working,
             latest: latest, opens: mine.first?.id, moveCandidates: candidates,
             archiveAsks: mine.contains { $0.state == .waiting }, merged: homeMergedLine(w, input.branchPRs),
-            appLinks: input.running[w.id].map { $0.isEmpty ? [] : (input.runningPorts[w.id] ?? []).map(HomeAppLink.init(port:)) } ?? [])
+            appLinks: input.running[w.id].map { $0.isEmpty ? [] : (input.runningPorts[w.id] ?? []).map(HomeAppLink.init(port:)) } ?? [],
+            runTone: input.running[w.id].flatMap { $0.isEmpty ? nil : (input.runningTones[w.id] ?? .ready) })
     }
     func ordered(_ cards: [HomeCard]) -> [HomeCard] {
         func rank(_ c: HomeCard) -> Int { c.needsYou ? 0 : c.working ? 1 : 2 }

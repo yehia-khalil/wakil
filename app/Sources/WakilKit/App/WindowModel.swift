@@ -965,6 +965,8 @@ public final class WindowModel {
     public internal(set) var homeRunLines: [String: String] = [:]
     /// Each workspace's ready repos' ports (`runAppPorts`): the card's `:<port> ↗` links.
     public internal(set) var homeRunPorts: [String: [Int]] = [:]
+    /// Each workspace's run tone (`runTone`), beside `homeRunLines`: the colour the card reads it in.
+    public internal(set) var homeRunTones: [String: RunTone] = [:]
     /// The card lines' one-second readers while a run gets going (`tickRunLine`).
     @ObservationIgnored var runLineTickers: [String: Task<Void, Never>] = [:]
     /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.

@@ -214,6 +214,7 @@ private let keptPerPlace: Set<String> = [
     // (spec, Errors and edges), and the home draws only the incoming organisation's workspaces.
     "homeRunLines",
     "homeRunPorts",
+    "homeRunTones",
 ]
 
 private let orgIndependent: Set<String> = [

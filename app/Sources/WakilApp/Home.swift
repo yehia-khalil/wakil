@@ -47,7 +47,8 @@ struct Home: View {
         return "\(model.organization)/\(model.projectKey)/\(model.environment)|\(live.joined(separator: ","))|"
             + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)|\(merged.joined(separator: ","))|"
             + model.homeRunLines.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
-            + model.homeRunPorts.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
+            + model.homeRunPorts.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
+            + model.homeRunTones.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
     }
 
     var body: some View {
@@ -348,7 +349,7 @@ struct Home: View {
                         if card.appLinks.isEmpty {
                             Text(ports)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(green)
+                                .foregroundStyle(runColour(card))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityLabel(card.running ?? ports)
                                 .accessibilityIdentifier("landing.card.\(card.id).running")
@@ -487,7 +488,7 @@ struct Home: View {
                     }
                     if let running = card.running {
                         if card.prs != nil { dotSeparator }
-                        Text(running).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(green)
+                        Text(running).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(runColour(card))
                             .fixedSize(horizontal: false, vertical: true)
                         ForEach(Array(card.appLinks.enumerated()), id: \.offset) { i, app in
                             appLink(app, size: 11.5)
@@ -700,6 +701,9 @@ struct Home: View {
         .accessibilityAction(.default) { if !editing { _ = action() } }
         .accessibilityIdentifier("landing.row.\(id)")
     }
+
+    /// The run line's colour by its state (`RunTone`, design-language §5): failed reads red.
+    private func runColour(_ card: HomeCard) -> Color { Color(card.runTone?.colour ?? HomePalette.green) }
 
     private func stateWordColour(_ state: ConversationState) -> Color {
         switch state {

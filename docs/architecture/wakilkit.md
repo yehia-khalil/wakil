@@ -760,7 +760,8 @@ an agent's write finds its checkout.
   per checkout, each process in a terminal through the `RunTerminals` seam, ready —, stop, build,
   Try, followed as a Go job step by step; `RepoRunState` — with the step a run is on, its command and
   time so far —, `runStatusLine`; Archive's hook), `TryProgress.swift` (Try's step list: `TryProgressState`,
-  `TryStepState` with its mark, title and time; `RunStepNow`), `RunActions.swift` (`workspace_run`,
+  `TryStepState` with its mark, title and time; `RunStepNow`), `RunTone.swift` (a run state's tone — working,
+  waiting, ready, failed — and a card's, its most urgent repo's; its §5 colour is `App/RunToneColour.swift`), `RunActions.swift` (`workspace_run`,
   `workspace_stop`, `workspace_build`, `workspace_running`: agent-reachable, its own workspace only),
   `RunningActions.swift` (`running_*`, operator-only), `RunningSettings.swift` (the Running settings'
   decisions: groups, a field's source, an edit as an override, Draft all and Detect proposals).
