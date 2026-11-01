@@ -46,7 +46,8 @@ struct Home: View {
         let merged = model.homeBranchPRs.map { "\($0.key.root):\($0.key.branch)=\($0.value.map(\.state))" }.sorted()
         return "\(model.organization)/\(model.projectKey)/\(model.environment)|\(live.joined(separator: ","))|"
             + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)|\(merged.joined(separator: ","))|"
-            + model.homeRunLines.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
+            + model.homeRunLines.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
+            + model.homeRunPorts.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
     }
 
     var body: some View {
@@ -344,12 +345,20 @@ struct Home: View {
                 }
                 if let ports = card.runningCompact {
                     HStack(spacing: 7) {
-                        Text(ports)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(green)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel(card.running ?? ports)
-                            .accessibilityIdentifier("landing.card.\(card.id).running")
+                        if card.appLinks.isEmpty {
+                            Text(ports)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(green)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityLabel(card.running ?? ports)
+                                .accessibilityIdentifier("landing.card.\(card.id).running")
+                        } else {
+                            // Ready: each port is its app's link, `:41210 ↗` (design-language §5).
+                            ForEach(Array(card.appLinks.enumerated()), id: \.offset) { i, app in
+                                appLink(app, size: 11)
+                                    .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).app:\(i)")
+                            }
+                        }
                         Button { runOnCard(card) { await model.stopOnCard(card.id) } } label: {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 7))
@@ -386,6 +395,18 @@ struct Home: View {
         .padding(.trailing, 12)
         .background(RoundedRectangle(cornerRadius: 7).fill(ink.opacity(hovered == key && !open ? 0.04 : 0)))
         .onHover { inside in hovered = inside ? key : (hovered == key ? nil : hovered) }
+    }
+
+    /// A ready app's `:41210 ↗` in the void's blue: Wakil's browser pane (`browser_open`), ⌥-click
+    /// the system browser, as every ↗ link (`WakilLinks`). Its root, never the ready check's path.
+    private func appLink(_ app: HomeAppLink, size: CGFloat) -> some View {
+        Button(WebLink.label(app.label)) { WakilLinks.open(app.url, systemBrowser: NSEvent.modifierFlags.contains(.option), model: model) }
+            .buttonStyle(.plain)
+            .font(.system(size: size, weight: .medium, design: .monospaced))
+            .foregroundStyle(WebLink.colour)
+            .fixedSize(horizontal: false, vertical: true)
+            .help("Open \(app.url) in Wakil's browser; ⌥-click for the system browser")
+            .accessibilityLabel("Open \(app.url)")
     }
 
     /// `INI-140 Move webhook signing to the vault staging`, wrapping whole; a child row adds
@@ -468,6 +489,10 @@ struct Home: View {
                         if card.prs != nil { dotSeparator }
                         Text(running).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(green)
                             .fixedSize(horizontal: false, vertical: true)
+                        ForEach(Array(card.appLinks.enumerated()), id: \.offset) { i, app in
+                            appLink(app, size: 11.5)
+                                .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).bodyApp:\(i)")
+                        }
                     }
                 }
             }

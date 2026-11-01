@@ -166,7 +166,7 @@ extension WindowModel {
             // Piece 3: the card's running line follows every change, whoever ran it (Rule 5).
             await runner.use(changed: { [weak self, runner] id in
                 let states = await runner.state(of: id)
-                await self?.runLineChanged(id, runStatusLine(states))
+                await self?.runLineChanged(id, runStatusLine(states), ports: runAppPorts(states))
                 // While a step runs, its time on the card goes on (the walk): read again each second.
                 if states.contains(where: runIsOnAStep) { await self?.tickRunLine(id, runner: runner) }
             })
@@ -212,15 +212,17 @@ extension WindowModel {
                 try? await Task.sleep(for: .seconds(1))
                 let states = await runner.state(of: workspace)
                 guard let self else { return }
-                self.runLineChanged(workspace, runStatusLine(states))
+                self.runLineChanged(workspace, runStatusLine(states), ports: runAppPorts(states))
                 if !states.contains(where: runIsOnAStep) { break }
             }
             self?.runLineTickers[workspace] = nil
         }
     }
 
-    func runLineChanged(_ workspace: String, _ line: String) {
+    func runLineChanged(_ workspace: String, _ line: String, ports: [Int] = []) {
         if line.isEmpty { homeRunLines[workspace] = nil } else if homeRunLines[workspace] != line { homeRunLines[workspace] = line }
+        let ready = line.isEmpty ? [] : ports
+        if ready.isEmpty { homeRunPorts[workspace] = nil } else if homeRunPorts[workspace] != ready { homeRunPorts[workspace] = ready }
     }
 
     /// The card's ▶ Run for `repo` of `workspace` (`workspace_run`, as the operator): the saved
@@ -296,7 +298,7 @@ extension WindowModel {
             tickets: ticketNeedsRows,
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,
-            branchPRs: homeBranchPRs, running: homeRunLines,
+            branchPRs: homeBranchPRs, running: homeRunLines, runningPorts: homeRunPorts,
             isProduction: judge)
         return homeScreen(input)
     }

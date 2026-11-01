@@ -450,12 +450,14 @@ struct WindowModelWorkspaceViewsTests {
         show(placeA, in: model)
         model.useWorkspaces(await router(with: [ws]))
 
-        model.runLineChanged("w1", "core running on :41200")
+        model.runLineChanged("w1", "core running on :41200", ports: [41200])
         var screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
         #expect(screen.sections.first?.cards.first?.running == "core running on :41200")
+        #expect(screen.sections.first?.cards.first?.appLinks.map(\.url) == ["http://localhost:41200/"])
 
         model.runLineChanged("w1", "")
         #expect(model.homeRunLines["w1"] == nil)
+        #expect(model.homeRunPorts["w1"] == nil)
         screen = await model.readHomeScreen(projects: ["api"], past: [], filter: nil)
         #expect(screen.sections.first?.cards.first?.running == nil)
         await model.shutdown()

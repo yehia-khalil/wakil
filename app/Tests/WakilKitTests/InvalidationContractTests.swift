@@ -213,6 +213,7 @@ private let keptPerPlace: Set<String> = [
     // Workspaces, piece 3: what runs in each workspace, by id — the apps keep running across a switch
     // (spec, Errors and edges), and the home draws only the incoming organisation's workspaces.
     "homeRunLines",
+    "homeRunPorts",
 ]
 
 private let orgIndependent: Set<String> = [

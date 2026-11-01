@@ -963,6 +963,8 @@ public final class WindowModel {
     /// What runs in each workspace, by id (piece 2's `runStatusLine`), as the runner last told
     /// (`useRunner`): the home card's running line and its **Stop**.
     public internal(set) var homeRunLines: [String: String] = [:]
+    /// Each workspace's ready repos' ports (`runAppPorts`): the card's `:<port> ↗` links.
+    public internal(set) var homeRunPorts: [String: [Int]] = [:]
     /// The card lines' one-second readers while a run gets going (`tickRunLine`).
     @ObservationIgnored var runLineTickers: [String: Task<Void, Never>] = [:]
     /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.

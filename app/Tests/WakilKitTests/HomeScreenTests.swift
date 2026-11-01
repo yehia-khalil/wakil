@@ -280,6 +280,20 @@ private func pr(_ number: Int, _ state: String, head: String = "logs") -> PullRe
     #expect(quiet.prs == nil && quiet.runningCompact == ":41210", "no PR: the compact row still says what runs")
 }
 
+// The walk: a ready run's card links its app (`:41210 ↗`), the root on the repo's port, never `/up`.
+@Test func aReadyRunsCardLinksItsAppsRootOnEachPort() {
+    let b = ws("w2", "Quiet", repos: ["/p/api"])
+    func card(_ ports: [String: [Int]]) -> HomeCard {
+        homeScreen(HomeInput(organization: "initech", project: "estate", environment: "staging",
+                             workspaces: [listing(b)], running: ["w2": "api running on :41210"],
+                             runningPorts: ports)).sections[0].cards[0]
+    }
+    #expect(card([:]).appLinks.isEmpty, "still getting going: no link")
+    let ready = card(["w2": [41210, 41220]])
+    #expect(ready.appLinks.map(\.label) == [":41210", ":41220"])
+    #expect(ready.appLinks.map(\.url) == ["http://localhost:41210/", "http://localhost:41220/"])
+}
+
 // Invariant 8 beyond the screen's project: Start in lists every project's real environments, each
 // judged production by its own declaration.
 

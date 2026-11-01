@@ -53,6 +53,8 @@ public struct HomeInput: Sendable {
     /// What runs in each workspace, by id: piece 2's `runStatusLine` (`api running on :41200 · queue
     /// running`); absent or empty when nothing does.
     public var running: [String: String]
+    /// The ports of each workspace's ready repos (piece 2's `runAppPorts`): the card links each app.
+    public var runningPorts: [String: [Int]]
     /// Each project's default environment, where known: a card in another environment tags it. The
     /// window's own project defaults to the window's environment.
     public var defaultEnvironments: [String: String]
@@ -63,7 +65,7 @@ public struct HomeInput: Sendable {
                 workspaces: [WorkspaceListing] = [], live: [LiveConversation] = [], tickets: [TicketNeedsRow] = [],
                 past: [HomePastConversation] = [], filter: String? = nil,
                 branchPRs: [HomeBranch: [PullRequestState]] = [:], running: [String: String] = [:],
-                defaultEnvironments: [String: String] = [:],
+                runningPorts: [String: [Int]] = [:], defaultEnvironments: [String: String] = [:],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -76,8 +78,19 @@ public struct HomeInput: Sendable {
         self.filter = filter
         self.branchPRs = branchPRs
         self.running = running
+        self.runningPorts = runningPorts
         self.defaultEnvironments = defaultEnvironments
         self.isProduction = isProduction
+    }
+}
+
+/// A running app's link on a card: `:41210`, opening `http://localhost:41210/`.
+public struct HomeAppLink: Sendable, Equatable, Hashable {
+    public let label: String
+    public let url: String
+    public init(port: Int) {
+        label = runAppLabel(port: port)
+        url = runAppAddress(port: port)
     }
 }
 
@@ -180,6 +193,8 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     /// Decision 11's offer: every PR of the workspace is merged — `2 PRs merged`, drawn with
     /// **Archive** on the card. Nil otherwise (Archive stays in ⋯).
     public let merged: String?
+    /// A ready run's apps, each `:41210 ↗` opening its root (design-language §5); none until ready.
+    public var appLinks: [HomeAppLink] = []
     /// ▶ Run…'s repos: those with a copy on disk, where the app runs (decision 12).
     public var runnable: [HomeRepo] { repos.filter { $0.made && !$0.inMain } }
     /// The compact row's running token: its ports (`:41200`), else `running`; nil while nothing runs.
@@ -443,7 +458,8 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             needCount: homeNeedCount(mine: mine, rows: rows),
             hue: need?.hue ?? (working ? .working : .idle), working: working,
             latest: latest, opens: mine.first?.id, moveCandidates: candidates,
-            archiveAsks: mine.contains { $0.state == .waiting }, merged: homeMergedLine(w, input.branchPRs))
+            archiveAsks: mine.contains { $0.state == .waiting }, merged: homeMergedLine(w, input.branchPRs),
+            appLinks: input.running[w.id].map { $0.isEmpty ? [] : (input.runningPorts[w.id] ?? []).map(HomeAppLink.init(port:)) } ?? [])
     }
     func ordered(_ cards: [HomeCard]) -> [HomeCard] {
         func rank(_ c: HomeCard) -> Int { c.needsYou ? 0 : c.working ? 1 : 2 }
