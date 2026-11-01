@@ -711,6 +711,7 @@ extension WakilWindow {
                     runningDispatch: { action, params in await model.runningDispatch(action, params) },
                     runningEnvironment: model.environment,
                     runningTryProgress: { project, repo in model.runningTryProgress(project: project, repo: repo) },
+                    runningOpenLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
                     runningDrafting: { project in
                         RunningDrafting(
                             draft: { model.recipeDraft(projectPath: project.path, repo: $0) },

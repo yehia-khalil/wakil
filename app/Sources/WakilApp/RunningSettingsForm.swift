@@ -16,6 +16,8 @@ struct RunningSettingsForm: View {
     var drafting: RunningDrafting = .none
     /// A Try's progress as Go runs it, by repo (`WindowModel.runningTryProgress`): the step list.
     var tryProgress: (String) -> TryProgressState? = { _ in nil }
+    /// Opens a page as other ↗ links do (`WakilLinks.open`: `browser_open`, ⌥ the system browser).
+    var openLink: (String, Bool) -> Void = { _, _ in }
 
     @State private var settings: RunningSettings?
     @State private var loadError: String?
@@ -49,6 +51,8 @@ struct RunningSettingsForm: View {
         var steps: [RunStepResult]
         var ready: RunReadyResult?
         var error: String?
+        /// The Try's port: a ready Try links its app there.
+        var port: Int?
     }
 
     var body: some View {
@@ -380,10 +384,24 @@ struct RunningSettingsForm: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
             if let ready = t.ready {
-                Text("ready: \(ready.detail)")
-                    .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(ready.ready ? SettingsPalette.coolWhite.opacity(0.84) : SettingsPalette.caution)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ready: \(ready.detail)")
+                        .font(.system(size: SettingsScale.body))
+                        .foregroundStyle(ready.ready ? SettingsPalette.coolWhite.opacity(0.84) : SettingsPalette.caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // The app's root on the Try's port, never the ready path (design-language §5).
+                    if ready.ready, let port = t.port {
+                        Button(WebLink.label(runAppLabel(port: port))) {
+                            openLink(runAppAddress(port: port), NSEvent.modifierFlags.contains(.option))
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: SettingsScale.body, weight: .medium))
+                        .foregroundStyle(WebLink.colour)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help("Open \(runAppAddress(port: port)) in Wakil's browser; ⌥-click for the system browser")
+                        .accessibilityIdentifier("settings.running.tryApp")
+                    }
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -581,6 +599,7 @@ struct RunningSettingsForm: View {
             if let error { state.error = error }
             if case .object(let o)? = r {
                 if case .string(let w)? = o["workspace"] { state.workspace = w }
+                if case .integer(let port)? = o["port"] { state.port = Int(port) }
                 if let report = try? decodeTry(.object(o)) {
                     state.passed = report.passed
                     state.steps = report.steps

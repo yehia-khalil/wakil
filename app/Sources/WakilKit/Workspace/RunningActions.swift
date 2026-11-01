@@ -58,7 +58,7 @@ public func registerRunningActions(
         description: "Try a repo's saved recipe (decision 13) in a throwaway workspace: a copy of the repo from its "
             + "folder's commit, its own ports; services, setup, the processes headless, the ready check, then the "
             + "processes stopped and teardown run. Answers the workspace (end it with running_try_end), passed, and "
-            + "every step with its output whole. Cancel stops it. Operator-only.",
+            + "every step with its output whole, and the Try's port. Cancel stops it. Operator-only.",
         kind: .control, audience: .operatorOnly,
         schema: .object(["type": .string("object"), "properties": .object([
             "repo": str, "root": str, "project": str, "environment": str, "projectPath": str,
@@ -70,8 +70,11 @@ public func registerRunningActions(
                 root: try runParam(params, "root", action: "running_try"),
                 project: try runParam(params, "project", action: "running_try"),
                 environment: s("environment") ?? "", projectPath: s("projectPath"))
+            // The Try's own port: its result links the app there (the walk).
+            let port = await runner.router.store.workspace(w)?.checkouts.first?.ports?.first
             return .object([
                 "workspace": .string(w), "passed": .bool(result.passed),
+                "port": port.map { .integer(Int64($0)) } ?? .null,
                 "steps": .array(result.steps.map { st in .object([
                     "phase": .string(st.phase), "name": .string(st.name), "command": .string(st.command), "ok": .bool(st.ok),
                     "exitCode": .integer(Int64(st.exitCode)), "output": .string(st.output), "seconds": .number(st.seconds),
