@@ -600,6 +600,8 @@ struct RunningSettingsForm: View {
             if case .object(let o)? = r {
                 if case .string(let w)? = o["workspace"] { state.workspace = w }
                 if case .integer(let port)? = o["port"] { state.port = Int(port) }
+                // The Try's workspace went with it; a copy with changes was kept, said whole (Rule 8).
+                if case .string(let kept)? = o["kept"] { refusal = kept }
                 if let report = try? decodeTry(.object(o)) {
                     state.passed = report.passed
                     state.steps = report.steps
@@ -616,7 +618,8 @@ struct RunningSettingsForm: View {
         }
     }
 
-    /// Try's workspace is archived when the form closes or another Try starts.
+    /// A Try cleans its own workspace when it ends; the form closing or another Try starting
+    /// ends one still recorded (a copy kept for its changes).
     private func endTry() {
         guard let w = tryState?.workspace else { return }
         tryState?.workspace = nil

@@ -399,6 +399,42 @@ func TestWorktreeDiscardRemovesTheCheckoutAndTheBranchItMade(t *testing.T) {
 	}
 }
 
+// A Try's copy whose only extra files are ignored ones its prepare wrote — .env, vendor/ with a
+// nested clone, node_modules/ — shows nothing in git status, and is taken back like a clean one
+// (the walk: the leftover sweep must not keep such a copy as changed).
+func TestWorktreeDiscardRemovesACheckoutWhoseOnlyExtraFilesAreIgnored(t *testing.T) {
+	repo, home, w := worktreeFixture(t)
+	ctx := context.Background()
+	os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".env\nvendor/\nnode_modules/\n"), 0o644)
+	gitIn(t, repo, "add", ".gitignore")
+	gitIn(t, repo, "commit", "-qm", "ignore")
+	path := filepath.Join(home, "try-web", "core")
+	if _, err := w.WorktreeAdd(ctx, WorktreeAddOptions{Path: path, Branch: "wakil-try/try-web", Create: true}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(path, ".env"), []byte("APP_PORT=41210\n"), 0o644)
+	os.MkdirAll(filepath.Join(path, "node_modules", "m"), 0o755)
+	os.WriteFile(filepath.Join(path, "node_modules", "m", "i.js"), []byte("x\n"), 0o644)
+	clone := filepath.Join(path, "vendor", "pkg")
+	os.MkdirAll(clone, 0o755)
+	gitIn(t, clone, "init", "-q")
+	os.WriteFile(filepath.Join(clone, "f"), []byte("x\n"), 0o644)
+	gitIn(t, clone, "add", "f")
+	gitIn(t, clone, "commit", "-qm", "clone")
+	if got := gitOut(t, path, "status", "--porcelain"); got != "" {
+		t.Fatalf("the copy shows changes: %q", got)
+	}
+	if err := w.WorktreeDiscard(ctx, path, "wakil-try/try-web"); err != nil {
+		t.Fatalf("a copy with only ignored files was refused: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("folder left")
+	}
+	if w.localBranchExists(ctx, "wakil-try/try-web") {
+		t.Fatal("the Try's branch was left")
+	}
+}
+
 // A base the agent chose (workspace_start): the new branch starts from the remote's copy of it when
 // there is one, else the local branch; a base that is neither is refused and nothing is made. The
 // branch is still a name to mint, so a taken one steps to -2.

@@ -123,8 +123,10 @@ public actor WorkspaceRunner {
     private var started: [String: Set<String>] = [:]
     /// Per workspace id: repos whose services ran, so Stop runs their teardown.
     private var withServices: [String: [String]] = [:]
-    /// Try's throwaway workspaces still open.
+    /// Try's throwaway workspaces whose Try is still running in this session.
     private var tries: Set<String> = []
+    /// Organisations whose leftover Try workspaces were cleaned in this session.
+    private var sweptOrgs: Set<String> = []
     /// Ready polling cadence, for tests.
     var pollInterval: Duration = .milliseconds(500)
     /// Long one-shot steps (setup, build) may take minutes.
@@ -344,12 +346,25 @@ public actor WorkspaceRunner {
 
     // MARK: Try
 
+    /// A Try's workspace is cleaned when the Try ends, however it ends (amendment 2026-11-01):
+    /// passed, failed, cancelled, refused part-way, or the app quitting mid-Try (then at the next
+    /// launch, `cleanLeftoverTries`). What a Try answers.
+    public struct TryRun: Sendable {
+        public let workspace: String
+        public let result: RunTryResult
+        /// The Try's own port, read before the record went: its result links the app there.
+        public let port: Int?
+        /// Said whole when the copy had changes and was kept (Rule 8); nil when all of it went.
+        public let kept: String?
+    }
+
     /// Try (decision 13): a throwaway workspace with a copy of `root` from its folder's commit and
     /// its own ports; Go runs services, setup, the processes headless and the ready check, then
-    /// stops them and runs teardown. Answers the workspace (for `endTry`) and the report.
+    /// stops them and runs teardown. The workspace — copy, `wakil-try/` branch and record — is
+    /// cleaned before this answers or throws.
     public func tryRecipe(repo: String, root: String, project: String, environment: String,
                           projectPath: String?,
-                          progress: (@Sendable (TryProgressState) async -> Void)? = nil) async throws -> (String, RunTryResult) {
+                          progress: (@Sendable (TryProgressState) async -> Void)? = nil) async throws -> TryRun {
         let began = Date()
         let sink = tryProgressSink
         let progress = progress ?? { p in await sink(project, repo, p) }
@@ -366,18 +381,37 @@ public actor WorkspaceRunner {
                           checkouts: [WorkspaceCheckout(repo: root, path: path, branch: branch)],
                           created: ISO8601DateFormatter().string(from: Date()))
         await router.store.add(w)
-        try await router.store.save()
         tries.insert(w.id)
-        let copied = TryStepState(phase: "copy", command: path, state: .done, seconds: Date().timeIntervalSince(began))
-        await progress(TryProgressState(steps: [copied]))
-        let ready = try await router.ensurePorts(w.id)
+        var port: Int?
+        do {
+            try await router.store.save()
+            let copied = TryStepState(phase: "copy", command: path, state: .done, seconds: Date().timeIntervalSince(began))
+            await progress(TryProgressState(steps: [copied]))
+            let ready = try await router.ensurePorts(w.id)
+            port = ready.checkouts.first?.ports?.first
+            let result = try await followTry(ready, repo: repo, project: project, projectPath: projectPath,
+                                             copied: copied, progress: progress)
+            tries.remove(w.id)
+            let kept = await finishTry(w.id, teardown: false)
+            return TryRun(workspace: w.id, result: result, port: port, kept: kept)
+        } catch {
+            tries.remove(w.id)
+            // Go's job may not have reached its teardown (it was never started, or its status
+            // stopped answering), so it is run here.
+            if let kept = await finishTry(w.id, teardown: true) { throw RunError("\(error)\n\(kept)") }
+            throw error
+        }
+    }
+
+    /// Starts Go's Try job and follows it until it finished; Cancel stops the running step (Rule 4)
+    /// and the job is still followed until teardown ran.
+    private func followTry(_ w: Workspace, repo: String, project: String, projectPath: String?,
+                           copied: TryStepState, progress: @Sendable (TryProgressState) async -> Void) async throws -> RunTryResult {
         // The project is named (by key, and by path when Settings has it): Go plans that project's
         // recipe, never the screen's (the walk).
-        var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(slug), "checkouts": checkoutsArg(ready),
+        var args: [String: JSONValue] = ["repo": .string(repo), "workspace": .string(w.slug), "checkouts": checkoutsArg(w),
                                          "project": .string(project)]
         if let projectPath { args["projectPath"] = .string(projectPath) }
-        // Go runs Try as a job the window follows step by step; Cancel stops the running step (Rule 4)
-        // and the job is followed until teardown ran.
         let started = try await call("recipe_try_start", args, timeout: MCPClient.mutationReplyTimeout)
         guard let job = router.string(started, "job"), !job.isEmpty else { throw RunError("recipe_try_start answered no job") }
         var cancelled = false
@@ -396,22 +430,87 @@ public actor WorkspaceRunner {
             var now = try decodeRun(TryProgressState.self, value)
             now.steps.insert(copied, at: 0)
             await progress(now)
-            if now.finished {
-                return (w.id, now.result ?? RunTryResult(passed: false, steps: []))
-            }
+            if now.finished { return now.result ?? RunTryResult(passed: false, steps: []) }
             let wait = pollInterval
             await Task { try? await Task.sleep(for: wait) }.value
         }
     }
 
-    /// Ends a Try: its workspace archived (the copy removed; its `wakil-try/` branch stays, as
-    /// Archive keeps branches) and forgotten.
-    public func endTry(_ id: String) async throws {
-        guard tries.contains(id) else { throw RunError("\(id) is not a Try workspace") }
-        _ = try await router.archive(id, confirmed: true)
-        await router.store.remove(id)
-        try await router.store.save()
-        tries.remove(id)
+    /// The form closing or another Try starting: a Try already cleans itself when it ends, so this
+    /// cleans only one that is still recorded (a copy kept for its changes is tried again).
+    @discardableResult
+    public func endTry(_ id: String) async throws -> String? {
+        guard id.hasPrefix("try-") else { throw RunError("\(id) is not a Try workspace") }
+        guard !tries.contains(id), let w = await router.store.workspace(id), isTry(w) else { return nil }
+        return await finishTry(id, teardown: false)
+    }
+
+    /// At launch (and the first time an organisation is open in this session): every Try workspace
+    /// the record still holds outlived its Try — the app quit mid-Try — and is cleaned, its
+    /// teardown run first. Answers what was kept, each said whole. Once per organisation; a record
+    /// that could not be read is refused whole and tried again at the next call.
+    @discardableResult
+    public func cleanLeftoverTries(org: String) async throws -> [String] {
+        guard !org.isEmpty, !sweptOrgs.contains(org) else { return [] }
+        if let failure = await router.load(org: org) { throw RunError(failure) }
+        sweptOrgs.insert(org)
+        var said: [String] = []
+        for w in await router.store.all() where isTry(w) && !tries.contains(w.id) {
+            if let kept = await finishTry(w.id, teardown: true) { said.append(kept) }
+        }
+        return said
+    }
+
+    /// A Try's record: its id and its `wakil-try/` branch, never an operator's workspace.
+    nonisolated private func isTry(_ w: Workspace) -> Bool {
+        w.id.hasPrefix("try-") && (w.branch ?? "").hasPrefix("wakil-try/")
+    }
+
+    /// Unstructured, so a cancelled Try (Cancel, the form closing) is still cleaned.
+    private func finishTry(_ id: String, teardown: Bool) async -> String? {
+        await Task { await self.cleanTry(id, teardown: teardown) }.value
+    }
+
+    /// Stops what runs in the Try's workspace and runs its teardown (when Go's job did not), then
+    /// takes back each copy with its `wakil-try/` branch (`git_worktree_discard`: refused when
+    /// anything is written in it, so nothing is lost) and forgets the record. A copy git will not
+    /// remove is kept with the record, and said whole: where it is and git's words.
+    private func cleanTry(_ id: String, teardown: Bool) async -> String? {
+        guard let w = await router.store.workspace(id) else { return nil }
+        _ = try? await stop(id)
+        if teardown {
+            for co in w.checkouts where co.path != nil {
+                _ = try? await oneShot(w, repo: co.repoName, phases: [RunPhase.teardown])
+            }
+        }
+        var kept: [String] = []
+        var remaining = w.checkouts
+        for co in w.checkouts {
+            guard let path = co.path else { continue }
+            do {
+                _ = try await router.call("git_worktree_discard", [
+                    "root": .string(co.repo), "project": .string(w.project), "slug": .string(w.slug), "branch": .string(co.branch),
+                ])
+                remaining.removeAll { $0.repo == co.repo }
+            } catch {
+                kept.append("its copy of \(co.repoName) at \(path) has changes, so it is kept with its branch \(co.branch):\n\(error)")
+            }
+        }
+        states[id] = nil
+        started[id] = nil
+        withServices[id] = nil
+        if kept.isEmpty {
+            await router.store.remove(id)
+        } else {
+            let left = remaining
+            await router.store.update(id) { $0.checkouts = left }
+        }
+        do {
+            try await router.store.save()
+        } catch {
+            kept.append("workspaces.json could not be saved: \(error)")
+        }
+        return kept.isEmpty ? nil : "‘\(w.name)’ was not removed: " + kept.joined(separator: "\n")
     }
 
     // MARK: Go

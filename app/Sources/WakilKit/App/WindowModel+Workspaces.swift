@@ -150,7 +150,8 @@ extension WindowModel {
 extension WindowModel {
     /// Points the runner at this window (`WakilWiring.useActiveContext(of:)`).
     public func useRunner(_ runner: WorkspaceRunner) {
-        Task {
+        workspaceRunner = runner
+        runnerWiring = Task {
             await runner.use(say: { [weak self] conversation, text, isError in
                 await self?.sayRun(conversation, text, isError: isError)
             })
@@ -158,6 +159,28 @@ extension WindowModel {
             await runner.use(tryProgress: { [weak self] project, repo, progress in
                 await self?.setRunningTryProgress(project: project, repo: repo, progress)
             })
+            // The window may already have its organisation (it was read before the wiring ended).
+            self.sweepLeftoverTries()
+        }
+    }
+
+    /// Sweeps the active organisation's leftover Try workspaces: whenever an organisation becomes
+    /// active (`organization`'s didSet), after each context read, and once the runner is wired —
+    /// never before. The runner sweeps each organisation once per launch; one whose record could
+    /// not be read is swept at the next of these. A copy kept for its changes is said whole (Rule 8).
+    func sweepLeftoverTries() {
+        guard let runner = workspaceRunner, let wiring = runnerWiring, !organization.isEmpty else { return }
+        let org = organization
+        let previous = trySweep
+        trySweep = Task {
+            await wiring.value
+            await previous?.value
+            do {
+                let kept = try await runner.cleanLeftoverTries(org: org)
+                if !kept.isEmpty { self.say(kept.joined(separator: "\n")) }
+            } catch {
+                self.say("Leftover Try workspaces of \(org) were not cleaned: \(error)")
+            }
         }
     }
 

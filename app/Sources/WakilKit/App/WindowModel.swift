@@ -28,7 +28,11 @@ public final class WindowModel {
     /// environment is on screen at all times). Empty until
     /// `refreshContext()` has answered — `environmentLabel` is what the view
     /// draws, and it says so rather than showing a blank.
-    public private(set) var organization = ""
+    public private(set) var organization = "" {
+        // Workspaces, piece 2: an organisation becoming active — at launch, once its context is
+        // read, or by a switch — has its leftover Try workspaces swept (amendment 2026-11-01).
+        didSet { if organization != oldValue { sweepLeftoverTries() } }
+    }
     /// The home directory `~/.wakil` lives under; set by the app when it builds the window
     /// (`WindowSession.start`), so an overridden `HOME` moves it with everything else.
     public var browserHome: URL?
@@ -119,6 +123,12 @@ public final class WindowModel {
     /// Workspaces, piece 1: the write rule's router (`WakilWiring.workspaces`), set by
     /// `useWorkspaces`; nil in a window built without one (tests), whose writes are not routed.
     @ObservationIgnored var workspaceRouter: WorkspaceRouter?
+    /// Workspaces, piece 2: the runner (`useRunner`); it cleans leftover Try workspaces.
+    @ObservationIgnored var workspaceRunner: WorkspaceRunner?
+    /// The runner's wiring (`useRunner`): no sweep starts before it finished.
+    @ObservationIgnored var runnerWiring: Task<Void, Never>?
+    /// The latest leftover-Try sweep (`sweepLeftoverTries`); tests await it.
+    @ObservationIgnored var trySweep: Task<Void, Never>?
     /// What an agent's place's own `wakil-ctx` says about it — its roots and production
     /// flags — read through `placeClients`. Nil exactly when that is: a window that routes no
     /// call has no place but its own to answer for.
@@ -2293,6 +2303,9 @@ public final class WindowModel {
             await refreshKeymap()
             // 3c-ii: launch, and an org, project or environment switch, all end here.
             await refreshBrowserSites()
+            // Workspaces, piece 2: a Try the app quit in the middle of leaves its workspace; an
+            // organisation whose record could not be read before is swept again here.
+            sweepLeftoverTries()
             // Capacity is read once the providers and the org are known,
             // so the hairlines are not empty until a turn ends or
             // Settings opens. Launch and an org switch both come here, so

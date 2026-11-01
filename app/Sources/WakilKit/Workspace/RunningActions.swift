@@ -58,23 +58,27 @@ public func registerRunningActions(
         description: "Try a repo's saved recipe (decision 13) in a throwaway workspace: a copy of the repo from its "
             + "folder's commit, its own ports; services, setup, the processes headless, the ready check, then the "
             + "processes stopped and teardown run. Answers the workspace (end it with running_try_end), passed, and "
-            + "every step with its output whole, and the Try's port. Cancel stops it. Operator-only.",
+            + "every step with its output whole, and the Try's port. The workspace — copy, wakil-try/ branch, record — "
+            + "is removed when the Try ends, however it ends; a copy with changes is kept and said in kept. Cancel stops "
+            + "it. Operator-only.",
         kind: .control, audience: .operatorOnly,
         schema: .object(["type": .string("object"), "properties": .object([
             "repo": str, "root": str, "project": str, "environment": str, "projectPath": str,
         ]), "required": .array([.string("repo"), .string("root"), .string("project")])]),
         handler: { params in
             func s(_ k: String) -> String? { if case .object(let o) = params, case .string(let v)? = o[k], !v.isEmpty { v } else { nil } }
-            let (w, result) = try await runner.tryRecipe(
+            let tried = try await runner.tryRecipe(
                 repo: try runParam(params, "repo", action: "running_try"),
                 root: try runParam(params, "root", action: "running_try"),
                 project: try runParam(params, "project", action: "running_try"),
                 environment: s("environment") ?? "", projectPath: s("projectPath"))
-            // The Try's own port: its result links the app there (the walk).
-            let port = await runner.router.store.workspace(w)?.checkouts.first?.ports?.first
+            let result = tried.result
+            // The Try's own port: its result links the app there (the walk). Its workspace is
+            // cleaned already; `kept` says whole what was not (amendment 2026-11-01).
             return .object([
-                "workspace": .string(w), "passed": .bool(result.passed),
-                "port": port.map { .integer(Int64($0)) } ?? .null,
+                "workspace": .string(tried.workspace), "passed": .bool(result.passed),
+                "port": tried.port.map { .integer(Int64($0)) } ?? .null,
+                "kept": tried.kept.map { .string($0) } ?? .null,
                 "steps": .array(result.steps.map { st in .object([
                     "phase": .string(st.phase), "name": .string(st.name), "command": .string(st.command), "ok": .bool(st.ok),
                     "exitCode": .integer(Int64(st.exitCode)), "output": .string(st.output), "seconds": .number(st.seconds),
@@ -86,14 +90,15 @@ public func registerRunningActions(
 
     await registry.register(Action(
         name: "running_try_end",
-        description: "End a Try: its throwaway workspace is archived and forgotten (the form closed). Operator-only.",
+        description: "End a Try (the form closed): its throwaway workspace, when still recorded, is removed — copy, "
+            + "wakil-try/ branch and record; a copy with changes is kept and said in kept. Operator-only.",
         kind: .control, audience: .operatorOnly,
         schema: .object(["type": .string("object"), "properties": .object(["workspace": str]),
                          "required": .array([.string("workspace")])]),
         handler: { params in
             let id = try runParam(params, "workspace", action: "running_try_end")
-            try await runner.endTry(id)
-            return .object(["workspace": .string(id)])
+            let kept = try await runner.endTry(id)
+            return .object(["workspace": .string(id), "kept": kept.map { .string($0) } ?? .null])
         }))
 }
 

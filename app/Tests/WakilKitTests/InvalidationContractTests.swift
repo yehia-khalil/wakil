@@ -207,6 +207,12 @@ private let orgIndependent: Set<String> = [
     // Workspaces, piece 1: the router box. Its store keys the record by organisation itself
     // (`WorkspaceStore.ensure(org:)` reads the incoming one's at its first write there).
     "workspaceRouter",
+    // Workspaces, piece 2: the runner box. It cleans leftover Try workspaces once per organisation,
+    // keyed by the organisation it is handed.
+    "workspaceRunner",
+    // Its wiring and the latest sweep: the runner keys each sweep by the organisation it is handed.
+    "runnerWiring",
+    "trySweep",
     // The rail's collapse is the window's own, kept in `window.json`; no switch changes it.
     "railCollapsed",
     // Names: a landed name's journal line, written whichever organisation is on screen; awaited only by

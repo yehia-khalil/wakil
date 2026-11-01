@@ -387,7 +387,7 @@ What building Run, Stop, Build, Try and the Running settings settled (plan, part
   `run:<project>:<owner>:<VAR>`; a step's output has their values masked.
 - **Try's workspace** is a record named *Try <repo>* on a `wakil-try/<slug>` branch; ending it (the
   form closing, another Try) archives and forgets the record. The branch stays, as Archive keeps
-  branches.
+  branches. *(Superseded by the amendment of 2026-11-01: the Try itself removes it, branch too.)*
 - **Not built here:** the card's ▶ Run / Stop and its run line (piece 3 draws `runStatusLine` and
   calls the actions). The drafting conversation and Try's fix: the next amendment.
 
@@ -675,6 +675,44 @@ branch (step 2) or Main's commit (step 0).
   fix…", "‘…’ ended its turn without proposing …" and "Drafted in ‘…’" is a control that opens it in
   Main of the project (the operator asked for the jump, Rule 6), and a turn that ended without a
   proposal offers **Ask again**, which sends the same request once more.
+
+### Amendment 2026-11-01 — piece 2's walk: a Try's workspace goes when the Try ends
+
+The walk found two *Try parkour-warriors* workspaces in `workspaces.json` a day later, the first
+drawn on the home as a card with its stale failure. The cleanup hung on the Running form: it ran
+only when the form closed or another Try started, and only for a Try whose result had come back.
+A Try still running when the form closed (its result never reached the form), a Try that threw
+part-way (no workspace id came back) and the app quitting mid-Try all left the record, the copy and
+the branch; the set of open Tries lived in memory, so after a relaunch `running_try_end` refused
+the leftover as "not a Try workspace", and nothing swept it. The operator then opened the leftover
+card, so a conversation joined it.
+
+- **The Try removes its own workspace when it ends**, however it ends — passed, failed, Cancel,
+  refused part-way — before `running_try` answers or throws (`WorkspaceRunner.tryRecipe`): what it
+  runs is stopped, teardown run when Go's job did not reach it, each copy taken back with its
+  `wakil-try/` branch (`git_worktree_discard`), and the record entry forgotten. The answer still
+  carries the Try's port, read before the record went. `running_try_end` (the form closing) only
+  cleans one that is still recorded.
+- **Whenever an organisation becomes active** — at launch once its context is read, and on every
+  switch to it — once per organisation per launch and never before the runner is wired, every
+  record entry that is a Try's (`try-` id on a `wakil-try/` branch) and is not running in this
+  session is cleaned the same way, its teardown run first (`cleanLeftoverTries`). An organisation
+  whose record could not be read is swept at its next context read. An operator's workspace is
+  never touched. *(The first build swept only on one branch of the context read, which a window
+  opened with no organisation never reached, so a relaunch kept both leftovers.)*
+- **Ignored files are not changes.** A copy whose only extra files are ignored ones the Try's own
+  prepare wrote — `.env`, `vendor/` and `node_modules/` clones — shows nothing in `git status`, and
+  `git_worktree_discard` removes it with them; only tracked changes or untracked, unignored files
+  keep a copy.
+- **A copy with changes is kept**: git refuses to remove it, so the copy, its branch and the record
+  stay, and Wakil says so whole — the copy's path, its branch and git's words — in the Try's result
+  in the form, or on the window's status line at launch (Rule 8). The next launch tries again.
+- **The call: a Try waiting on a fix proposal does not keep its workspace.** The fix conversation
+  lives in Main of the project and is sent every step, the failing one's output whole, and the
+  recipe as tried; it reads the repo from Main's folder and proposes a recipe, writing nothing. It
+  never needs the throwaway copy, and keeping the workspace until the proposal is saved or
+  discarded would leave a card on the home and a copy on disk for as long as the operator leaves the
+  proposal open — the defect itself. The next ▶ Try proves the fixed recipe in a fresh workspace.
 
 ## Errors and edges
 

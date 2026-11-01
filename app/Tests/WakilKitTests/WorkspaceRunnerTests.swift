@@ -324,7 +324,7 @@ private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params:
         }
     })
     await r.router.use(git: git)
-    let (id, _) = try await r.tryRecipe(repo: "web", root: "/q/web", project: "parkour", environment: "", projectPath: nil)
+    let tried0 = try await r.tryRecipe(repo: "web", root: "/q/web", project: "parkour", environment: "", projectPath: nil)
     let add = try #require(await git.calls.first { $0.name == "git_worktree_add" })
     guard case .object(let a) = add.arguments else { Issue.record("add args"); return }
     #expect(a["root"] == .string("/q/web"))
@@ -332,8 +332,8 @@ private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params:
     let tried = try #require(await ctx.calls.first { $0.name == "recipe_try_start" })
     guard case .object(let t) = tried.arguments else { Issue.record("try args"); return }
     #expect(t["project"] == .string("parkour"))
-    try await r.endTry(id)
-    let rm = try #require(await git.calls.first { $0.name == "git_worktree_remove" })
+    #expect(await r.router.store.workspace(tried0.workspace) == nil, "the Try cleans its workspace when it ends")
+    let rm = try #require(await git.calls.first { $0.name == "git_worktree_discard" })
     guard case .object(let m) = rm.arguments else { Issue.record("remove args"); return }
     #expect(m["root"] == .string("/q/web"))
     #expect(m["project"] == .string("parkour"))
@@ -381,8 +381,10 @@ private func agentDispatch(_ registry: ActionRegistry, _ name: String, _ params:
     }
     for _ in 0..<500 where await seen.all.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
     task.cancel()
-    let (_, result) = try await task.value
-    #expect(!result.passed)
+    let ended = try await task.value
+    #expect(!ended.result.passed)
+    #expect(await r.router.store.workspace(ended.workspace) == nil, "a cancelled Try's workspace is cleaned too")
+    #expect(await git.calls.contains { $0.name == "git_worktree_discard" })
     let all = await seen.all
     #expect(all.first?.steps.map(\.title) == ["copy made"])
     #expect(all.dropFirst().first?.steps.map(\.mark) == ["✓", "●"], "the copy row, then Go's running step")
@@ -415,4 +417,168 @@ private actor ProgressLog {
     let (r2, _, terms2) = await runner(["web": never])
     await #expect(throws: RunError.self) { try await r2.run("w1", repo: "web") }
     #expect(await terms2.started.map(\.title) == ["web · dev"])
+}
+
+// The walk: two "Try parkour-warriors" workspaces outlived their Tries — the cleanup hung on the
+// Running form closing, an in-memory set nothing survived a relaunch with, and no exit path of
+// tryRecipe itself. A Try's workspace is now cleaned when the Try ends, however it ends, and a
+// leftover at the next launch (amendment 2026-11-01).
+
+private func tryGit(failDiscard: Bool = false) -> RecordingToolCaller {
+    RecordingToolCaller(reply: { name, args in
+        guard case .object(let a) = args else { return .object([:]) }
+        func s(_ k: String) -> String { if case .string(let v)? = a[k] { v } else { "" } }
+        switch name {
+        case "git_worktree_add":
+            return .object(["path": .string("/h/ws/\(s("project"))/\(s("slug"))/web"), "branch": .string(s("branch"))])
+        case "git_worktree_discard" where failDiscard:
+            throw RunError("fatal: '/h/ws/estate/try-web/web' contains modified or untracked files, use --force to delete it")
+        default: return .object([:])
+        }
+    })
+}
+
+@Test func aTryCleansItsWorkspaceCopyAndBranchWhenItEnds() async throws {
+    let (r, _, _) = await runner(["web": PlanSpec()])
+    let git = tryGit()
+    await r.router.use(git: git)
+    let tried = try await r.tryRecipe(repo: "web", root: "/p/web", project: "estate", environment: "", projectPath: nil)
+    #expect(tried.result.passed)
+    #expect(tried.port == 41200, "the port is answered before the record goes")
+    #expect(tried.kept == nil)
+    #expect(await r.router.store.workspace(tried.workspace) == nil)
+    let discard = try #require(await git.calls.first { $0.name == "git_worktree_discard" })
+    guard case .object(let a) = discard.arguments else { Issue.record("discard args"); return }
+    #expect(a["root"] == .string("/p/web"))
+    #expect(a["project"] == .string("estate"))
+    #expect(a["slug"] == .string("try-web"))
+    #expect(a["branch"] == .string("wakil-try/try-web"), "the Try's branch goes with its copy")
+    // The form closing afterwards ends nothing twice.
+    _ = try await r.endTry(tried.workspace)
+    #expect(await git.calls.filter { $0.name == "git_worktree_discard" }.count == 1)
+}
+
+@Test func aTryThatFailsToStartStillCleansItsWorkspace() async throws {
+    let (r, _, _) = await runner(["web": PlanSpec()])
+    let git = tryGit()
+    await r.router.use(git: git)
+    let ctx = RecordingToolCaller(reply: { name, _ in
+        if name == "recipe_try_start" { throw RunError("recipe_try_start: no recipe for web") }
+        return .object(["blocks": .object([:])])
+    })
+    await r.use(ctx: ctx)
+    await #expect(throws: RunError.self) {
+        _ = try await r.tryRecipe(repo: "web", root: "/p/web", project: "estate", environment: "", projectPath: nil)
+    }
+    #expect(await r.router.store.all().allSatisfy { !$0.id.hasPrefix("try-") }, "no Try record is left behind")
+    #expect(await git.calls.contains { $0.name == "git_worktree_discard" })
+}
+
+@Test func aTryCopyWithChangesIsKeptAndSaidWhole() async throws {
+    let (r, _, _) = await runner(["web": PlanSpec()])
+    await r.router.use(git: tryGit(failDiscard: true))
+    let tried = try await r.tryRecipe(repo: "web", root: "/p/web", project: "estate", environment: "", projectPath: nil)
+    let kept = try #require(tried.kept)
+    #expect(kept.contains("/h/ws/estate/try-web/web"), "where the copy is")
+    #expect(kept.contains("contains modified or untracked files"), "git's words, whole (Rule 8)")
+    #expect(await r.router.store.workspace(tried.workspace) != nil, "the record keeps the copy it did not remove")
+}
+
+@Test func aLeftoverTryIsCleanedAtLaunchOncePerOrganisation() async throws {
+    let store = WorkspaceStore()
+    let leftover = Workspace(id: "try-old", name: "Try web", slug: "try-web", project: "estate", environment: "",
+                             branch: "wakil-try/try-web",
+                             checkouts: [WorkspaceCheckout(repo: "/p/web", path: "/h/ws/estate/try-web/web",
+                                                           branch: "wakil-try/try-web", ports: PortBlock(first: 41210, count: 10))],
+                             conversations: ["c-opened"])
+    let live = Workspace(id: "w1", name: "Fix OTP", slug: "fix", project: "estate", environment: "staging", branch: "fix",
+                         checkouts: [WorkspaceCheckout(repo: "/p/web", path: "/h/ws/estate/fix/web", branch: "fix")])
+    let saved = SavedFiles()
+    await store.use(load: { WorkspacesFile(workspaces: [leftover, live]) }, save: { f in await saved.add(f) })
+    let router = WorkspaceRouter(store: store)
+    let ctx = fakeCtx(["web": PlanSpec()])
+    await router.use(ctx: ctx)
+    let git = tryGit()
+    await router.use(git: git)
+    let r = WorkspaceRunner(router: router, ctx: ctx)
+    let said = try await r.cleanLeftoverTries(org: "initech")
+    #expect(said.isEmpty)
+    #expect(await store.all().map(\.id) == ["w1"], "the operator's own workspace is untouched")
+    #expect(await saved.files.last?.workspaces.map(\.id) == ["w1"])
+    let teardown = try #require(await ctx.calls.first { $0.name == "recipe_run_steps" }, "its teardown runs: the app quit mid-Try")
+    guard case .object(let t) = teardown.arguments else { Issue.record("teardown args"); return }
+    #expect(t["phases"] == .array([.string("teardown")]))
+    #expect(t["workspace"] == .string("try-web"))
+    let discard = try #require(await git.calls.first { $0.name == "git_worktree_discard" })
+    guard case .object(let a) = discard.arguments else { Issue.record("discard args"); return }
+    #expect(a["branch"] == .string("wakil-try/try-web"))
+    _ = try await r.cleanLeftoverTries(org: "initech")
+    #expect(await git.calls.filter { $0.name == "git_worktree_discard" }.count == 1, "once per organisation per launch")
+}
+
+@Test func aLeftoverTryWithChangesIsKeptAndSaidAtLaunch() async throws {
+    let store = WorkspaceStore()
+    let leftover = Workspace(id: "try-old", name: "Try web", slug: "try-web", project: "estate", environment: "",
+                             branch: "wakil-try/try-web",
+                             checkouts: [WorkspaceCheckout(repo: "/p/web", path: "/h/ws/estate/try-web/web", branch: "wakil-try/try-web")])
+    await store.use(load: { WorkspacesFile(workspaces: [leftover]) }, save: { _ in })
+    let router = WorkspaceRouter(store: store)
+    let ctx = fakeCtx(["web": PlanSpec()])
+    await router.use(ctx: ctx)
+    await router.use(git: tryGit(failDiscard: true))
+    let r = WorkspaceRunner(router: router, ctx: ctx)
+    let said = try await r.cleanLeftoverTries(org: "initech")
+    #expect(said.count == 1)
+    #expect(said.first?.contains("Try web") == true)
+    #expect(said.first?.contains("contains modified or untracked files") == true)
+    #expect(await store.workspace("try-old") != nil)
+}
+
+@Test func endingAnUnknownWorkspaceAsATryIsRefused() async throws {
+    let (r, _, _) = await runner([:])
+    await #expect(throws: RunError("nope is not a Try workspace")) { _ = try await r.endTry("nope") }
+    await #expect(throws: RunError("w1 is not a Try workspace")) { _ = try await r.endTry("w1") }
+}
+
+// The walk: after a relaunch two Try records were still in workspaces.json. The sweep hung on one
+// branch of a context read, which a window opened with no organisation never reached; it now runs
+// whenever an organisation becomes active, once the runner is wired.
+@MainActor
+@Test func aWindowThatOpensAnOrganisationAfterWiringSweepsItsLeftoverTriesOnce() async throws {
+    let store = WorkspaceStore()
+    let leftover = Workspace(id: "try-old", name: "Try web", slug: "try-web", project: "estate", environment: "",
+                             branch: "wakil-try/try-web",
+                             checkouts: [WorkspaceCheckout(repo: "/p/web", path: "/h/ws/estate/try-web/web", branch: "wakil-try/try-web")])
+    // wakil-git answers the organisation it was re-pointed at; initech's record keeps its leftover,
+    // so a second sweep of initech would discard it again.
+    let pointed = PointedOrg()
+    await store.use(load: { await pointed.org == "initech" ? WorkspacesFile(workspaces: [leftover]) : WorkspacesFile() },
+                    save: { _ in })
+    let router = WorkspaceRouter(store: store)
+    let ctx = fakeCtx(["web": PlanSpec()])
+    await router.use(ctx: ctx)
+    let git = tryGit()
+    await router.use(git: git)
+    let r = WorkspaceRunner(router: router, ctx: ctx)
+    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "",
+                                       orgSwitcher: { org in await pointed.point(org); return [] })
+    model.useRunner(r)
+    await model.runnerWiring?.value
+    await model.trySweep?.value
+    #expect(await git.calls.isEmpty, "no organisation is open yet: nothing is swept")
+    await model.setOrganization("initech")
+    await model.trySweep?.value
+    #expect(await git.calls.filter { $0.name == "git_worktree_discard" }.count == 1, "opening the organisation sweeps it")
+    #expect(await store.workspace("try-old") == nil)
+    await model.setOrganization("umbrella")
+    await model.trySweep?.value
+    #expect(await git.calls.filter { $0.name == "git_worktree_discard" }.count == 1, "umbrella has no leftover")
+    await model.setOrganization("initech")
+    await model.trySweep?.value
+    #expect(await git.calls.filter { $0.name == "git_worktree_discard" }.count == 1, "once per organisation per launch")
+}
+
+private actor PointedOrg {
+    var org = ""
+    func point(_ org: String) { self.org = org }
 }
