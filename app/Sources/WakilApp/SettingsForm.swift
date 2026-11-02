@@ -56,11 +56,14 @@ enum SettingsScale {
 
 /// §5's colours, as the settings pane uses them. Text is cool white stepped
 /// down by opacity, never by hue; violet is luminance and marks what is
-/// active or chosen; amber is caution and nothing else.
+/// active or chosen; amber is caution and nothing else; red is production and what destroys;
+/// green is staging and what is healthy.
 enum SettingsPalette {
     static let coolWhite = Color(red: 0.910, green: 0.925, blue: 0.965)   // #e8ecf6
     static let caution = Color(red: 0.910, green: 0.706, blue: 0.353)     // #e8b45a
     static let accent = Color(red: 0.486, green: 0.361, blue: 1.0)        // #7c5cff
+    static let destructive = Color(red: 0.910, green: 0.361, blue: 0.361) // #e85c5c
+    static let healthy = Color(red: 0.545, green: 0.878, blue: 0.784)     // #8be0c8
 }
 
 /// A form's own surface inside a pane: a slightly raised slab with a

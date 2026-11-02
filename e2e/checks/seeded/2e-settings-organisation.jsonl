@@ -2,7 +2,7 @@
 {"do":{"click":"settings.tree.organisation"}}
 {"expect":{"tree":"contains","text":"IDENTITY"}}
 {"expect":{"tree":"contains","text":"Display name"}}
-{"expect":{"tree":"contains","text":"ACCOUNTS"}}
+{"expect":{"tree":"contains","text":"AGENT INSTRUCTIONS"}}
 {"expect":{"tree":"contains","text":"CONNECTIONS"}}
 {"expect":{"tree":"contains","text":"GIT"}}
 {"do":{"click":"settings.org.connections.jira"}}

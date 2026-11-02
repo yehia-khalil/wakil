@@ -413,11 +413,18 @@ struct SettingsPane: View {
     private var treeColumn: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                row(.editor, label: "Editor", depth: 0)
-                row(.browser, label: "Browser", depth: 0)
-                row(.keyboard, label: "Keyboard", depth: 0)
-                row(.organisation, label: tree?.org.label ?? "Organisation", depth: 0)
-                row(.providers, label: "Providers", depth: 0, badge: tree.map { "\($0.providers.count)" })
+                // Grouped by scope (settings revamp, §14): what is the app's, what is this
+                // organisation's, then the projects. A heading is a label, never a row.
+                scopeHeading("WAKIL", identifier: "settings.tree.wakilHeading", first: true)
+                ForEach(SettingsNode.topLevel(.wakil), id: \.self) { node in
+                    row(node, label: node.label, depth: 0)
+                }
+                scopeHeading((tree?.org.label ?? "Organisation").uppercased(),
+                             identifier: "settings.tree.organisationHeading")
+                ForEach(SettingsNode.topLevel(.organisation), id: \.self) { node in
+                    row(node, label: node.label, depth: 0,
+                        badge: node == .providers ? tree.map { "\($0.providers.count)" } : nil)
+                }
 
                 projectsHeading
                 if expansion.projectsOpen {
@@ -436,12 +443,15 @@ struct SettingsPane: View {
                         }
                         if projectOpen {
                             row(.projectEditor(project.name), label: "Editor", depth: 2, disclosure: .leaf)
+                            // A label over the environments, not a level: they stay at depth 2.
+                            environmentsHeading(project: project.name)
                             ForEach(project.environments, id: \.name) { environment in
                                 let environmentOpen = expansion.isOpen(
                                     project: project.name, environment: environment.name)
                                 row(
                                     .environment(project: project.name, environment: environment.name),
                                     label: environment.name, depth: 2,
+                                    dot: environmentDot(environment),
                                     disclosure: .branch(
                                         open: environmentOpen,
                                         identifier: "settings.tree.environment.\(project.name).\(environment.name).disclosure")
@@ -664,8 +674,44 @@ struct SettingsPane: View {
 
     /// One node. A branch's chevron is its own button, calling `toggle`, beside the row's button,
     /// so opening a branch never selects it and selecting one never opens or closes it.
+    /// A scope's heading in the tree (settings revamp): WAKIL and the organisation's name, drawn
+    /// as PROJECTS is but neither opening nor selecting anything.
+    private func scopeHeading(_ text: String, identifier: String, first: Bool = false) -> some View {
+        Text(text)
+            .font(.system(size: Scale.micro, weight: .medium))
+            .tracking(Scale.microTracking)
+            .foregroundStyle(coolWhite.opacity(0.32))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 8)
+            .padding(.top, first ? 0 : 10)
+            .padding(.bottom, 2)
+            .accessibilityIdentifier(identifier)
+    }
+
+    /// ENVIRONMENTS over a project's environments: a micro label at their depth, not a level and
+    /// not a stop for ↑/↓.
+    private func environmentsHeading(project: String) -> some View {
+        Text("ENVIRONMENTS")
+            .font(.system(size: 8.5, weight: .medium))
+            .tracking(Scale.microTracking)
+            .foregroundStyle(coolWhite.opacity(0.32))
+            .padding(.leading, CGFloat(2) * 12 + 8 + 14)
+            .padding(.top, 6)
+            .accessibilityIdentifier("settings.tree.project.\(project).environmentsHeading")
+    }
+
+    /// §5: red for production, green for anything else; nothing when an older `wakil-ctx` did not
+    /// say (Inv. 8 — the environment's kind is always visible where it is known).
+    private func environmentDot(_ environment: SettingsEnvironment) -> Color? {
+        switch environment.production {
+        case true?: return SettingsPalette.destructive
+        case false?: return SettingsPalette.healthy
+        case nil: return nil
+        }
+    }
+
     private func row(
-        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil,
+        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil, dot: Color? = nil,
         disclosure: Disclosure = .none, toggle: (() -> Void)? = nil
     ) -> some View {
         let selected = selection == node
@@ -699,6 +745,10 @@ struct SettingsPane: View {
                 treeFocused = true
             } label: {
                 HStack(spacing: 6) {
+                    if let dot {
+                        Circle().fill(dot).frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
                     Text(label)
                         .font(.system(size: Scale.door))
                         .foregroundStyle(coolWhite.opacity(selected ? 0.95 : 0.62))
@@ -1035,10 +1085,6 @@ struct SettingsPane: View {
                 SettingsRow("ID") { SettingsValue(text: tree.org.id) }
                 organisationEditor(.displayName, label: "Display name", in: tree)
             }
-            SettingsSection("Accounts") {
-                organisationEditor(.defaultProvider, label: "Default", in: tree)
-                speechRow(tree: tree)
-            }
             // Connections: the Jira entry (its site moved here from its own section) and the
             // organisation's own MCP servers, each with its page.
             SettingsSection("Connections") {
@@ -1075,8 +1121,10 @@ struct SettingsPane: View {
             }
 
         case .providers:
-            // Three headed sections (2026-10-21): the accounts, the local models, and the choice
-            // quick tasks make between them — after both, so what it chooses from is read first.
+            // Accounts (settings revamp): the Claude accounts, the local models, and which account
+            // a new window starts on. Quick tasks, which chooses among both, is its own page.
+            // Titled Accounts, not "Claude accounts" as the comp drew it: the section's identifier is
+            // its title, and `settings.section.accounts` is held inside the pane by two checks.
             SettingsSection("Accounts") {
                 // The subject column's own spacing, which the table's notes and rows were drawn in.
                 VStack(alignment: .leading, spacing: 10) { accountTable() }
@@ -1095,28 +1143,37 @@ struct SettingsPane: View {
                         return refusal
                     })
             }
+            SettingsSection("Default account") {
+                organisationEditor(.defaultProvider, label: "Default", in: tree)
+            }
+        case .quickTasks:
+            // One group, but its About stays beside its header, so the page keeps the section.
             SettingsSection("Quick tasks", accessory: {
                 SettingsAboutButton(label: "About quick tasks", id: "settings.quickTasks.about", text: quickTasksAbout)
             }) {
                 quickTasksRow(tree: tree)
             }
+        case .browsingData:
+            BrowsingDataSettingsForm(
+                organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
+                organisationId: tree.org.id,
+                clearData: clearBrowserData)
+        case .speech:
+            // A page of one group draws its rows without a header (§14).
+            speechRow(tree: tree)
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
         case .browser:
             BrowserSettingsForm(
                 browser: tree.browser,
-                organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
-                organisationId: tree.org.id,
                 pullRequestsAbsent: browserPullRequestsAbsent,
-                save: saveBrowserSettings, clearData: clearBrowserData,
+                save: saveBrowserSettings,
                 pictureInPictureUnavailable: BrowserPictureInPicture.unavailableLine(
                     missing: BrowserPictureInPictureSupport.missing))
         case .keyboard:
             KeyboardSettingsForm(
                 keymap: keymap, error: keymapError, setKey: setKey, setKeys: setKeys,
                 recordingKey: recordingKey)
-        case .quickTasks, .browsingData, .speech:
-            EmptyView()   // Drawn by Task 5 of the settings revamp.
         case .projectEditor(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 EditorProjectSettingsForm(

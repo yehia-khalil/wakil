@@ -1,5 +1,5 @@
 {"do":{"hotkey":"cmd+,"}}
-{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.tree.speech"}}
 {"expect":{"tree":"contains","text":"Speech"}}
 {"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","speechProvider":"whisper"}}}
 {"do":{"click":"settings.reload"}}
