@@ -57,6 +57,10 @@ public struct HomeInput: Sendable {
     public var runningPorts: [String: [Int]]
     /// Each workspace's run tone (`runTone`): the colour its running line reads in.
     public var runningTones: [String: RunTone]
+    /// The repos of each project that have something to run (`homeReposWithRecipe`), by registry key:
+    /// a card none of whose copies has one offers **Set up running…** instead of ▶. A project not
+    /// read yet is absent, and its cards keep ▶ (what Go says on Run stands until it is read).
+    public var recipeRepos: [String: Set<String>]
     /// Each project's default environment, where known: a card in another environment tags it. The
     /// window's own project defaults to the window's environment.
     public var defaultEnvironments: [String: String]
@@ -67,7 +71,8 @@ public struct HomeInput: Sendable {
                 workspaces: [WorkspaceListing] = [], live: [LiveConversation] = [], tickets: [TicketNeedsRow] = [],
                 past: [HomePastConversation] = [], filter: String? = nil,
                 branchPRs: [HomeBranch: [PullRequestState]] = [:], running: [String: String] = [:],
-                runningPorts: [String: [Int]] = [:], runningTones: [String: RunTone] = [:], defaultEnvironments: [String: String] = [:],
+                runningPorts: [String: [Int]] = [:], runningTones: [String: RunTone] = [:], recipeRepos: [String: Set<String>] = [:],
+                defaultEnvironments: [String: String] = [:],
                 isProduction: @escaping @Sendable (String, String) -> Bool = { _, e in e.lowercased() == "production" }) {
         self.organization = organization
         self.project = project
@@ -82,6 +87,7 @@ public struct HomeInput: Sendable {
         self.running = running
         self.runningPorts = runningPorts
         self.runningTones = runningTones
+        self.recipeRepos = recipeRepos
         self.defaultEnvironments = defaultEnvironments
         self.isProduction = isProduction
     }
@@ -204,10 +210,31 @@ public struct HomeCard: Sendable, Equatable, Identifiable {
     public var runnable: [HomeRepo] { repos.filter { $0.made && !$0.inMain } }
     /// The compact row's running token: its ports (`:41200`), else `running`; nil while nothing runs.
     public var runningCompact: String? { running.map(homeRunningPorts) }
-    /// The compact row offers ▶ while nothing runs and a copy is on disk to run in.
-    public var offersRun: Bool { running == nil && !runnable.isEmpty }
+    /// No copy's repo has a recipe (none named, or each marked doesn't run), as last read: ▶ would
+    /// only be refused with "has no recipe yet", so the card offers **Set up running…** instead.
+    public var noRecipe = false
+    /// The compact row offers ▶ while nothing runs, a copy is on disk to run in, and one of the
+    /// copies has a recipe to run.
+    public var offersRun: Bool { running == nil && !runnable.isEmpty && !noRecipe }
+    /// …and **Set up running…** (Settings → the project → Running) where ▶ would have been, when
+    /// none of them has.
+    public var offersSetUpRunning: Bool { running == nil && !runnable.isEmpty && noRecipe }
     /// `1 repo` / `7 repos`.
     public var repoCount: String { repos.count == 1 ? "1 repo" : "\(repos.count) repos" }
+}
+
+/// The repos of `settings` that have something to run, each by its name and its root's path (a
+/// card's checkout names its root): a recipe named, or overrides of its own — Go's test before
+/// "has no recipe yet" (`RunPlanFor`) — and not marked doesn't run.
+public func homeReposWithRecipe(_ settings: RunningSettings) -> Set<String> {
+    var out: Set<String> = []
+    for r in settings.repos {
+        let doesntRun = r.effective?.doesntRun ?? r.doesNotRun
+        let named = (r.effective?.recipeName ?? r.recipeName).map { !$0.isEmpty } ?? false
+        let own = !(r.effective?.from ?? [:]).isEmpty
+        if !doesntRun && (named || own) { out.insert(r.repo); out.insert(r.path) }
+    }
+    return out
 }
 
 /// The ports a running line names (`api running on :41200 · web running on :41201` → `:41200 :41201`),
@@ -465,7 +492,10 @@ public func homeScreen(_ input: HomeInput) -> HomeScreen {
             latest: latest, opens: mine.first?.id, moveCandidates: candidates,
             archiveAsks: mine.contains { $0.state == .waiting }, merged: homeMergedLine(w, input.branchPRs),
             appLinks: input.running[w.id].map { $0.isEmpty ? [] : (input.runningPorts[w.id] ?? []).map(HomeAppLink.init(port:)) } ?? [],
-            runTone: input.running[w.id].flatMap { $0.isEmpty ? nil : (input.runningTones[w.id] ?? .ready) })
+            runTone: input.running[w.id].flatMap { $0.isEmpty ? nil : (input.runningTones[w.id] ?? .ready) },
+            noRecipe: input.recipeRepos[w.project].map { known in
+                !repos.contains { $0.made && !$0.inMain && (known.contains($0.repo) || known.contains($0.name)) }
+            } ?? false)
     }
     func ordered(_ cards: [HomeCard]) -> [HomeCard] {
         func rank(_ c: HomeCard) -> Int { c.needsYou ? 0 : c.working ? 1 : 2 }

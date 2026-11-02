@@ -535,7 +535,13 @@ struct WakilWindow: View {
         }
         .onChange(of: session?.model.settingsProjectWanted) { _, wanted in
             guard let wanted, let model = session?.model else { return }
-            settingsSelection = .project(wanted)
+            if model.settingsProjectWantsRunning {
+                // A home card's Set up running…: the project's Running node, its project open in the tree.
+                settingsExpansion.setOpen(true, project: wanted)
+                settingsSelection = .projectRunning(wanted)
+            } else {
+                settingsSelection = .project(wanted)
+            }
             model.settingsProjectTaken()
         }
         .onChange(of: session?.model.organization ?? "") { _, _ in

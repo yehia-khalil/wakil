@@ -249,3 +249,35 @@ private func screen(_ workspaces: [WorkspaceListing] = [], live: [LiveConversati
     #expect(homeStartMove(0, by: -1, count: 5) == 0 && homeStartMove(4, by: 1, count: 5) == 4)
     #expect(homeStartMove(1, by: 1, count: 5) == 2)
 }
+
+@Test func aCardWhoseCopiesHaveNoRecipeOffersSetUpRunningInsteadOfRun() {
+    func card(_ known: [String: Set<String>], running: [String: String] = [:], repos: [String] = ["/p/api"]) -> HomeCard {
+        homeScreen(HomeInput(organization: "initech", project: "api", environment: "local", projects: ["api"],
+                             workspaces: [listing(ws("w1", "A", repos: repos))], running: running,
+                             recipeRepos: known)).sections[0].cards[0]
+    }
+    let unread = card([:])
+    #expect(unread.offersRun && !unread.offersSetUpRunning, "a project not read yet keeps ▶")
+    let none = card(["api": []])
+    #expect(!none.offersRun && none.offersSetUpRunning, "no copy has a recipe: Set up running…")
+    let byPath = card(["api": ["/p/api"]])
+    #expect(byPath.offersRun && !byPath.offersSetUpRunning)
+    let byName = card(["api": ["api"]])
+    #expect(byName.offersRun, "a repo is known by its name too")
+    let oneOfTwo = card(["api": ["/p/web"]], repos: ["/p/api", "/p/web"])
+    #expect(oneOfTwo.offersRun && !oneOfTwo.offersSetUpRunning, "one copy with a recipe keeps ▶ as now")
+    let running = card(["api": []], running: ["w1": "api running on :41200"])
+    #expect(!running.offersRun && !running.offersSetUpRunning, "Stop, not either, while something runs")
+
+    let json: JSONValue = try! JSONDecoder().decode(JSONValue.self, from: Data("""
+    {"project":"api","problems":[],"recipes":{"sail":{"processes":[{"name":"app","command":"sail up"}]}},
+     "repos":[
+       {"repo":"api","path":"/p/api","recipe":"sail","effective":{"recipeName":"sail","recipe":{},"from":{"processes":"recipe"}}},
+       {"repo":"web","path":"/p/web","doesntRun":true,"recipe":"sail","effective":{"recipeName":"sail","doesntRun":true,"recipe":{}}},
+       {"repo":"core","path":"/p/core","effective":{"recipe":{}}},
+       {"repo":"own","path":"/p/own","overrides":{"build":"make"},"effective":{"recipe":{"build":"make"},"from":{"build":"repo"}}}]}
+    """.utf8))
+    let s = try! RunningSettings.decode(json)
+    #expect(homeReposWithRecipe(s) == ["api", "/p/api", "own", "/p/own"],
+            "a recipe named or overrides of its own; doesn't run and none are left out")
+}

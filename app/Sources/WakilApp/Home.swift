@@ -48,7 +48,8 @@ struct Home: View {
             + "\(model.ticketNeedsRows.count)|\(filter ?? "")|\(revision)|\(merged.joined(separator: ","))|"
             + model.homeRunLines.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
             + model.homeRunPorts.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
-            + model.homeRunTones.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",")
+            + model.homeRunTones.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ",") + "|"
+            + model.homeRecipeRepos.map { "\($0.key)=\($0.value.sorted())" }.sorted().joined(separator: ",")
     }
 
     var body: some View {
@@ -79,7 +80,9 @@ struct Home: View {
         .task(id: readKey) {
             let projects = await model.listProjects()
             past = await model.landingSessions()
-            screen = await model.readHomeScreen(projects: projects.map(\.name), past: past, filter: filter)
+            screen = await model.readHomeScreen(
+                projects: projects.map(\.name), past: past, filter: filter,
+                projectPaths: Dictionary(projects.compactMap { p in p.path.map { (p.name, $0) } }, uniquingKeysWith: { a, _ in a }))
         }
         .task(id: model.organization) { await model.ticketNeedsRead(force: false) }
         .confirmationDialog(
@@ -376,6 +379,7 @@ struct Home: View {
                     }
                 }
                 if card.offersRun { runControl(card, disabled: disabled) }
+                if card.offersSetUpRunning { setUpRunningControl(card) }
                 Button { toggle(card) } label: {
                     Image(systemName: open ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .semibold))
@@ -451,6 +455,24 @@ struct Home: View {
                 .accessibilityLabel("Run")
                 .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).run")
         }
+    }
+
+    /// Where ▶ would be when no copy's repo has a recipe: Settings → the project → Running, where
+    /// one is drafted or chosen. A navigation the operator asked for by pressing it (Rule 6 is about
+    /// what an action does after; this one's action is going there), never a refusal after the fact.
+    private func setUpRunningControl(_ card: HomeCard) -> some View {
+        Button { Task { await model.openRunningSettings(project: card.project) } } label: {
+            Text("Set up running…")
+                .font(.system(size: 11.5))
+                .foregroundStyle(action)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+                .frame(minHeight: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("No repo of \(card.name) has a recipe yet: open \(card.project)'s Running settings to draft or choose one")
+        .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).setUpRunning")
     }
 
     /// The expanded card, in the brief's order: repos and their whole branches · PRs, checks ↗ and

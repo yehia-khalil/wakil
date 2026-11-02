@@ -967,6 +967,11 @@ public final class WindowModel {
     public internal(set) var homeRunPorts: [String: [Int]] = [:]
     /// Each workspace's run tone (`runTone`), beside `homeRunLines`: the colour the card reads it in.
     public internal(set) var homeRunTones: [String: RunTone] = [:]
+    /// Each project's repos that have a recipe (`homeReposWithRecipe`), by registry key, as the home
+    /// last read them (`readHomeRecipes`): a card none of whose copies has one offers Set up running….
+    public internal(set) var homeRecipeRepos: [String: Set<String>] = [:]
+    /// The projects whose Running settings are being read now (one read per project at a time).
+    @ObservationIgnored var homeRecipeReading: Set<String> = []
     /// The card lines' one-second readers while a run gets going (`tickRunLine`).
     @ObservationIgnored var runLineTickers: [String: Task<Void, Never>] = [:]
     /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.
@@ -2485,6 +2490,7 @@ public final class WindowModel {
         projectKey = ""
         pmProjectKey = ""
         settingsProjectWanted = nil
+        settingsProjectWantsRunning = false
         runningTryProgress = [:]
         for t in runLineTickers.values { t.cancel() }
         runLineTickers = [:]
@@ -2625,6 +2631,8 @@ public final class WindowModel {
         homeStartIn = nil
         homeBranchReadAt = [:]
         homeBranchReading = []
+        homeRecipeRepos = [:]
+        homeRecipeReading = []
         knownWorkspaces = ("", [])
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
@@ -3250,7 +3258,22 @@ public final class WindowModel {
         await openSettings()
     }
 
-    public func settingsProjectTaken() { settingsProjectWanted = nil }
+    public func settingsProjectTaken() {
+        settingsProjectWanted = nil
+        settingsProjectWantsRunning = false
+    }
+
+    /// The Running node `settingsProjectWanted` asks for, rather than the project's own (a home
+    /// card's **Set up running…**); taken with it.
+    public private(set) var settingsProjectWantsRunning = false
+
+    /// Opens Settings at `project`'s Running settings (a registry key): a home card's Set up running….
+    public func openRunningSettings(project: String) async {
+        guard !project.isEmpty else { return }
+        settingsProjectWanted = project
+        settingsProjectWantsRunning = true
+        await openSettings()
+    }
 
     public func openSettings() async {
         guard (try? await registry.dispatch(

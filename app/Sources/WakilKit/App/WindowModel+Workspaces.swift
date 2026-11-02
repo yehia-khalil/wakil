@@ -289,9 +289,12 @@ extension WindowModel {
     /// The home screen (spec, piece 3), from what the window knows now. `projects` and `past` are
     /// the Landing's own reads (`listProjects`, `landingSessions`); a conversation slot with no turn
     /// is a view, not a conversation, so it draws no line — nor does one with a session and no turn yet.
-    public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?) async -> HomeScreen {
+    /// `projectPaths` names each project's project.json (`listProjects`), for the recipe reads.
+    public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?,
+                               projectPaths: [String: String] = [:]) async -> HomeScreen {
         let listings = await workspaceListings()
         readHomeMergedBranches(listings.map(\.workspace))
+        readHomeRecipes(Set(listings.filter { !$0.workspace.archived }.map(\.workspace.project)), paths: projectPaths)
         let judge = await environmentJudge()
         let input = HomeInput(
             organization: organization, project: projectKey, environment: environment, projects: projects,
@@ -301,8 +304,30 @@ extension WindowModel {
             past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
             filter: filter,
             branchPRs: homeBranchPRs, running: homeRunLines, runningPorts: homeRunPorts, runningTones: homeRunTones,
-            isProduction: judge)
+            recipeRepos: homeRecipeRepos, isProduction: judge)
         return homeScreen(input)
+    }
+
+    /// Reads, not waited for, the Running settings of each project with an open workspace
+    /// (`running_read`), so a card none of whose copies has a recipe offers Set up running… rather
+    /// than a ▶ Go would refuse. Asked on every home read, so a recipe saved in Settings shows on the
+    /// way back; a read that fails leaves what was known (unread: ▶ stays). One that lands after an
+    /// organisation switch is dropped (Invariant 4).
+    func readHomeRecipes(_ projects: Set<String>, paths: [String: String]) {
+        let org = organization
+        for project in projects.sorted() where !homeRecipeReading.contains(project) {
+            guard let path = projectFilePath(project) ?? paths[project] else { continue }
+            homeRecipeReading.insert(project)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let (r, _) = await self.runningDispatch("running_read", .object(["projectPath": .string(path)]))
+                guard self.organization == org else { return }
+                self.homeRecipeReading.remove(project)
+                guard let r, let s = try? RunningSettings.decode(r) else { return }
+                let known = homeReposWithRecipe(s)
+                if self.homeRecipeRepos[project] != known { self.homeRecipeRepos[project] = known }
+            }
+        }
     }
 
     /// Reads, not waited for, the PRs of each open workspace's branch never read or read over 60 s
