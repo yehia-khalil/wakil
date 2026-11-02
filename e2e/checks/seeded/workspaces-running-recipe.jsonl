@@ -6,6 +6,18 @@
 {"expect":{"tree":"contains","text":"RECIPE · E2E-STATIC"}}
 {"do":{"click":"settings.running.repo.e2e-project"}}
 {"expect":{"tree":"contains","text":"uses e2e-static"}}
+{"expect":{"frame":"settings.running.section.newCopy","minWidth":1}}
+{"expect":{"tree":"contains","text":"NEW COPY · RUNS ONCE"}}
+{"expect":{"tree":"contains","text":"Runs on the first ▶ in a new workspace."}}
+{"expect":{"frame":"settings.running.section.everyRun","minWidth":1}}
+{"expect":{"tree":"contains","text":"EVERY RUN"}}
+{"expect":{"tree":"contains","text":"Runs on every ▶."}}
+{"expect":{"frame":"settings.running.section.portsAndEnv","minWidth":1}}
+{"expect":{"tree":"contains","text":"PORTS AND ENVIRONMENT"}}
+{"expect":{"tree":"contains","text":"Applies to all of the above."}}
+{"expect":{"frame":"settings.running.section.onStop","minWidth":1}}
+{"expect":{"tree":"contains","text":"ON STOP"}}
+{"expect":{"tree":"contains","text":"Runs on ■ Stop or Archive."}}
 {"expect":{"tree":"contains","text":"web: python3 -m http.server $WAKIL_PORT"}}
 {"do":{"type":{"into":"settings.running.field.build","text":"make build"}}}
 {"do":{"click":"settings.running.repo.e2e-project"}}

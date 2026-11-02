@@ -128,3 +128,17 @@ private let listed: JSONValue = {
     let json = String(data: try JSONEncoder().encode(r.processes), encoding: .utf8) ?? ""
     #expect(json.contains("\"afterReady\":true") && !json.contains("\"afterReady\":false"))
 }
+
+@Test func theFormsSectionsHoldEveryFieldOnceInTheirOrder() {
+    #expect(RecipeFieldSection.allCases.map(\.title)
+        == ["New copy · runs once", "Every run", "Ports and environment", "On stop"])
+    #expect(RecipeFieldSection.newCopy.fields == [.copy, .clone, .setup, .build])
+    #expect(RecipeFieldSection.everyRun.fields == [.needs, .services, .processes, .ready])
+    #expect(RecipeFieldSection.portsAndEnv.fields == [.ports])
+    #expect(RecipeFieldSection.onStop.fields == [.teardown])
+    let all = RecipeFieldSection.allCases.flatMap(\.fields)
+    #expect(all.count == RecipeField.allCases.count)
+    #expect(Set(all) == Set(RecipeField.allCases))
+    #expect(RecipeFieldSection.allCases.filter(\.holdsEnv) == [.portsAndEnv])
+    #expect(RecipeFieldSection.allCases.allSatisfy { !$0.hint.isEmpty })
+}

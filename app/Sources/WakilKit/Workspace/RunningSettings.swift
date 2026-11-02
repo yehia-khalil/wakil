@@ -279,6 +279,43 @@ public enum RecipeField: String, CaseIterable, Sendable {
     }
 }
 
+/// The form's fields in four headed sections, by when they apply: what a new copy runs once,
+/// what every ▶ runs, the ports and env all of those see, and what Stop runs. Every field is in
+/// exactly one section; the env box is drawn under Ports and environment (`holdsEnv`).
+public enum RecipeFieldSection: String, CaseIterable, Sendable {
+    case newCopy, everyRun, portsAndEnv, onStop
+
+    public var title: String {
+        switch self {
+        case .newCopy: "New copy · runs once"
+        case .everyRun: "Every run"
+        case .portsAndEnv: "Ports and environment"
+        case .onStop: "On stop"
+        }
+    }
+
+    public var hint: String {
+        switch self {
+        case .newCopy: "Runs on the first ▶ in a new workspace."
+        case .everyRun: "Runs on every ▶."
+        case .portsAndEnv: "Applies to all of the above."
+        case .onStop: "Runs on ■ Stop or Archive."
+        }
+    }
+
+    public var fields: [RecipeField] {
+        switch self {
+        case .newCopy: [.copy, .clone, .setup, .build]
+        case .everyRun: [.needs, .services, .processes, .ready]
+        case .portsAndEnv: [.ports]
+        case .onStop: [.teardown]
+        }
+    }
+
+    /// Whether the env box (variables, Also write to .env) is drawn in this section, after its fields.
+    public var holdsEnv: Bool { self == .portsAndEnv }
+}
+
 /// Where a field of a repo's form comes from.
 public enum FieldSource: Sendable, Equatable {
     /// The shared recipe's (grey).

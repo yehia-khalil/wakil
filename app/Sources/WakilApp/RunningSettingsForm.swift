@@ -162,8 +162,15 @@ struct RunningSettingsForm: View {
                 if let d = drafting.draft(row.repo) { draftBox(s, d) }
                 if !row.doesNotRun && row.recipeName != nil {
                     FormHint("Shared fields come from the recipe; change one here to keep it for this repo only.")
-                    ForEach(RecipeField.allCases, id: \.self) { f in fieldBox(s, row.repo, f) }
-                    envSection(s, row.repo)
+                    ForEach(RecipeFieldSection.allCases, id: \.self) { section in
+                        SettingsSection(section.title, identifier: "settings.running.section.\(section.rawValue)") {
+                            VStack(alignment: .leading, spacing: 6) {
+                                FormHint(section.hint)
+                                ForEach(section.fields, id: \.self) { f in fieldBox(s, row.repo, f) }
+                                if section.holdsEnv { envSection(s, row.repo) }
+                            }
+                        }
+                    }
                 }
             }
             .id(row.repo)
