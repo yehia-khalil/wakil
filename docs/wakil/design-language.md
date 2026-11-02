@@ -525,8 +525,8 @@ governs, and **credentials attach at the level where the resource lives.**
 
 | Scope | Holds |
 |-------|-------|
-| **Wakil** (app-wide) | STT engine default, theme, density default, keybindings (Settings → Keyboard, Decision 50), global behavior. |
-| **Organization** | The **set of providers** registered under it — each provider one Claude account, with its own config dir, its own agent binary and its own OAuth token; org-level connections + auth shared across all its projects — Jira site, Slack workspace, mailbox. |
+| **Wakil** (app-wide) | Theme, density default, the editor, the browser's search, tabs and picture in picture, keybindings (Settings → Keyboard, Decision 50), global behavior. |
+| **Organization** | The **set of providers** registered under it — each provider one Claude account, with its own config dir, its own agent binary and its own OAuth token; org-level connections + auth shared across all its projects — Jira site, Slack workspace, mailbox; the speech engine (Invariant 11; amended 2026-11-02 — it was listed under Wakil, and the code has always kept it per organisation); the quick-tasks model; browsing data and saved passwords. |
 | **Project** | Roots; scopes (Jira key, channels); environments, each with its DB and API config **including credentials**. |
 
 The **Wakil** scope is stored in `~/.wakil/settings.json` (Decision 38): the editor's font
@@ -567,19 +567,48 @@ the setting it explains and never pooled in a footnote; a footnote keeps only wh
 setting is stored. A field that sits in a list (a project's heavy folders) takes the same
 boxed `.field` through `fieldBox`, and the list's add gesture is a `FormButton`.
 
+**Amended 2026-11-02 (the settings revamp).** Ink is **`SettingsInk`**: cool white at four
+opacities and no others — `primary` for values and labels (12.4:1 on the void), `secondary`
+for headers, hints, the breadcrumb, footnotes and an empty `—` (6.7:1), `tertiary` for what
+is not read (chevrons, hairlines), `disabled` for what cannot be pressed. Read text is
+`primary` or `secondary`, so it clears 4.5:1. Corners are `SettingsScale.radiusField` (5) or
+`radiusSlab` (8). **Destruction is red** (`SettingsPalette.destructive`, §5's `#e85c5c`):
+every Remove, Delete, Clear and Unlink is the same control — the trigger red and unfilled, the
+confirmation's button red and filled — and amber is left to caution and refusals. A question's
+**Keep it** is the cancel action, so Esc answers it. **No text is cut**: nothing in settings
+truncates or ellipsises; what is long wraps whole, and what cannot sit beside its label moves
+under it. **The one menu** is Quick tasks' Model: its options are every account and every
+local model, an open-ended list no row of segments fits at 640pt, so it stays a `Menu` with
+its items given identifiers (headed by disabled items, not `Section`). A database or API
+entry's add-and-edit form is a `SettingsSection`, not a `FormCard`.
+
 **A page with more than one group is drawn in sections.** Each group is a
 **`SettingsSection`**: a hairline above it, a micro header in QUICK TASKS' style, and 12pt
 of rhythm; inside it, each setting is a **`SettingsRow`** — the label left at a fixed width
 (`SettingsScale.labelWidth`), the value right, on one line. An empty value reads `—` until
 it is typed in; a field is edited where it stands, its box drawn only on hover or focus
-(`inPlaceField`). The Organisation page is Identity · Accounts · Jira · Git; Providers is
-Accounts · Local models · Quick tasks; the Editor pages are Editing · Files and
-Indentation · Heavy folders; a project is Project · Roots; each API entry is its own
-section. A page of one group (an environment) draws its rows without a header. **A page
+(`inPlaceField`). The Organisation page is Identity · Connections · Git · Agent
+instructions, each field saved when left (Rule 2; no Save, no Revert); Accounts (the node
+once called Providers) is Accounts · Local models · Default account; Quick tasks, Browsing
+data (Clear · Passwords) and Speech are the organisation's own pages; the Editor pages are
+Editing · Files and Indentation · Heavy folders; a project is Project · Roots; an
+environment is its name, its counts, **Production** (No · Yes · From the name — Rule 9: the
+name suggests, the operator decides, through `ctx_set_environment_production`, which is
+operator-only because it sets the agent's price) and Remove; each database and each API entry
+is its own section. A page of one group (Speech) draws its rows without a header. **A page
 never draws wider than its pane:** what does not fit moves under its label rather than past
 the edge — the accounts table, whose four columns are wider than the subject column at the
 pane's 640pt default, draws each account as its identity and then KIND, CREDENTIAL and
 SIGN-IN as labelled lines there, and a local model puts its URL under its name.
+
+**The tree is grouped by scope** (amended 2026-11-02): a **WAKIL** heading over Editor,
+Browser and Keyboard; the organisation's name as a heading over Organisation, Accounts, Quick
+tasks, Browsing data and Speech; then **PROJECTS**. Inside an open project, after Editor (and
+Running), an **ENVIRONMENTS** micro label stands over the environments — a label, not a level
+— and each environment carries a dot: red for production, green otherwise (§5), none when
+the tree does not say. Headings are not rows: ↑ and ↓ move the selection through the rows
+alone, and typed letters select the next row whose name starts with them; neither opens or
+closes a branch.
 
 **The tree's projects and environments open and close.** Each is a branch with its own
 chevron, pressed apart from the row so opening never selects and selecting never opens; →

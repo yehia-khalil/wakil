@@ -58,7 +58,7 @@ struct BrowserSettingsForm: View {
             }
             SettingsSection("Picture in picture") {
                 ChoiceSettingRow(
-                    label: "Picture in picture", options: ["On", "Off"],
+                    label: "Picture in picture", options: ["Off", "On"],
                     selected: browser.pictureInPicture ? "On" : "Off",
                     identifier: { option in let choice = option.lowercased(); return "settings.browser.pictureInPicture.\(choice)" },
                     refusalIdentifier: "settings.browser.pictureInPicture.refusal",
