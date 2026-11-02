@@ -74,14 +74,14 @@ struct KeyboardSettingsForm: View {
             if shown.isEmpty && fixed.isEmpty {
                 Text("No shortcut matches “\(query)”.")
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("settings.keyboard.noMatch")
             }
             restoreAllSection
             Text("Shortcuts are yours across every organisation — stored in ~/.wakil/settings.json.")
                 .font(.system(size: SettingsScale.meta))
-                .foregroundStyle(coolWhite.opacity(0.40))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .onChange(of: error) { _, now in if now != nil { stopRecording() } }
@@ -94,19 +94,19 @@ struct KeyboardSettingsForm: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 10))
-                .foregroundStyle(coolWhite.opacity(0.40))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             TextField("Search by name or shortcut", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(coolWhite.opacity(0.88))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                 .accessibilityIdentifier("settings.keyboard.search")
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .fill(coolWhite.opacity(0.05))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                         .stroke(coolWhite.opacity(0.10), lineWidth: 0.5)))
         .frame(maxWidth: 320, alignment: .leading)
     }
@@ -120,11 +120,11 @@ struct KeyboardSettingsForm: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(command.title)
                         .font(.system(size: SettingsScale.body, weight: .medium))
-                        .foregroundStyle(coolWhite.opacity(0.86))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(command.place.placeTitle)
                         .font(.system(size: SettingsScale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.42))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 6)
@@ -133,7 +133,7 @@ struct KeyboardSettingsForm: View {
                     Button { restoreDefault(id) } label: {
                         Text("↺")
                             .font(.system(size: SettingsScale.body))
-                            .foregroundStyle(coolWhite.opacity(canWrite ? 0.62 : 0.30))
+                            .foregroundStyle(coolWhite.opacity(canWrite ? SettingsInk.secondary : SettingsInk.disabled))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -180,10 +180,10 @@ struct KeyboardSettingsForm: View {
                 .padding(.horizontal, 6)
                 .frame(minWidth: 112, minHeight: 22)
                 .background(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                         .fill(coolWhite.opacity(isRecording ? 0.07 : 0.04))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                                 .stroke(isRecording ? SettingsPalette.accent.opacity(0.85) : coolWhite.opacity(0.10),
                                         lineWidth: isRecording ? 1 : 0.5)))
                 .contentShape(Rectangle())
@@ -218,18 +218,18 @@ struct KeyboardSettingsForm: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(key.title)
                     .font(.system(size: SettingsScale.body, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(key.place)
                     .font(.system(size: SettingsScale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.30))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 6)
             Spacer(minLength: 0)
             Text(key.chord)
                 .font(.system(size: SettingsScale.body, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.40))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 6)
@@ -249,7 +249,7 @@ struct KeyboardSettingsForm: View {
             Button(action: restoreAll) {
                 Text("Restore All Defaults")
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(coolWhite.opacity(canWrite && !allDefault ? 0.62 : 0.30))
+                    .foregroundStyle(coolWhite.opacity(canWrite && !allDefault ? SettingsInk.secondary : SettingsInk.disabled))
                     .fixedSize(horizontal: false, vertical: true)
                     .contentShape(Rectangle())
             }
@@ -269,11 +269,11 @@ struct KeyboardSettingsForm: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(line.text + " · ")
-                    .foregroundStyle(coolWhite.opacity(0.62))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Undo") { undoLast(line) }
                     .buttonStyle(.plain)
-                    .foregroundStyle(coolWhite.opacity(canWrite ? 0.86 : 0.30))
+                    .foregroundStyle(coolWhite.opacity(canWrite ? SettingsInk.primary : SettingsInk.disabled))
                     .fixedSize()
                     .disabled(!canWrite)
                     .accessibilityIdentifier("settings.keyboard.undo")

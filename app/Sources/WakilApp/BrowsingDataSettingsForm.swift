@@ -42,7 +42,7 @@ struct BrowsingDataSettingsForm: View {
                 } label: {
                     Text("Clear this organisation's browsing data…")
                         .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(caution.opacity(clearing ? 0.4 : 0.9))
+                        .foregroundStyle(SettingsPalette.destructive.opacity(clearing ? 0.4 : 1))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -59,7 +59,7 @@ struct BrowsingDataSettingsForm: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("settings.browser.clear.question")
                     HStack(spacing: 10) {
-                        FormButton(title: BrowserClearDataQuestion.deleteLabel, tone: caution, filled: true,
+                        FormButton(title: BrowserClearDataQuestion.deleteLabel, tone: SettingsPalette.destructive, filled: true,
                                    identifier: "settings.browser.clear.confirm") {
                             confirming = false
                             clearing = true
@@ -82,7 +82,7 @@ struct BrowsingDataSettingsForm: View {
             if cleared {
                 Text(BrowserClearDataQuestion.receipt(asked: asked?.name, current: organisation))
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(coolWhite.opacity(0.62))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .accessibilityIdentifier("settings.browser.clear.done")
             }
             if let clearRefusal {

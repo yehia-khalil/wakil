@@ -81,7 +81,7 @@ struct BrowserSettingsForm: View {
             Text("Yours across every organisation — stored in ~/.wakil/settings.json. "
                  + "Browsing data and passwords are each organisation's, under its name.")
                 .font(.system(size: SettingsScale.meta))
-                .foregroundStyle(coolWhite.opacity(0.40))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -114,7 +114,7 @@ struct BrowserSettingsForm: View {
         if let pullRequestsAbsent {
             Text(pullRequestsAbsent)
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(coolWhite.opacity(0.62))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .padding(.vertical, 6)
@@ -128,7 +128,7 @@ struct BrowserSettingsForm: View {
                 TextField("Blank", text: Binding(get: { draft ?? browser.startPage }, set: { draft = $0 }))
                     .textFieldStyle(.plain)
                     .font(.system(size: SettingsScale.body, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.88))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .inPlaceField(focused: focused)
                     .focused($focused)
                     .onSubmit(commit)

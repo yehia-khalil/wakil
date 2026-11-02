@@ -87,7 +87,7 @@ struct LeaveSavedTextField: View {
                 .font(monospaced
                     ? .system(size: SettingsScale.identifier, design: .monospaced)
                     : .system(size: SettingsScale.body))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                 .lineLimit(1)
                 // A value longer than its column (a base URL) is shortened in the middle while
                 // it is not being edited, rather than cut at the column's edge.
@@ -104,7 +104,7 @@ struct LeaveSavedTextField: View {
                 ProgressView().controlSize(.small)
                 Text("Saving…")
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.35))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize()
             }
         }

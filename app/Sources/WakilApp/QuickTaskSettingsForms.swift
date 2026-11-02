@@ -38,7 +38,7 @@ struct LocalProvidersSection: View {
             Button("+ Add local model") { adding = firstUnusedId() }
                 .buttonStyle(.plain)
                 .font(.system(size: SettingsScale.door))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(adding == nil ? 0.70 : 0.30))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(adding == nil ? SettingsInk.secondary : SettingsInk.disabled))
                 .disabled(adding != nil)
                 .padding(.top, 10)
                 .accessibilityIdentifier("settings.localProvider.add")
@@ -136,7 +136,7 @@ private struct LocalProviderRow: View {
     private var nameText: some View {
         Text(isNew ? "New model" : (label.isEmpty ? id : label))
             .font(.system(size: SettingsScale.body, weight: .medium))
-            .foregroundStyle(coolWhite.opacity(isNew ? 0.45 : 0.86))
+            .foregroundStyle(coolWhite.opacity(isNew ? SettingsInk.disabled : SettingsInk.primary))
             .lineLimit(1)
     }
 
@@ -151,7 +151,7 @@ private struct LocalProviderRow: View {
                             .frame(width: 5, height: 5)
                         Text(status)
                             .font(.system(size: SettingsScale.meta))
-                            .foregroundStyle(coolWhite.opacity(status == "reachable" ? 0.62 : 0.38))
+                            .foregroundStyle(coolWhite.opacity(status == "reachable" ? SettingsInk.secondary : SettingsInk.disabled))
                             .lineLimit(1).fixedSize()
                     }
                     .accessibilityElement(children: .combine)
@@ -181,14 +181,14 @@ private struct LocalProviderRow: View {
         TextField("http://127.0.0.1:8012", text: $draft)
             .textFieldStyle(.plain)
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
-            .foregroundStyle(coolWhite.opacity(0.90))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
             .padding(.horizontal, 6).padding(.vertical, 3)
             .frame(maxWidth: 300)
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(coolWhite.opacity(focused || hovering ? 0.05 : 0))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .stroke(coolWhite.opacity(focused ? 0.18 : hovering ? 0.10 : 0), lineWidth: 0.5)))
             .padding(.horizontal, -6)
             .onHover { hovering = $0 }
@@ -214,7 +214,7 @@ private struct LocalProviderRow: View {
         .buttonStyle(.plain)
         .font(.system(size: SettingsScale.micro, weight: .medium))
         .tracking(SettingsScale.microTracking)
-        .foregroundStyle(coolWhite.opacity(0.52))
+        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         .lineLimit(1)
         .fixedSize()
         .accessibilityIdentifier("settings.localProvider.\(id).\(isNew ? "cancel" : "remove")")

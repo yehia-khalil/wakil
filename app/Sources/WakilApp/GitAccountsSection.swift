@@ -107,10 +107,10 @@ struct GitAccountsBlock: View {
                         .foregroundStyle(SettingsPalette.caution)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "settings.org.git.account.\(account.host).remove.keep") {
+                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, cancels: true, identifier: "settings.org.git.account.\(account.host).remove.keep") {
                         confirmingRemove = nil
                     }
-                    FormButton(title: "Remove", tone: SettingsPalette.caution, filled: true, identifier: "settings.org.git.account.\(account.host).remove.confirm") {
+                    FormButton(title: "Remove", tone: SettingsPalette.destructive, filled: true, identifier: "settings.org.git.account.\(account.host).remove.confirm") {
                         Task {
                             notes[account.host] = await git.remove(account.host)
                             confirmingRemove = nil
@@ -729,7 +729,7 @@ struct GitAPIAccessRowView: View {
                     }
                     if row.isSet {
                         FormButton(title: "Test", tone: SettingsPalette.coolWhite, identifier: "\(id).test") { test() }
-                        FormButton(title: "Remove", tone: SettingsPalette.caution, identifier: "\(id).remove") {
+                        FormButton(title: "Remove", tone: SettingsPalette.destructive, identifier: "\(id).remove") {
                             confirmingRemove = true
                         }
                     }
@@ -778,8 +778,8 @@ struct GitAPIAccessRowView: View {
                         .foregroundStyle(SettingsPalette.caution)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "\(id).remove.keep") { confirmingRemove = false }
-                    FormButton(title: "Remove", tone: SettingsPalette.caution, filled: true, identifier: "\(id).remove.confirm") {
+                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, cancels: true, identifier: "\(id).remove.keep") { confirmingRemove = false }
+                    FormButton(title: "Remove", tone: SettingsPalette.destructive, filled: true, identifier: "\(id).remove.confirm") {
                         confirmingRemove = false
                         run { note = await git.removeAPIAccess(host) }
                     }

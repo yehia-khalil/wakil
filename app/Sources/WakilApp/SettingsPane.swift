@@ -552,7 +552,7 @@ struct SettingsPane: View {
                 Text("PROJECTS")
                     .font(.system(size: Scale.micro, weight: .medium))
                     .tracking(Scale.microTracking)
-                    .foregroundStyle(coolWhite.opacity(0.32))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Spacer(minLength: 0)
             }
             .padding(.leading, 8)
@@ -560,7 +560,7 @@ struct SettingsPane: View {
             .padding(.bottom, 2)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(coolWhite.opacity(selection == .projects ? 0.08 : 0)))
         }
         .buttonStyle(.plain)
@@ -575,7 +575,7 @@ struct SettingsPane: View {
             if let open {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.tertiary))
             } else {
                 Color.clear
             }
@@ -729,7 +729,7 @@ struct SettingsPane: View {
         Text(text)
             .font(.system(size: Scale.micro, weight: .medium))
             .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.32))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .fixedSize(horizontal: false, vertical: true)
             .padding(.leading, 8)
             .padding(.top, first ? 0 : 10)
@@ -743,7 +743,7 @@ struct SettingsPane: View {
         Text("ENVIRONMENTS")
             .font(.system(size: 8.5, weight: .medium))
             .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.32))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .padding(.leading, CGFloat(2) * 12 + 8 + 14)
             .padding(.top, 6)
             .accessibilityIdentifier("settings.tree.project.\(project).environmentsHeading")
@@ -800,12 +800,12 @@ struct SettingsPane: View {
                     }
                     Text(label)
                         .font(.system(size: Scale.door))
-                        .foregroundStyle(coolWhite.opacity(selected ? 0.95 : 0.62))
+                        .foregroundStyle(coolWhite.opacity(selected ? SettingsInk.primary : SettingsInk.secondary))
                         .lineLimit(1)
                     if let badge {
                         Text(badge)
                             .font(.system(size: Scale.meta, design: .monospaced))
-                            .foregroundStyle(coolWhite.opacity(0.35))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     }
                     Spacer(minLength: 0)
                 }
@@ -823,14 +823,14 @@ struct SettingsPane: View {
         }
         .padding(.leading, CGFloat(depth) * 12 + 8)
         .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .fill(coolWhite.opacity(selected ? 0.08 : 0)))
     }
 
     private func emptyLine(_ text: String) -> some View {
         Text(text)
             .font(.system(size: Scale.body))
-            .foregroundStyle(coolWhite.opacity(0.28))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .padding(.leading, 20)
             .padding(.vertical, 3)
     }
@@ -856,7 +856,7 @@ struct SettingsPane: View {
                 } label: {
                     Text(label)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(busy ? 0.35 : 0.62))
+                        .foregroundStyle(coolWhite.opacity(busy ? SettingsInk.disabled : SettingsInk.secondary))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -977,7 +977,7 @@ struct SettingsPane: View {
                     } label: {
                         Text(label)
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(caution.opacity(busy ? 0.4 : 0.9))
+                            .foregroundStyle(SettingsPalette.destructive.opacity(busy ? 0.4 : 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -995,7 +995,7 @@ struct SettingsPane: View {
                             .foregroundStyle(caution)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 10) {
-                            confirmButton("Remove", tone: caution, filled: true,
+                            confirmButton("Remove", tone: SettingsPalette.destructive, filled: true,
                                           identifier: "\(identifier).confirm") {
                                 confirmingRemoval = nil
                                 run()
@@ -1108,7 +1108,7 @@ struct SettingsPane: View {
                     .buttonStyle(.plain)
                     .font(.system(size: Scale.body))
                     .accessibilityIdentifier("settings.reload")
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -1117,7 +1117,7 @@ struct SettingsPane: View {
         Text(selection.breadcrumb(in: tree).joined(separator: "  ›  "))
             .font(.system(size: Scale.micro, weight: .medium))
             .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.40))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .lineLimit(1)
             .accessibilityIdentifier("settings.breadcrumb")
     }
@@ -1389,10 +1389,10 @@ struct SettingsPane: View {
                 get: { draft ?? stored },
                 // Equal to what is stored is no draft (a field writes its text back as editing ends).
                 set: { drafts[field] = $0 == stored ? nil : $0 }),
-            prompt: Text(prompt).foregroundStyle(coolWhite.opacity(0.30)))
+            prompt: Text(prompt).foregroundStyle(coolWhite.opacity(SettingsInk.secondary)))
             .textFieldStyle(.plain)
             .font(.system(size: Scale.body))
-            .foregroundStyle(coolWhite.opacity(0.88))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
             .frame(maxWidth: width)
             .inPlaceField(focused: focusedOrgField == field)
             .onSubmit { save(field, tree: tree) }
@@ -1461,7 +1461,7 @@ struct SettingsPane: View {
                     if saving == field {
                         Text("Saving…")
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(0.62))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                             .accessibilityIdentifier("settings.org.\(field.identifierFragment).saving")
                     }
                 }
@@ -1570,7 +1570,7 @@ struct SettingsPane: View {
             HStack(alignment: .firstTextBaseline, spacing: Scale.columnGap) {
                 Text("Model")
                     .font(.system(size: Scale.body, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .frame(width: Scale.labelWidth, alignment: .leading)
                 // Same as agent, then the accounts, then the local models, each group headed.
                 Menu {
@@ -1587,11 +1587,11 @@ struct SettingsPane: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(known?.display ?? stored)
                             .font(.system(size: Scale.body, weight: .medium))
-                            .foregroundStyle(coolWhite.opacity(0.86))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                         // Decoration: drawn, but not a second menu button carrying the same id.
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(coolWhite.opacity(0.40))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                             .accessibilityHidden(true)
                     }
                     .contentShape(Rectangle())
@@ -1604,7 +1604,7 @@ struct SettingsPane: View {
                 if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
                     Text(route)
                         .font(.system(size: Scale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.40))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .lineLimit(1)
                         .accessibilityIdentifier("settings.org.quickProvider.route")
                 }
@@ -1665,7 +1665,7 @@ struct SettingsPane: View {
             HStack(alignment: .center, spacing: Scale.columnGap) {
                 Text(label)
                     .font(.system(size: Scale.body, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .frame(width: Scale.labelWidth, alignment: .leading)
                 SegmentedChoice(
                     options: ["Off", "On"],
@@ -1685,7 +1685,7 @@ struct SettingsPane: View {
                     })
                 Text(hint)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -1854,7 +1854,7 @@ struct SettingsPane: View {
                     ForEach(unlinkReport.notes, id: \.self) { note in
                         Text(note)
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(0.62))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if unlinkReport.wasLastBinding {
@@ -1869,13 +1869,13 @@ struct SettingsPane: View {
                     if !unlinkReport.backfilled.isEmpty {
                         Text("Kept working: " + unlinkReport.backfilled.joined(separator: ", "))
                             .font(.system(size: Scale.meta))
-                            .foregroundStyle(coolWhite.opacity(0.34))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     }
                     Button("Dismiss") { self.unlinkReport = nil }
                     .accessibilityIdentifier("settings.unlink.dismiss")
                         .buttonStyle(.plain)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.45))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 .padding(.vertical, 6)
             }
@@ -1958,7 +1958,7 @@ struct SettingsPane: View {
                 // spent it.
                 Text(offer.sentence)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 if offer.existing.namesSomebody {
                     // **Re-entry shows the identity BEFORE reusing it**,
@@ -1969,7 +1969,7 @@ struct SettingsPane: View {
                     Text("This directory is already signed in as \(offer.existing.email)"
                         + (offer.existing.orgName.isEmpty ? "." : " (\(offer.existing.orgName))."))
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.60))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 10) {
@@ -2007,10 +2007,10 @@ struct SettingsPane: View {
                     // than as a hang.
                     Text("Trip \(trip) of \(total)")
                         .font(.system(size: Scale.micro, weight: .medium)).tracking(Scale.microTracking)
-                        .foregroundStyle(coolWhite.opacity(0.45))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     Text("Signing in as \(id) — finish in your browser.")
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.72))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 // **Trip 1's cancel is free, always offered, and says so.**
                 // The only provably clean cancel in the flow.
@@ -2020,7 +2020,7 @@ struct SettingsPane: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .accessibilityIdentifier("settings.login.cancel")
                 }
             }
@@ -2031,7 +2031,7 @@ struct SettingsPane: View {
                     ? "Signed in as \(identity.email). The long-lived credential is next."
                     : "Signed in as \(id). The long-lived credential is next.")
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 // **No pause, and no control.** The session advances
                 // straight to the mint (#101, confirmed on #203), so this
@@ -2040,7 +2040,7 @@ struct SettingsPane: View {
                 // switches to reach an exit the browser already offers.
                 Text("Continuing to the credential step…")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.34))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
 
         case .minting(let trip, let total, let id):
@@ -2048,11 +2048,11 @@ struct SettingsPane: View {
                 HStack(spacing: 8) {
                     Text("Trip \(trip) of \(total)")
                         .font(.system(size: Scale.micro, weight: .medium)).tracking(Scale.microTracking)
-                        .foregroundStyle(coolWhite.opacity(0.45))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     Text("Creating the long-lived credential for \(id) — approve it in your "
                         + "browser.")
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.72))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // **Still no CANCEL — what is offered is a way to stop
@@ -2068,7 +2068,7 @@ struct SettingsPane: View {
                     + "credential itself — it is created once — but you can stop waiting "
                     + "for it.")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.34))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 confirmButton("Stop waiting", tone: coolWhite.opacity(0.62),
                                   identifier: "settings.mint.stopWaiting") {
@@ -2083,11 +2083,11 @@ struct SettingsPane: View {
                         $0.formatted(date: .abbreviated, time: .omitted)
                     } ?? "in a year") + ".")
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.80))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .fixedSize(horizontal: false, vertical: true)
                 Text("You never saw a token.")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.34))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 dismissButton("Done")
             }
 
@@ -2102,7 +2102,7 @@ struct SettingsPane: View {
                     .foregroundStyle(caution)
                 Text(detail)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 dismissButton("Dismiss")
             }
@@ -2115,7 +2115,7 @@ struct SettingsPane: View {
                     .font(.system(size: Scale.body)).foregroundStyle(caution)
                 Text(message)
                     .font(.system(size: Scale.meta, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 dismissButton("Dismiss")
             }
@@ -2134,7 +2134,7 @@ struct SettingsPane: View {
             band {
                 Text(cancelSentence(claim))
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 dismissButton("Dismiss")
             }
@@ -2222,15 +2222,15 @@ struct SettingsPane: View {
             HStack(spacing: 11) {
                 Text(open ? "−" : "+")
                     .font(.system(size: Scale.door, weight: .light, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.52))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .frame(width: 13)
                 Text(title)
                     .font(.system(size: Scale.door))
-                    .foregroundStyle(coolWhite.opacity(0.78))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Spacer(minLength: 16)
                 Text(note)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.44))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
             .frame(minHeight: Scale.rowHeight)
             .contentShape(Rectangle())
@@ -2275,7 +2275,7 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("The directory is derived from this id, and Wakil never shows you a token.")
                 .font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.45))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             HStack(spacing: 10) {
                 // **A field that looks like one.** The artboard's `.field`
                 // treatment: a bordered box with its own background, so
@@ -2283,15 +2283,15 @@ struct SettingsPane: View {
                 TextField("id", text: $newAccountId)
                     .textFieldStyle(.plain)
                     .font(.system(size: Scale.identifier, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.90))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .frame(width: 180)
                     .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .fill(coolWhite.opacity(0.05))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                                     .stroke(coolWhite.opacity(0.14), lineWidth: 0.5)))
                     .accessibilityLabel("account id")
                     .accessibilityIdentifier("settings.register.id")
@@ -2299,7 +2299,7 @@ struct SettingsPane: View {
                 Button("Add") { beginAdd() }
                     .buttonStyle(.plain)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(newAccountId.isEmpty ? 0.28 : 0.70))
+                    .foregroundStyle(coolWhite.opacity(newAccountId.isEmpty ? SettingsInk.disabled : SettingsInk.secondary))
                     .disabled(newAccountId.isEmpty)
                     .accessibilityIdentifier("settings.register.add")
                 Spacer(minLength: 0)
@@ -2307,19 +2307,19 @@ struct SettingsPane: View {
             HStack(spacing: 10) {
                 Text("claude")
                     .font(.system(size: Scale.meta, weight: .medium)).tracking(0.8)
-                    .foregroundStyle(coolWhite.opacity(0.42))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 TextField("path to the claude executable", text: $newAccountClaudePath)
                     .textFieldStyle(.plain)
                     .font(.system(size: Scale.identifier, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.90))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .frame(width: 360)
                     .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .fill(coolWhite.opacity(0.05))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                                     .stroke(coolWhite.opacity(0.14), lineWidth: 0.5)))
                     .accessibilityLabel("claude executable")
                     .accessibilityIdentifier("settings.register.claudePath")
@@ -2374,7 +2374,7 @@ struct SettingsPane: View {
             .accessibilityIdentifier("settings.login.dismiss")
             .buttonStyle(.plain)
             .font(.system(size: Scale.body))
-            .foregroundStyle(coolWhite.opacity(0.45))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
     }
 
     @ViewBuilder
@@ -2387,10 +2387,10 @@ struct SettingsPane: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .fill(coolWhite.opacity(0.05))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                         .stroke((tone ?? coolWhite).opacity(0.18), lineWidth: 0.5)))
         .padding(.bottom, 8)
     }
@@ -2434,7 +2434,7 @@ struct SettingsPane: View {
         Text(text)
             .font(.system(size: Scale.micro, weight: .medium))
             .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.30))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .frame(width: width, alignment: .leading)
     }
 
@@ -2446,12 +2446,12 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(account.accountId)
                 .font(.system(size: Scale.identifier, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.92))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
             accountDirectory(account)
             if !account.label.isEmpty {
                 Text(account.label)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.38))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2464,7 +2464,7 @@ struct SettingsPane: View {
             stackedCell("KIND") {
                 Text(account.kind)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.55))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
             stackedCell("CREDENTIAL") { credentialCell(account) }
             stackedCell("SIGN-IN") { livenessCell(account.liveness) }
@@ -2498,7 +2498,7 @@ struct SettingsPane: View {
 
                     Text(account.kind)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.55))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .frame(width: 104, alignment: .leading)
 
                     credentialCell(account).frame(width: 200, alignment: .leading)
@@ -2536,7 +2536,7 @@ struct SettingsPane: View {
                     // `.btn quiet` pair, which is what a decision between
                     // two named outcomes has always been drawn as.
                     HStack(spacing: 10) {
-                        confirmButton("Unlink", tone: caution, filled: true,
+                        confirmButton("Unlink", tone: SettingsPalette.destructive, filled: true,
                                       identifier: "settings.unlink.confirm") {
                             confirmingUnlink = nil
                             Task { unlinkReport = await unlink(account) }
@@ -2581,7 +2581,7 @@ struct SettingsPane: View {
             if !account.credential.ref.isEmpty {
                 Text(account.credential.ref)
                     .font(.system(size: Scale.meta, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.24))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2625,7 +2625,7 @@ struct SettingsPane: View {
                         Text("RUNNING")
                             .font(.system(size: Scale.micro, weight: .medium))
                             .tracking(Scale.microTracking)
-                            .foregroundStyle(coolWhite.opacity(0.70))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                             .lineLimit(1)
                             .fixedSize()
                     } else {
@@ -2640,7 +2640,7 @@ struct SettingsPane: View {
                             Task { await use(account) }
                         }
                     }
-                    rowAction("Unlink", tone: coolWhite.opacity(0.52),
+                    rowAction("Unlink", tone: SettingsPalette.destructive,
                         identifier: "settings.row.\(account.accountId).unlink") {
                         confirmingUnlink = account
                     }
@@ -2706,11 +2706,11 @@ struct SettingsPane: View {
         if account.configDir.isEmpty {
             Text("no config dir")
                 .font(.system(size: Scale.meta, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.30))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         } else {
             Text(abbreviatingHome(account.configDir) + directoryQualifier(account))
                 .font(.system(size: Scale.meta, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.46))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         }
     }
 
@@ -2734,27 +2734,27 @@ struct SettingsPane: View {
     private func credentialState(_ account: Account) -> some View {
         if !account.credential.readable {
             Text("not checked").font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.32))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         } else if !account.credential.present {
             Text("missing").font(.system(size: Scale.body, weight: .medium))
                 .foregroundStyle(caution)
         } else if let expiry = account.credential.expiry() {
             VStack(alignment: .leading, spacing: 0) {
                 Text("present").font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.66))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Text("expires \(expiry.formatted(date: .abbreviated, time: .omitted))")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.36))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 Text("present").font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.66))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 // "Unknown" rather than a computed date from a date that
                 // was never read — a wrong expiry is worse than none,
                 // because it is the one fact an operator plans against.
                 Text("expiry unknown").font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.36))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2765,14 +2765,14 @@ struct SettingsPane: View {
             // Could not look — which says nothing about the account, and
             // must not draw as "logged out".
             Text("not read").font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.32))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         } else if liveness.loggedIn {
             VStack(alignment: .leading, spacing: 1) {
                 Text("signed in").font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.66))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 if liveness.hasIdentity {
                     Text(liveness.email).font(.system(size: Scale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.38)).lineLimit(1)
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary)).lineLimit(1)
                 }
             }
         } else {
@@ -2780,7 +2780,7 @@ struct SettingsPane: View {
                 Text("signed out").font(.system(size: Scale.body, weight: .medium))
                     .foregroundStyle(caution)
                 Text("\(liveness.tripsToRepair) trip(s) to repair")
-                    .font(.system(size: Scale.meta)).foregroundStyle(coolWhite.opacity(0.38))
+                    .font(.system(size: Scale.meta)).foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2879,7 +2879,7 @@ struct SettingsPane: View {
                 Toggle(isOn: $databaseGrantWrite) {
                     Text("Allow writes — needs a second credential the server granted")
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.60))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 .toggleStyle(.checkbox)
                 .accessibilityIdentifier("settings.db.grantWrite")
@@ -3038,7 +3038,7 @@ struct SettingsPane: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(tone.opacity(0.09)))
             .padding(.top, 8)
             .padding(.bottom, 4)
@@ -3085,7 +3085,7 @@ private struct SettingsAboutButton: View {
         Button { open.toggle() } label: {
             Image(systemName: "info.circle")
                 .font(.system(size: 10))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? 0.86 : 0.48))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? SettingsInk.primary : SettingsInk.disabled))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -3096,7 +3096,7 @@ private struct SettingsAboutButton: View {
                 markdown: text,
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 420, alignment: .leading)
                 .padding(14)
@@ -3222,7 +3222,7 @@ extension SettingsPane {
         }
         if database.writable {
             busyVerb(revokeKey) {
-                rowAction("Remove write access", tone: SettingsPalette.coolWhite.opacity(0.52),
+                rowAction("Remove write access", tone: SettingsPalette.destructive,
                           identifier: "settings.db.\(database.name).revokeWrite",
                           enabled: !lifecycleBusy.contains(revokeKey)) {
                     rowWrite(revokeKey) { await updateDatabase(path, environment, database.name, nil, true) }
@@ -3230,7 +3230,7 @@ extension SettingsPane {
             }
         }
         busyVerb(removeKey) {
-            rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+            rowAction("Remove", tone: SettingsPalette.destructive,
                       identifier: "settings.db.\(database.name).remove",
                       enabled: !lifecycleBusy.contains(removeKey)) {
                 lifecycleRefusals[removeKey] = nil
@@ -3274,7 +3274,7 @@ extension SettingsPane {
                         unseen: showUnseenRefusal)
                     Spacer(minLength: 0)
                     busyVerb(removeKey) {
-                        rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+                        rowAction("Remove", tone: SettingsPalette.destructive,
                                   identifier: "settings.api.\(api.name).remove",
                                   enabled: !lifecycleBusy.contains(removeKey)) {
                             lifecycleRefusals[removeKey] = nil
@@ -3360,7 +3360,7 @@ extension SettingsPane {
     private func tokenValue(_ api: SettingsAPI) -> some View {
         Text(ApiEntryWording.token(authRef: api.authRef))
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? 0.36 : 0.62))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? SettingsInk.disabled : SettingsInk.secondary))
             .lineLimit(1)
             .truncationMode(.middle)
             .textSelection(.enabled)
@@ -3388,7 +3388,7 @@ extension SettingsPane {
         // nothing (Rule 1). With no token there is nothing to clear.
         if !api.authRef.isEmpty {
             busyVerb(clearKey) {
-                rowAction("Clear token", tone: SettingsPalette.coolWhite.opacity(0.52),
+                rowAction("Clear token", tone: SettingsPalette.destructive,
                           identifier: "settings.api.\(api.name).clearToken",
                           enabled: !lifecycleBusy.contains(clearKey)) {
                     rowWrite(clearKey) { await updateApiEntry(path, environment, api.name, nil, nil, nil, true) }
@@ -3416,7 +3416,7 @@ extension SettingsPane {
                 SecureField("Bearer …", text: $replacementToken)
                     .textFieldStyle(.plain)
                     .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                     .focused($replacementTokenFocused)
                     .fieldBox(maxWidth: 320)
                     .accessibilityIdentifier("settings.api.\(api.name).token")
@@ -3556,7 +3556,7 @@ extension SettingsPane {
                 .foregroundStyle(SettingsPalette.caution)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
-                confirmButton("Remove", tone: SettingsPalette.caution, filled: true, identifier: confirm) {
+                confirmButton("Remove", tone: SettingsPalette.destructive, filled: true, identifier: confirm) {
                     confirmingRemoval = nil
                     run()
                 }
