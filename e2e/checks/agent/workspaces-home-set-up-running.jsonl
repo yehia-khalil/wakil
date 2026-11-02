@@ -4,10 +4,10 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.project:e2e-git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"dispatch":{"action":"running_save","params":{"repos":{"e2e-api":{"doesntRun":true}}}}}
 {"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"dispatch":{"action":"running_save","params":{"repos":{"e2e-api":{"doesntRun":true}}}}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"frame":"landing","minWidth":40}}
 {"expect":{"frame":"landing.card:0.setUpRunning","inside":"window"}}
