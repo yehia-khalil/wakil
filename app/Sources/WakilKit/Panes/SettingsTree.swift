@@ -610,12 +610,19 @@ public struct SettingsEnvironment: Sendable, Equatable, Decodable {
     /// the explicit flag, else the name). nil when the `wakil-ctx` that wrote the tree predates the field —
     /// a reader treats nil as "not known" and fails toward asking.
     public var production: Bool?
+    /// The operator's declaration behind `production`: nil when the name decides (Rule 9), so the
+    /// settings page can say so. Display only — every price reads `production`.
+    public var productionDeclared: Bool?
 
-    public init(name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = [], production: Bool? = nil) {
+    public init(
+        name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = [],
+        production: Bool? = nil, productionDeclared: Bool? = nil
+    ) {
         self.name = name
         self.databases = databases
         self.api = api
         self.production = production
+        self.productionDeclared = productionDeclared
     }
 
     public init(from decoder: Decoder) throws {
@@ -624,9 +631,10 @@ public struct SettingsEnvironment: Sendable, Equatable, Decodable {
         databases = try container.decodeIfPresent([SettingsDatabase].self, forKey: .databases) ?? []
         api = try container.decodeIfPresent([SettingsAPI].self, forKey: .api) ?? []
         production = try container.decodeIfPresent(Bool.self, forKey: .production)
+        productionDeclared = try container.decodeIfPresent(Bool.self, forKey: .productionDeclared)
     }
 
-    private enum CodingKeys: String, CodingKey { case name, databases, api, production }
+    private enum CodingKeys: String, CodingKey { case name, databases, api, production, productionDeclared }
 }
 
 /// A database row: its name, driver, and the Keychain entry NAMES of its

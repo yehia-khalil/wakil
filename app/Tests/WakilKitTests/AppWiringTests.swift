@@ -251,7 +251,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs",
              "ctx_list_projects", "ctx_list_providers", "ctx_provider_login", "ctx_remove_environment",
              "ctx_remove_project", "ctx_rename_environment", "ctx_rename_project",
-             "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_key", "ctx_set_keys", "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
+             "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_environment_production", "ctx_set_key", "ctx_set_keys", "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
              "ctx_set_project_editor_settings", "ctx_set_provider",
              "ctx_unlink_provider", "ctx_update_org", "db_cancel", "db_classify_statement",
              "db_describe_table",

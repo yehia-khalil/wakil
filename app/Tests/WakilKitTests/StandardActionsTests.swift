@@ -2416,6 +2416,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
              "ctx_list_orgs", "ctx_list_projects", "ctx_list_providers",
              "ctx_provider_login", "ctx_remove_environment", "ctx_remove_project",
              "ctx_rename_environment", "ctx_rename_project", "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment",
+             "ctx_set_environment_production",
              "ctx_set_key", "ctx_set_keys",
              "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions", "ctx_set_project_editor_settings", "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
              "db_cancel", "db_classify_statement", "db_describe_table",
@@ -2709,6 +2710,9 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
             "name": .string("dev"), "newName": .string("qa")]),
         "ctx_remove_environment": .object([
             "project": .string("acme"), "projectPath": .string("/p.json"), "name": .string("dev")]),
+        "ctx_set_environment_production": .object([
+            "project": .string("acme"), "projectPath": .string("/p.json"),
+            "name": .string("dev"), "production": .string("yes")]),
         "ctx_set_project": .object(["name": .string("widgets")]),
         "ctx_set_environment": .object(["name": .string("dev")]),
         "ctx_set_editor_settings": .object(["fontSize": .integer(14)]),
@@ -3255,6 +3259,24 @@ private func projectEnvironmentRegistry(
         #expect(byName[name]?.audience == .operatorOnly, "\(name)")
         #expect(operatorOnlyActions.contains(name), "\(name)")
     }
+}
+
+/// The settings revamp: the production flag is the operator's, and `project` stays behind.
+@Test func setEnvironmentProductionIsAnOperatorOnlyControlForwardingItsWord() async throws {
+    let (registry, client) = try await projectEnvironmentRegistry()
+    let action = await registry.all().first { $0.name == "ctx_set_environment_production" }
+    #expect(action?.kind == .control)
+    #expect(action?.audience == .operatorOnly)
+    #expect(operatorOnlyActions.contains("ctx_set_environment_production"))
+    _ = try await registry.dispatch(
+        name: "ctx_set_environment_production",
+        params: .object(["project": .string("acme"), "projectPath": .string("/p.json"),
+                         "name": .string("production"), "production": .string("no")]),
+        origin: .ui, caller: .test("dev"), confirmation: nil)
+    let call = await client.calls.last
+    #expect(call?.name == "set_environment_production")
+    #expect(call?.arguments == .object(["projectPath": .string("/p.json"),
+                                        "name": .string("production"), "production": .string("no")]))
 }
 
 @Test func theSixActionsForwardToTheirToolsWithTheToolsArguments() async throws {

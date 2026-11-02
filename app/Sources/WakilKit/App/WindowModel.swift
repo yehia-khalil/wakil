@@ -4161,6 +4161,21 @@ public final class WindowModel {
         return (nil, nil)
     }
 
+    /// Declares an environment production (`true`), not (`false`), or clears the declaration so its
+    /// name decides (`nil`, Rule 9). Returns the refusal sentence, or nil once written.
+    public func setEnvironmentProduction(
+        project: String, projectPath: String, environment: String, to production: Bool?
+    ) async -> String? {
+        let word = production.map { $0 ? "yes" : "no" } ?? "name"
+        let reply = await projectLifecycle(
+            "ctx_set_environment_production",
+            ["project": .string(project), "projectPath": .string(projectPath),
+             "name": .string(environment), "production": .string(word)])
+        if let error = reply.error { return error }
+        await followDisk()
+        return nil
+    }
+
     /// Renames an environment. Its saved arrangements move with it, and what is in memory too, as
     /// `renameProject`.
     public func renameEnvironment(

@@ -19,3 +19,16 @@ private func decodeEnvironment(_ json: String) throws -> SettingsEnvironment {
     #expect(env.production == nil)
     #expect(env.name == "live")
 }
+
+/// The raw flag behind `production`, so the page can say whether the name decided (Rule 9).
+@Test func anEnvironmentDecodesItsDeclaredFlag() throws {
+    let env = try decodeEnvironment(#"{"name":"production","production":false,"productionDeclared":false,"databases":[],"api":[]}"#)
+    #expect(env.productionDeclared == false)
+    #expect(env.production == false)
+}
+
+@Test func anUndeclaredFlagDecodesNil() throws {
+    let env = try decodeEnvironment(#"{"name":"production","production":true,"databases":[],"api":[]}"#)
+    #expect(env.productionDeclared == nil)
+    #expect(env.production == true)
+}
