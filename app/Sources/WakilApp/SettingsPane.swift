@@ -197,6 +197,9 @@ struct SettingsPane: View {
     /// Removes an environment: project, project file, name. The receipt or the refusal.
     var removeEnvironment: (String, String, String) async -> (receipt: String?, error: String?) =
         { _, _, _ in (nil, nil) }
+    /// Declares an environment production or not, or nil to let its name decide (settings revamp):
+    /// project, project file, environment, declaration. Answers the refusal or nil.
+    var setEnvironmentProduction: (String, String, String, Bool?) async -> String? = { _, _, _, _ in nil }
     /// Says a refusal in the window's status, for a Name field gone before its write answered.
     var showUnseenRefusal: (String) -> Void = { _ in }
 
@@ -674,6 +677,52 @@ struct SettingsPane: View {
 
     /// One node. A branch's chevron is its own button, calling `toggle`, beside the row's button,
     /// so opening a branch never selects it and selecting one never opens or closes it.
+    /// An environment's Production row (settings revamp, Rule 9): No / Yes / From the name, with
+    /// what the name decided under it while nothing is declared. A press writes at once, shows the
+    /// write in flight (Rule 5) and a refusal whole under the row (Rule 8). Its tree dot follows.
+    private func productionRow(_ environment: SettingsEnvironment, project: SettingsProject) -> some View {
+        let key = "production.\(project.name).\(environment.name)"
+        let current = SettingsProductionChoice.current(declared: environment.productionDeclared)
+        return VStack(alignment: .leading, spacing: 2) {
+            SettingsRow("Production", wraps: true) {
+                HStack(spacing: 8) {
+                    SegmentedChoice(
+                        options: SettingsProductionChoice.allCases.map(\.rawValue),
+                        selection: Binding(
+                            get: { environment.production == nil ? "" : current.rawValue },
+                            set: { label in
+                                guard let choice = SettingsProductionChoice(rawValue: label), choice != current,
+                                      !lifecycleBusy.contains(key) else { return }
+                                lifecycleBusy.insert(key)
+                                lifecycleRefusals[key] = nil
+                                Task {
+                                    lifecycleRefusals[key] = await setEnvironmentProduction(
+                                        project.name, project.path, environment.name, choice.declared)
+                                    lifecycleBusy.remove(key)
+                                }
+                            }),
+                        identifier: { label in
+                            "settings.environment.production.\(SettingsProductionChoice(rawValue: label).map { "\($0)" } ?? label)"
+                        })
+                    if lifecycleBusy.contains(key) { ProgressView().controlSize(.small) }
+                }
+            }
+            if let hint = SettingsProductionChoice.hint(
+                declared: environment.productionDeclared, production: environment.production) {
+                FormHint(hint).underRowValue()
+            }
+            if let refusal = lifecycleRefusals[key] {
+                Text(refusal)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("settings.environment.production.refusal")
+            }
+        }
+    }
+
     /// A scope's heading in the tree (settings revamp): WAKIL and the organisation's name, drawn
     /// as PROJECTS is but neither opening nor selecting anything.
     private func scopeHeading(_ text: String, identifier: String, first: Bool = false) -> some View {
@@ -1265,6 +1314,7 @@ struct SettingsPane: View {
                     ("API", "\(environment.api.count)", true),
                 ])
                 if let project = tree.projects.first(where: { $0.name == projectName }) {
+                    productionRow(environment, project: project)
                     removeSection(
                         key: "remove.environment.\(projectName).\(environmentName)",
                         label: "Remove environment", identifier: "settings.environment.remove",
@@ -2760,11 +2810,11 @@ struct SettingsPane: View {
         let server = databaseDriverHasServer(databaseConnection.driver)
         let becomesWritable = databaseGrantWrite
             && !(listed.first { $0.name == databaseName }?.writable ?? false)
-        // **Its own card** (#327): the list above is what exists, and this
-        // is how to add to it — or, after **Edit** (2e-iv), to change one of
-        // them. One card either way, so there is never a second form here.
-        FormCard(
-            title: databaseEditing?.title(name: databaseName) ?? DatabaseWording.cardTitle
+        // **Its own section** (#327; a section, not a card, since the settings revamp): the list
+        // above is what exists, and this is how to add to it — or, after **Edit** (2e-iv), to
+        // change one of them. One section either way, so there is never a second form here.
+        SettingsSection(
+            databaseEditing?.title(name: databaseName) ?? DatabaseWording.cardTitle
         ) {
             // A quiet verb in the header, not a third button beside Save: leaving edit mode
             // writes nothing, so it is said as softly as the title it sits beside.
@@ -3412,10 +3462,10 @@ extension SettingsPane {
         .padding(.bottom, SettingsScale.openGap)
     }
 
-    /// The card under the entries: the database card's twin, field for field in its widths.
+    /// The section under the entries: the database section's twin, field for field in its widths.
     func apiForm(path: String, environment: String) -> some View {
         let ready = ApiEntryWording.canSave(name: apiName, baseUrl: apiBaseUrl) && !apiSaving
-        return FormCard(title: "ADD OR REPLACE AN API ENTRY") {
+        return SettingsSection("Add or replace an API entry", accessory: { EmptyView() }) {
             FormRow {
                 LabelledField(label: "NAME", prompt: "orders-api", text: $apiName,
                               width: 160, identifier: "settings.api.name")
