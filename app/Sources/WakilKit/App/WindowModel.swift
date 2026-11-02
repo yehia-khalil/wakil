@@ -3312,12 +3312,14 @@ public final class WindowModel {
         public var identifierFragment: String { rawValue }
 
         /// Whether leaving the field saves it — by focus moving on or its page going (3a-ii,
-        /// Rule 2). The agent boxes are multi-line, so Return is a new line and leaving is the
-        /// only save. The others keep Return and Save.
+        /// Rule 2). Every typed field does (settings revamp): no Save button anywhere. The agent
+        /// boxes are multi-line, so Return is a new line and leaving is the only save; the
+        /// one-line fields also save on Return. The choices save on their press.
         public var savesOnLeave: Bool {
             switch self {
-            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
-            default: return false
+            case .displayName, .jiraBase, .defaultProvider,
+                 .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+            case .speechProvider, .quickProvider, .pullStrategy: return false
             }
         }
 

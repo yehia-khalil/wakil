@@ -1402,28 +1402,17 @@ struct SettingsPane: View {
     private func organisationEditor(
         _ field: WindowModel.OrganisationField, label: String, in tree: SettingsTree
     ) -> some View {
-        let stored = storedValue(field, in: tree)
-        let draft = drafts[field]
         VStack(alignment: .leading, spacing: 2) {
             SettingsRow(label) {
+                // Saved when left or on Return (settings revamp, Rule 2): no Save, no Revert. While
+                // the write is in flight it says so beside the field (Rule 5).
                 HStack(spacing: 8) {
                     organisationField(field, prompt: "—", width: 320, in: tree)
-                    if draft != nil, draft != stored {
-                        Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
-                            .buttonStyle(.plain)
+                    if saving == field {
+                        Text("Saving…")
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(saving == field ? 0.35 : 0.70))
-                            .disabled(saving == field)
-                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).save")
-                        // Revert is the escape from a typed value the
-                        // operator has changed their mind about. It clears
-                        // the draft rather than writing anything, so the
-                        // field goes back to showing disk.
-                        Button("Revert") { drafts[field] = nil; refusals[field] = nil }
-                            .buttonStyle(.plain)
-                            .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(0.40))
-                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).revert")
+                            .foregroundStyle(coolWhite.opacity(0.62))
+                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).saving")
                     }
                 }
             }

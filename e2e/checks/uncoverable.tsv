@@ -477,3 +477,4 @@ browser_rename_tab	its parity (names, 3d-i): the operator's channel is typing a 
 settings.tree.wakilHeading	a Text (settings revamp, §14): the WAKIL scope heading over Editor, Browser and Keyboard. Read, not pressed — it neither opens nor selects anything.
 settings.tree.organisationHeading	a Text (settings revamp, §14): the organisation's name as the heading over its pages. Read, not pressed — it neither opens nor selects anything.
 settings.tree.project.<…>.environmentsHeading	a Text (settings revamp): ENVIRONMENTS over a project's environments, a label and not a level. Read, not pressed; not a stop for ↑/↓ (settings-tree-keys.jsonl steps past it).
+settings.org.<…>.saving	a Text (settings revamp, Rule 5): "Saving…" beside an organisation field while its leave-save is in flight; read, not pressed, and drawn too briefly to assert reliably — 2e-settings-organisation.jsonl asserts the saved value instead.

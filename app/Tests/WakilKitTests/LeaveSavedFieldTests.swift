@@ -80,11 +80,13 @@ import Testing
     #expect(field.refusal == nil)
 }
 
-@Test func onlyTheGitFieldsOfTheOrganisationSaveWhenLeft() {
-    // 3a-ii scoped Rule 2's leave-save to Git name and email; 3a-iii-b adds the three agent boxes,
-    // which are multi-line and have no Return to save with. The others keep Return and Save.
+@Test func everyTypedOrganisationFieldSavesWhenLeft() {
+    // Settings revamp (Rule 2): display name, Jira site and default account join Git and the agent
+    // boxes — no field of the organisation needs Save. Speech, quick tasks and pull strategy are
+    // choices, saved on their press.
     let leaving = WindowModel.OrganisationField.allCases.filter(\.savesOnLeave)
-    #expect(leaving == [.gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
+    #expect(leaving == [.displayName, .jiraBase, .defaultProvider, .gitName, .gitEmail,
+                        .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
 }
 
 @Test func leaveSaveDoesNotResendTheValueLastRefused() {
