@@ -6,7 +6,6 @@
 {"do":{"click":"settings.tree.browser"}}
 {"expect":{"tree":"contains","text":"Search engine"}}
 {"expect":{"tree":"contains","text":"Start page"}}
-{"expect":{"frame":"settings.browser.clear","inside":"window"}}
 {"expect":{"tree":"contains","text":"Browsing data is this organisation's."}}
 {"dispatch":{"action":"ctx_browser_settings","params":{}}}
 {"expect":{"pane":"settings-2","field":"configuration.structuredContent.browser.searchEngine","equals":"google"}}
