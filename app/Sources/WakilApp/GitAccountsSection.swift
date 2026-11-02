@@ -107,7 +107,7 @@ struct GitAccountsBlock: View {
                         .foregroundStyle(SettingsPalette.caution)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, cancels: true, identifier: "settings.org.git.account.\(account.host).remove.keep") {
+                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "settings.org.git.account.\(account.host).remove.keep") {
                         confirmingRemove = nil
                     }
                     FormButton(title: "Remove", tone: SettingsPalette.destructive, filled: true, identifier: "settings.org.git.account.\(account.host).remove.confirm") {
@@ -778,7 +778,7 @@ struct GitAPIAccessRowView: View {
                         .foregroundStyle(SettingsPalette.caution)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, cancels: true, identifier: "\(id).remove.keep") { confirmingRemove = false }
+                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "\(id).remove.keep") { confirmingRemove = false }
                     FormButton(title: "Remove", tone: SettingsPalette.destructive, filled: true, identifier: "\(id).remove.confirm") {
                         confirmingRemove = false
                         run { note = await git.removeAPIAccess(host) }

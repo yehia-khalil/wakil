@@ -136,7 +136,7 @@ private struct LocalProviderRow: View {
     private var nameText: some View {
         Text(isNew ? "New model" : (label.isEmpty ? id : label))
             .font(.system(size: SettingsScale.body, weight: .medium))
-            .foregroundStyle(coolWhite.opacity(isNew ? SettingsInk.disabled : SettingsInk.primary))
+            .foregroundStyle(coolWhite.opacity(isNew ? SettingsInk.secondary : SettingsInk.primary))
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -151,7 +151,7 @@ private struct LocalProviderRow: View {
                             .frame(width: 5, height: 5)
                         Text(status)
                             .font(.system(size: SettingsScale.meta))
-                            .foregroundStyle(coolWhite.opacity(status == "reachable" ? SettingsInk.secondary : SettingsInk.disabled))
+                            .foregroundStyle(coolWhite.opacity(status == "reachable" ? SettingsInk.secondary : SettingsInk.secondary))
                             .lineLimit(1).fixedSize()
                     }
                     .accessibilityElement(children: .combine)

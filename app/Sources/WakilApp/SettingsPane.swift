@@ -385,6 +385,14 @@ struct SettingsPane: View {
         // The pane's extent, for those checks: a leaf behind the content, because macOS reports a
         // container's frame as the union of its children — the overflow it is meant to catch.
         .background(Color.clear.accessibilityElement().accessibilityIdentifier("settings.pane"))
+        // Esc answers an open removal or unlink question with Keep it (settings revamp). Through
+        // the responder chain, not a `.cancelAction` key equivalent: a window holds one live
+        // `.cancelAction` at a time (`ConfirmationPlane.ownsEscape`), and a plane in front of the
+        // pane keeps Esc. This reaches only when the keyboard is in the settings pane.
+        .onExitCommand {
+            if confirmingRemoval != nil { confirmingRemoval = nil }
+            else if confirmingUnlink != nil { confirmingUnlink = nil }
+        }
         .task(id: tree) { quickStatus = await quickTaskStatus() }
         .sheet(isPresented: $addingProject) {
             AddProjectSheet(
@@ -1406,7 +1414,7 @@ struct SettingsPane: View {
                 leave(field, tree: tree)
             }
             .onChange(of: drafts[field]) { _, draft in
-                guard field.savesOnLeave, draft != nil else { return }
+                guard field.savesWhileTyping, draft != nil else { return }
                 autosave.schedule { leave(field, tree: tree) }
             }
             // Leaving the page by the tree is leaving the field too, and the focus change
@@ -1782,7 +1790,7 @@ struct SettingsPane: View {
             refusals[field] = refusal
             if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
             // Typed on while it saved: that is the next save.
-            if refusal == nil, field.savesOnLeave, drafts[field] != nil { autosave.schedule { leave(field, tree: tree) } }
+            if refusal == nil, field.savesWhileTyping, drafts[field] != nil { autosave.schedule { leave(field, tree: tree) } }
             quickStatus = await quickTaskStatus()
         }
     }
@@ -2365,7 +2373,7 @@ struct SettingsPane: View {
         _ act: @escaping () -> Void
     ) -> some View {
         // Every question's Keep it answers Esc (settings revamp): the escape is the safe answer.
-        FormButton(title: title, tone: tone, filled: filled, cancels: title == "Keep it",
+        FormButton(title: title, tone: tone, filled: filled,
                    identifier: identifier, action: act)
     }
 
@@ -3085,7 +3093,7 @@ private struct SettingsAboutButton: View {
         Button { open.toggle() } label: {
             Image(systemName: "info.circle")
                 .font(.system(size: 10))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? SettingsInk.primary : SettingsInk.disabled))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? SettingsInk.primary : SettingsInk.tertiary))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -3359,7 +3367,7 @@ extension SettingsPane {
     private func tokenValue(_ api: SettingsAPI) -> some View {
         Text(ApiEntryWording.token(authRef: api.authRef))
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? SettingsInk.disabled : SettingsInk.secondary))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? SettingsInk.secondary : SettingsInk.secondary))
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .help(ApiEntryWording.token(authRef: api.authRef))

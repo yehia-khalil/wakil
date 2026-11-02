@@ -29,6 +29,10 @@ struct BrowsingDataSettingsForm: View {
             }
             SettingsSection("Passwords") { BrowserPasswordsSettings(org: organisationId, name: organisation) }
         }
+        // Esc keeps the data (settings revamp) when the keyboard is on this page — the responder
+        // chain, never a `.cancelAction` (one per window: `ConfirmationPlane.ownsEscape`). A
+        // password row's own Esc, inside this, is reached first.
+        .onExitCommand { if confirming { confirming = false } }
     }
 
     private var clearSection: some View {
@@ -71,7 +75,7 @@ struct BrowsingDataSettingsForm: View {
                             }
                         }
                         FormButton(title: BrowserClearDataQuestion.keepLabel, tone: coolWhite.opacity(0.62),
-                                   cancels: true, identifier: "settings.browser.clear.keep") {
+                                   identifier: "settings.browser.clear.keep") {
                             confirming = false
                         }
                     }

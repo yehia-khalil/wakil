@@ -89,6 +89,16 @@ import Testing
                         .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
 }
 
+@Test func onlyTheAuthorFieldsSaveWhileTypingPauses() {
+    // A pause mid-typing must not rename the organisation, try half a Jira site or name half an
+    // account (review, settings revamp): those three save when left or on Return, never on a pause.
+    let typing = WindowModel.OrganisationField.allCases.filter(\.savesWhileTyping)
+    #expect(typing == [.gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
+    #expect(!WindowModel.OrganisationField.displayName.savesWhileTyping)
+    #expect(!WindowModel.OrganisationField.jiraBase.savesWhileTyping)
+    #expect(!WindowModel.OrganisationField.defaultProvider.savesWhileTyping)
+}
+
 @Test func leaveSaveDoesNotResendTheValueLastRefused() {
     #expect(LeaveSave.value(draft: "qa", stored: "staging", saving: false, refused: "qa") == nil)
     #expect(LeaveSave.value(draft: "qa2", stored: "staging", saving: false, refused: "qa") == "qa2")

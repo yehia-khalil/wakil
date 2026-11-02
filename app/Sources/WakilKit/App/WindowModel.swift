@@ -3323,6 +3323,17 @@ public final class WindowModel {
             }
         }
 
+        /// Whether a pause in typing saves it too: the fields that did before the settings revamp
+        /// (Author, the agent boxes). Not the display name, the Jira site or the default account:
+        /// a pause would rename the organisation on disk, or try half a site or half an account
+        /// id, while the operator is still typing. Those save when left or on Return.
+        public var savesWhileTyping: Bool {
+            switch self {
+            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+            default: return false
+            }
+        }
+
         /// What the form labels it.
         public var label: String {
             switch self {

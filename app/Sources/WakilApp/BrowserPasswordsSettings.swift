@@ -182,12 +182,12 @@ struct BrowserPasswordsSettings: View {
                 } else {
                     Text(BrowserPasswordSettings.shown(login.username))
                         .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(coolWhite.opacity(login.username.isEmpty ? SettingsInk.disabled : SettingsInk.primary))
+                        .foregroundStyle(coolWhite.opacity(login.username.isEmpty ? SettingsInk.secondary : SettingsInk.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(width: SettingsScale.labelWidth + 40, alignment: .leading)
                     Text(revealed[key] ?? "••••••••")
                         .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(revealed[key] == nil ? SettingsInk.disabled : SettingsInk.primary))
+                        .foregroundStyle(coolWhite.opacity(revealed[key] == nil ? SettingsInk.secondary : SettingsInk.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         // Not selectable: ⌘C would copy it unmarked. Copy is the one way out.
                         .accessibilityIdentifier("settings.browser.passwords.row.\(n).value")
@@ -417,7 +417,7 @@ struct BrowserPasswordsSettings: View {
                 }
                 .disabled(busy.contains(key))
                 FormButton(title: BrowserPasswordSettings.keepLabel, tone: coolWhite.opacity(0.62),
-                           cancels: true, identifier: "settings.browser.passwords.row.\(n).delete.keep") {
+                           identifier: "settings.browser.passwords.row.\(n).delete.keep") {
                     confirmingDelete = nil
                 }
             }
