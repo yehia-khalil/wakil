@@ -215,6 +215,8 @@ struct SettingsPane: View {
     @State private var receipt: (node: SettingsNode, text: String)?
     /// The node whose Name field takes the keyboard when its page appears (Rule 3).
     @State private var pendingNameFocus: SettingsNode?
+    /// Letters typed into the tree in the last second (settings revamp: type-to-find).
+    @State private var typeAhead = TypeAhead()
 
     /// The database form's fields, while it is open.
     ///
@@ -589,15 +591,56 @@ struct SettingsPane: View {
         }
     }
 
-    /// → opens the selected project or environment, ← closes it. Any other key is not the tree's.
-    private func treeKey(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return .ignored }
-        let open: Bool
-        switch press.key {
-        case .rightArrow: open = true
-        case .leftArrow: open = false
-        default: return .ignored
+    /// The rows the tree draws, in order, with their labels: what ↑/↓ step through and typed
+    /// letters search. Headings are not rows. Mirrors `treeColumn`.
+    private var visibleRows: [(node: SettingsNode, label: String)] {
+        var rows = (SettingsNode.topLevel(.wakil) + SettingsNode.topLevel(.organisation))
+            .map { (node: $0, label: $0.label) }
+        guard expansion.projectsOpen else { return rows }
+        for project in tree?.projects ?? [] {
+            rows.append((.project(project.name), project.name))
+            guard expansion.isOpen(project: project.name) else { continue }
+            rows.append((.projectEditor(project.name), "Editor"))
+            for environment in project.environments {
+                rows.append((.environment(project: project.name, environment: environment.name), environment.name))
+                guard expansion.isOpen(project: project.name, environment: environment.name) else { continue }
+                rows.append((.databases(project: project.name, environment: environment.name), "Databases"))
+                rows.append((.api(project: project.name, environment: environment.name), "API"))
+            }
         }
+        return rows
+    }
+
+    /// The tree's keys (settings revamp): ↑/↓ move the selection through the visible rows, a typed
+    /// letter finds the next row starting with what was typed in the last second, → opens the
+    /// selected project or environment and ← closes it. Neither move opens a branch (Rule 6). The
+    /// column only has these keys while it has focus, so a field elsewhere keeps its own.
+    private func treeKey(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.intersection([.command, .control, .option]).isEmpty else { return .ignored }
+        switch press.key {
+        case .upArrow, .downArrow:
+            guard press.modifiers.isEmpty else { return .ignored }
+            let rows = visibleRows.map(\.node)
+            if let next = SettingsTreeKeys.step(rows, from: selection, by: press.key == .upArrow ? -1 : 1) {
+                selection = next
+            }
+            return .handled
+        case .rightArrow, .leftArrow:
+            guard press.modifiers.isEmpty else { return .ignored }
+            return openOrClose(press.key == .rightArrow)
+        default:
+            guard let character = press.characters.first, press.characters.count == 1,
+                  character.isLetter || character.isNumber || character == "-" || character == " "
+            else { return .ignored }
+            let prefix = typeAhead.append(character, at: Date())
+            if let found = SettingsTreeKeys.find(visibleRows, prefix: prefix, after: selection) {
+                selection = found
+            }
+            return .handled
+        }
+    }
+
+    private func openOrClose(_ open: Bool) -> KeyPress.Result {
         switch selection {
         case .project(let project):
             expansion.setOpen(open, project: project)
@@ -2225,7 +2268,9 @@ struct SettingsPane: View {
         _ title: String, tone: Color, filled: Bool = false, identifier: String,
         _ act: @escaping () -> Void
     ) -> some View {
-        FormButton(title: title, tone: tone, filled: filled, identifier: identifier, action: act)
+        // Every question's Keep it answers Esc (settings revamp): the escape is the safe answer.
+        FormButton(title: title, tone: tone, filled: filled, cancels: title == "Keep it",
+                   identifier: identifier, action: act)
     }
 
     private func dismissButton(_ title: String) -> some View {

@@ -420,7 +420,7 @@ struct BrowserPasswordsSettings: View {
                 }
                 .disabled(busy.contains(key))
                 FormButton(title: BrowserPasswordSettings.keepLabel, tone: coolWhite.opacity(0.62),
-                           identifier: "settings.browser.passwords.row.\(n).delete.keep") {
+                           cancels: true, identifier: "settings.browser.passwords.row.\(n).delete.keep") {
                     confirmingDelete = nil
                 }
             }

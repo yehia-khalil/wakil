@@ -221,7 +221,7 @@ struct BrowserSettingsForm: View {
                             }
                         }
                         FormButton(title: BrowserClearDataQuestion.keepLabel, tone: coolWhite.opacity(0.62),
-                                   identifier: "settings.browser.clear.keep") {
+                                   cancels: true, identifier: "settings.browser.clear.keep") {
                             confirming = false
                         }
                     }

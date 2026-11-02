@@ -334,11 +334,15 @@ struct FormButton: View {
     let title: String
     let tone: Color
     var filled: Bool = false
+    /// Esc presses it: a destroy question's **Keep it** (settings revamp), so the safe answer is
+    /// the one the escape key gives.
+    var cancels: Bool = false
     let identifier: String
     let action: () -> Void
 
     var body: some View {
         Button(title, action: action)
+            .keyboardShortcut(cancels ? KeyboardShortcut.cancelAction : nil)
             .buttonStyle(.plain)
             .font(.system(size: SettingsScale.body))
             .foregroundStyle(tone)
