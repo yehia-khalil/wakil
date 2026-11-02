@@ -220,3 +220,20 @@ proposes a fix*); amendment *piece 2's drafting conversation*. The ▶ Run on th
 36. e2e: `seeded/workspaces-running-draft-refusal.jsonl` (an agent that is not drafting is refused),
     `agent/workspaces-running-drafting.jsonl` (Detect → the conversation's draft → Save → a failing
     Try → the fix proposed); the stub's two rules. Docs: `wakilkit.md`, the spec's amendment.
+
+## Phase 15 — The Running page redrawn (the operator's comp, 2026-11-02)
+
+37. `RunStop` (WakilKit, tested): four stops on one spine — Prepare a new copy (Copy, Clone, Setup,
+    Build), Start (Needs, Services, Processes), Ready when (Ready), Stop (Teardown) — replacing
+    `RecipeFieldSection`; `stopFields` (an unset field is a `+ <Field>` chip; an opened or edited one
+    a row; a repo's empty value over the recipe's stays a row), `formText` (processes as aligned
+    `name  command`, read back either way), `portRows` / `firstBlockPort` (41200 + n for a plain
+    `$WAKIL_PORT[_n]` only), `runStopProgress` / `tryStepStates` / `tryStatusDetail` (a Try's steps
+    mapped onto stops: passed, running, failed, not reached).
+38. `RunningSettingsForm` + `RunningSettingsParts`: one column; the repo switch only with two or more
+    repos (Draft all beside it; one repo's head Draft is Draft all); the head's Recipe menu (each
+    recipe, Doesn't run); the spine with its nodes lit by a Try; the failed stop's error whole, its
+    fix and Show output; Ports and environment as two columns below a hairline.
+39. e2e: `seeded/workspaces-running-recipe.jsonl`, `-settings`, `-try-steps`, `-try-other-project`
+    and `agent/workspaces-running-drafting.jsonl` rewritten to the page (chips focus their field,
+    the Recipe menu, the ports table's numbers, the fix asked again from the failed stop).

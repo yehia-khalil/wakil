@@ -239,6 +239,10 @@ public enum RecipeField: String, CaseIterable, Sendable {
                 defer { if late, !out.isEmpty { out[out.count - 1].afterReady = true } }
                 if let colon = l.firstIndex(of: ":"), !l[..<colon].contains(" "), !l[..<colon].isEmpty {
                     out.append(RecipeProcess(name: String(l[..<colon]), command: l[l.index(after: colon)...].trimmingCharacters(in: .whitespaces)))
+                } else if let gap = l.range(of: "  "), !l[..<gap.lowerBound].isEmpty, !l[..<gap.lowerBound].contains(" "),
+                          !l[gap.upperBound...].trimmingCharacters(in: .whitespaces).isEmpty {
+                    // The form draws a process as `name  command`, its names aligned (formText).
+                    out.append(RecipeProcess(name: String(l[..<gap.lowerBound]), command: l[gap.upperBound...].trimmingCharacters(in: .whitespaces)))
                 } else {
                     var name = "app"
                     var n = 2
@@ -277,43 +281,6 @@ public enum RecipeField: String, CaseIterable, Sendable {
         }
         return r
     }
-}
-
-/// The form's fields in four headed sections, by when they apply: what a new copy runs once,
-/// what every ▶ runs, the ports and env all of those see, and what Stop runs. Every field is in
-/// exactly one section; the env box is drawn under Ports and environment (`holdsEnv`).
-public enum RecipeFieldSection: String, CaseIterable, Sendable {
-    case newCopy, everyRun, portsAndEnv, onStop
-
-    public var title: String {
-        switch self {
-        case .newCopy: "New copy · runs once"
-        case .everyRun: "Every run"
-        case .portsAndEnv: "Ports and environment"
-        case .onStop: "On stop"
-        }
-    }
-
-    public var hint: String {
-        switch self {
-        case .newCopy: "Runs on the first ▶ in a new workspace."
-        case .everyRun: "Runs on every ▶."
-        case .portsAndEnv: "Applies to all of the above."
-        case .onStop: "Runs on ■ Stop or Archive."
-        }
-    }
-
-    public var fields: [RecipeField] {
-        switch self {
-        case .newCopy: [.copy, .clone, .setup, .build]
-        case .everyRun: [.needs, .services, .processes, .ready]
-        case .portsAndEnv: [.ports]
-        case .onStop: [.teardown]
-        }
-    }
-
-    /// Whether the env box (variables, Also write to .env) is drawn in this section, after its fields.
-    public var holdsEnv: Bool { self == .portsAndEnv }
 }
 
 /// Where a field of a repo's form comes from.

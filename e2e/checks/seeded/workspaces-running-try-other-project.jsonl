@@ -3,7 +3,7 @@
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.projectRunning.e2e-git"}}
 {"do":{"click":"settings.running.repo.e2e-api"}}
-{"expect":{"tree":"contains","text":"uses e2e-static"}}
+{"expect":{"tree":"contains","text":"Recipe e2e-static"}}
 {"do":{"click":"settings.running.try"}}
 {"expect":{"journal":{"contains":"\"action\":\"running_try\""}}}
 {"expect":{"tree":"contains","text":"Last Try"}}
