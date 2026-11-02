@@ -137,7 +137,7 @@ private struct LocalProviderRow: View {
         Text(isNew ? "New model" : (label.isEmpty ? id : label))
             .font(.system(size: SettingsScale.body, weight: .medium))
             .foregroundStyle(coolWhite.opacity(isNew ? SettingsInk.disabled : SettingsInk.primary))
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The URL, whether it answers, and the error or refusal under it, whole.
@@ -215,7 +215,7 @@ private struct LocalProviderRow: View {
         .font(.system(size: SettingsScale.micro, weight: .medium))
         .tracking(SettingsScale.microTracking)
         .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
-        .lineLimit(1)
+        .fixedSize(horizontal: false, vertical: true)
         .fixedSize()
         .accessibilityIdentifier("settings.localProvider.\(id).\(isNew ? "cancel" : "remove")")
     }

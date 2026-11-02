@@ -94,8 +94,7 @@ struct FormCard<Accessory: View, Content: View>: View {
                     .font(.system(size: SettingsScale.micro, weight: .medium))
                     .tracking(SettingsScale.microTracking)
                     .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 accessory
             }
@@ -552,8 +551,7 @@ struct SettingsValue: View {
             .font(.system(size: monospaced ? SettingsScale.identifier : SettingsScale.body,
                           design: monospaced ? .monospaced : .default))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(text.isEmpty ? SettingsInk.disabled : SettingsInk.primary))
-            .lineLimit(1)
-            .truncationMode(.middle)
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
 }

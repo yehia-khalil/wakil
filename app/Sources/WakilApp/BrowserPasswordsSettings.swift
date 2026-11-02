@@ -159,8 +159,7 @@ struct BrowserPasswordsSettings: View {
                     Text(group.site)
                         .font(.system(size: SettingsScale.identifier, design: .monospaced))
                         .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 8)
                     ForEach(group.rows, id: \.index) { row in
                         loginRow(row.login, n: row.index)
@@ -184,14 +183,12 @@ struct BrowserPasswordsSettings: View {
                     Text(BrowserPasswordSettings.shown(login.username))
                         .font(.system(size: SettingsScale.body))
                         .foregroundStyle(coolWhite.opacity(login.username.isEmpty ? SettingsInk.disabled : SettingsInk.primary))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(width: SettingsScale.labelWidth + 40, alignment: .leading)
                     Text(revealed[key] ?? "••••••••")
                         .font(.system(size: SettingsScale.identifier, design: .monospaced))
                         .foregroundStyle(coolWhite.opacity(revealed[key] == nil ? SettingsInk.disabled : SettingsInk.primary))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                         // Not selectable: ⌘C would copy it unmarked. Copy is the one way out.
                         .accessibilityIdentifier("settings.browser.passwords.row.\(n).value")
                 }
@@ -460,8 +457,7 @@ struct BrowserPasswordsSettings: View {
                         Text(site)
                             .font(.system(size: SettingsScale.identifier, design: .monospaced))
                             .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .fixedSize(horizontal: false, vertical: true)
                         Button { offerAgain(site) } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: SettingsScale.meta, weight: .semibold))

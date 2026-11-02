@@ -801,7 +801,7 @@ struct SettingsPane: View {
                     Text(label)
                         .font(.system(size: Scale.door))
                         .foregroundStyle(coolWhite.opacity(selected ? SettingsInk.primary : SettingsInk.secondary))
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let badge {
                         Text(badge)
                             .font(.system(size: Scale.meta, design: .monospaced))
@@ -1118,7 +1118,7 @@ struct SettingsPane: View {
             .font(.system(size: Scale.micro, weight: .medium))
             .tracking(Scale.microTracking)
             .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("settings.breadcrumb")
     }
 
@@ -1605,7 +1605,7 @@ struct SettingsPane: View {
                     Text(route)
                         .font(.system(size: Scale.meta))
                         .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("settings.org.quickProvider.route")
                 }
                 Spacer(minLength: 0)
@@ -2626,7 +2626,7 @@ struct SettingsPane: View {
                             .font(.system(size: Scale.micro, weight: .medium))
                             .tracking(Scale.microTracking)
                             .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                             .fixedSize()
                     } else {
                         // **Offered even when the credential is missing.**
@@ -2685,7 +2685,7 @@ struct SettingsPane: View {
             .foregroundStyle(tone)
             // One line at its own width (#326): a narrower window squeezed
             // these until each word wrapped a letter per line.
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
             .fixedSize()
             .disabled(!enabled)
             .accessibilityIdentifier(identifier)
@@ -2772,7 +2772,7 @@ struct SettingsPane: View {
                     .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 if liveness.hasIdentity {
                     Text(liveness.email).font(.system(size: Scale.meta))
-                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary)).lineLimit(1)
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary)).fixedSize(horizontal: false, vertical: true)
                 }
             }
         } else {
@@ -3192,8 +3192,7 @@ extension SettingsPane {
         Text(text)
             .font(.system(size: SettingsScale.meta, design: .monospaced))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(opacity))
-            .lineLimit(1)
-            .truncationMode(.middle)
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
 
@@ -3361,8 +3360,7 @@ extension SettingsPane {
         Text(ApiEntryWording.token(authRef: api.authRef))
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? SettingsInk.disabled : SettingsInk.secondary))
-            .lineLimit(1)
-            .truncationMode(.middle)
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .help(ApiEntryWording.token(authRef: api.authRef))
     }
