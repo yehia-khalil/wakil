@@ -386,8 +386,7 @@ struct Home: View {
                         } else {
                             // Ready: each port is its app's link, `:41210 ↗` (design-language §5).
                             ForEach(Array(card.appLinks.enumerated()), id: \.offset) { i, app in
-                                appLink(app, size: 11)
-                                    .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).app:\(i)")
+                                appLink(app, size: 11, identifier: "landing.card:\(cardNumbers[card.id] ?? 0).app:\(i)")
                             }
                         }
                         Button { runOnCard(card) { await model.stopOnCard(card.id) } } label: {
@@ -431,7 +430,7 @@ struct Home: View {
 
     /// A ready app's `:41210 ↗` in the void's blue: Wakil's browser pane (`browser_open`), ⌥-click
     /// the system browser, as every ↗ link (`WakilLinks`). Its root, never the ready check's path.
-    private func appLink(_ app: HomeAppLink, size: CGFloat) -> some View {
+    private func appLink(_ app: HomeAppLink, size: CGFloat, identifier: String) -> some View {
         Button(WebLink.label(app.label)) { WakilLinks.open(app.url, systemBrowser: NSEvent.modifierFlags.contains(.option), model: model) }
             .buttonStyle(.plain)
             .font(.system(size: size, weight: .medium, design: .monospaced))
@@ -439,6 +438,7 @@ struct Home: View {
             .fixedSize(horizontal: false, vertical: true)
             .help("Open \(app.url) in Wakil's browser; ⌥-click for the system browser")
             .accessibilityLabel("Open \(app.url)")
+            .accessibilityIdentifier(identifier)
     }
 
     /// `INI-140 Move webhook signing to the vault staging`, wrapping whole; a child row adds
@@ -540,8 +540,7 @@ struct Home: View {
                         Text(running).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(runColour(card))
                             .fixedSize(horizontal: false, vertical: true)
                         ForEach(Array(card.appLinks.enumerated()), id: \.offset) { i, app in
-                            appLink(app, size: 11.5)
-                                .accessibilityIdentifier("landing.card:\(cardNumbers[card.id] ?? 0).bodyApp:\(i)")
+                            appLink(app, size: 11.5, identifier: "landing.card:\(cardNumbers[card.id] ?? 0).bodyApp:\(i)")
                         }
                     }
                 }
