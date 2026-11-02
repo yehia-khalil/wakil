@@ -457,3 +457,36 @@ func TestConfigTreeEnvironmentsCarryProduction(t *testing.T) {
 		t.Fatalf("wire form lacks production: %s (%v)", b, err)
 	}
 }
+
+// TestConfigTreeEnvironmentsCarryTheDeclaredFlag pins `productionDeclared`: the raw flag
+// beside its effect, so the settings page can say whether the name decided (Rule 9). Omitted
+// when nothing was declared, so an undeclared environment reads as such.
+func TestConfigTreeEnvironmentsCarryTheDeclaredFlag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{DisplayName: "Acme"}); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectFixture(t, "acme", "orders", Project{
+		Name: "orders", Org: "acme",
+		Environments: map[string]Environment{
+			"production": {Production: boolp(false)},
+			"staging":    {},
+		},
+	})
+	tree, err := LoadConfigTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := map[string]string{}
+	for _, e := range tree.Projects[0].Environments {
+		b, _ := json.Marshal(e)
+		wire[e.Name] = string(b)
+	}
+	if !strings.Contains(wire["production"], `"production":false,"productionDeclared":false`) {
+		t.Errorf("declared false not on the wire: %s", wire["production"])
+	}
+	if strings.Contains(wire["staging"], "productionDeclared") {
+		t.Errorf("undeclared environment carries productionDeclared: %s", wire["staging"])
+	}
+}
