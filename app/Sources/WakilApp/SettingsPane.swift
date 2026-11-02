@@ -579,7 +579,8 @@ struct SettingsPane: View {
     /// never on appear, so a selection left inside a branch the operator closed stays hidden.
     private func revealSelection() {
         switch selection {
-        case .organisation, .providers, .editor, .browser, .keyboard, .projects: return
+        case .organisation, .providers, .quickTasks, .browsingData, .speech,
+             .editor, .browser, .keyboard, .projects: return
         case .project: expansion.projectsOpen = true
         case .projectEditor(let project), .environment(let project, _):
             expansion.reveal(project: project)
@@ -1071,6 +1072,8 @@ struct SettingsPane: View {
             KeyboardSettingsForm(
                 keymap: keymap, error: keymapError, setKey: setKey, setKeys: setKeys,
                 recordingKey: recordingKey)
+        case .quickTasks, .browsingData, .speech:
+            EmptyView()   // Drawn by Task 5 of the settings revamp.
         case .projectEditor(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 EditorProjectSettingsForm(
@@ -2924,107 +2927,6 @@ struct SettingsPane: View {
                         + tree.providersSkipped.joined(separator: ", "),
                     tone: caution)
             }
-        }
-    }
-}
-
-/// Where the operator is standing in the config tree.
-///
-/// Keyed by NAME rather than by index, for the reason a pane's column
-/// widths are: the tree is re-read from disk on every read, so an index
-/// into it survives a read that reordered or removed something and points
-/// at a different subject afterwards. A name that is gone is gone, and the
-/// subject column says so.
-enum SettingsNode: Hashable {
-    /// The PROJECTS heading: where a removed project leaves the operator, with nothing of its
-    /// own to show but the receipt.
-    case projects
-    case organisation
-    case providers
-    case editor
-    case browser
-    case keyboard
-    case projectEditor(String)
-
-    /// A stable fragment for this node's accessibility identifier.
-    ///
-    /// **Not derived from the label**, which is the organisation's display
-    /// name and changes the moment the pane's own form edits it — an
-    /// identifier that moves when the thing it names is edited is no
-    /// identifier at all.
-    var identifierFragment: String {
-        switch self {
-        case .organisation: return "organisation"
-        case .providers: return "providers"
-        case .projects: return "projects"
-        case .editor: return "editor"
-        case .browser: return "browser"
-        case .keyboard: return "keyboard"
-        case .projectEditor(let name): return "projectEditor.\(name)"
-        case .project(let name): return "project.\(name)"
-        case .environment(let project, let environment):
-            return "environment.\(project).\(environment)"
-        case .databases(let project, let environment):
-            return "databases.\(project).\(environment)"
-        case .api(let project, let environment):
-            return "api.\(project).\(environment)"
-        }
-    }
-    case project(String)
-    case environment(project: String, environment: String)
-    case databases(project: String, environment: String)
-    case api(project: String, environment: String)
-
-    /// This node after a project is renamed: the same place under the new name, so a rename
-    /// never throws the operator to a page that says the node is gone.
-    func renaming(project old: String, to new: String) -> SettingsNode {
-        switch self {
-        case .project(old): return .project(new)
-        case .projectEditor(old): return .projectEditor(new)
-        case .environment(old, let e): return .environment(project: new, environment: e)
-        case .databases(old, let e): return .databases(project: new, environment: e)
-        case .api(old, let e): return .api(project: new, environment: e)
-        default: return self
-        }
-    }
-
-    /// This node after an environment is renamed.
-    func renaming(project: String, environment old: String, to new: String) -> SettingsNode {
-        switch self {
-        case .environment(project, old): return .environment(project: project, environment: new)
-        case .databases(project, old): return .databases(project: project, environment: new)
-        case .api(project, old): return .api(project: project, environment: new)
-        default: return self
-        }
-    }
-
-    /// The breadcrumb for this node. Four levels down needs one to say
-    /// where you are.
-    func breadcrumb(in tree: SettingsTree?) -> [String] {
-        let organisation = tree?.org.label ?? "Organisation"
-        switch self {
-        case .organisation:
-            return [organisation]
-        case .providers:
-            return [organisation, "Providers"]
-        case .projects:
-            return [organisation, "Projects"]
-        case .editor:
-            return ["Wakil", "Editor"]
-        case .browser:
-            return ["Wakil", "Browser"]
-        case .keyboard:
-            return ["Wakil", "Keyboard"]
-        case .projectEditor(let name):
-            return [organisation, "Projects", name, "Editor"]
-        case .project(let name):
-            return [organisation, "Projects", name]
-        case .environment(let project, let environment):
-            return [organisation, "Projects", project, environment]
-        case .databases(let project, let environment):
-            return [organisation, "Projects", project, environment, "Databases"]
-        case .api(let project, let environment):
-            return [organisation, "Projects", project, environment, "API"]
         }
     }
 }
