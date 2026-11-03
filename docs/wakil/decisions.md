@@ -1082,6 +1082,42 @@ by date. The charter's §4 keeps the rule and the table.
      Reverse if: not stated.
      Commit: fcd2825d · `app/Sources/WakilApp/EditorTicketView.swift`.
 
+106. **The settings tree is grouped by scope under micro headings — WAKIL (Editor, Browser,
+     Keyboard), the organisation's name (Organisation, Accounts, Quick tasks, Browsing data,
+     Speech), PROJECTS — and a project's environments sit under an ENVIRONMENTS label, not a
+     level.** Headings neither open nor select; ↑/↓ and type-to-find skip them. Providers is
+     labelled Accounts but keeps its node case and identifiers; moved controls keep theirs.
+     §14 holds the tree and each page's sections.
+     Why: one list mixed Wakil-wide and organisation-wide settings, and the organisation's name
+     was a page title that changed as it was edited.
+     Reverse if: not stated.
+     Commit: 044dde8c · `app/Sources/WakilKit/Panes/SettingsNode.swift`.
+
+107. **Whether an environment is production is the operator's answer — No, Yes, or From the
+     name — set only through `ctx_set_environment_production`, operator-only.** With no answer,
+     the name decides, and the page says what it decided. The tree draws production red, any
+     other green, nothing when an older `wakil-ctx` did not say.
+     Why: production sets the agent's price, and a name only suggests (Rule 9).
+     Reverse if: not stated.
+     Commit: f71f169e · `app/Sources/WakilKit/Registry/StandardActions.swift`.
+
+108. **Settings text comes in four ink steps (primary .86, secondary .62, tertiary .40 for
+     decoration only, disabled .32); read text is never below secondary, 6.7:1 or more. Every
+     removal is one red control; no text in settings is cut.** Headers are one weight over a
+     row and stand off what they head by `SettingsScale.headerGap`.
+     Why: headers, empty values and hints were under 4.5:1, destruction wore three colours, and
+     21 places cut names and values.
+     Reverse if: not stated.
+     Commit: c56946aa · `app/Sources/WakilKit/Panes/SettingsInk.swift`.
+
+109. **The organisation's fields save when left, with no Save or Revert; only the author and
+     agent-instruction fields also save on a typing pause.** Esc on a removal question answers
+     Keep it through the responder chain, never a second `.cancelAction` in the window.
+     Why: Rule 2; a pause mid-word saved half a display name or Jira site; one window holds one
+     cancel action (`ConfirmationPlane.ownsEscape`).
+     Reverse if: not stated.
+     Commit: 71536be1 · `app/Sources/WakilKit/App/WindowModel.swift`.
+
 ## Invariant 6 — the writes that have earned in
 
 Moved out of `north-star.md` §4 on 2026-09-17; §4 keeps the rule and the table. Entries are
