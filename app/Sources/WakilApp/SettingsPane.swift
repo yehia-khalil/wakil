@@ -558,14 +558,14 @@ struct SettingsPane: View {
             HStack(spacing: 4) {
                 chevron(open: open)
                 Text("PROJECTS")
-                    .font(.system(size: Scale.micro, weight: .medium))
+                    .font(.system(size: Scale.micro, weight: SettingsScale.headerWeight))
                     .tracking(Scale.microTracking)
                     .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Spacer(minLength: 0)
             }
             .padding(.leading, 8)
-            .padding(.top, 10)
-            .padding(.bottom, 2)
+            .padding(.top, SettingsScale.treeHeadingGap)
+            .padding(.bottom, SettingsScale.headerGap)
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
@@ -735,13 +735,13 @@ struct SettingsPane: View {
     /// as PROJECTS is but neither opening nor selecting anything.
     private func scopeHeading(_ text: String, identifier: String, first: Bool = false) -> some View {
         Text(text)
-            .font(.system(size: Scale.micro, weight: .medium))
+            .font(.system(size: Scale.micro, weight: SettingsScale.headerWeight))
             .tracking(Scale.microTracking)
             .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .fixedSize(horizontal: false, vertical: true)
             .padding(.leading, 8)
-            .padding(.top, first ? 0 : 10)
-            .padding(.bottom, 2)
+            .padding(.top, first ? 0 : SettingsScale.treeHeadingGap)
+            .padding(.bottom, SettingsScale.headerGap)
             .accessibilityIdentifier(identifier)
     }
 
@@ -749,11 +749,12 @@ struct SettingsPane: View {
     /// not a stop for ↑/↓.
     private func environmentsHeading(project: String) -> some View {
         Text("ENVIRONMENTS")
-            .font(.system(size: 8.5, weight: .medium))
+            .font(.system(size: 8.5, weight: SettingsScale.headerWeight))
             .tracking(Scale.microTracking)
             .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .padding(.leading, CGFloat(2) * 12 + 8 + 14)
-            .padding(.top, 6)
+            .padding(.top, 10)
+            .padding(.bottom, SettingsScale.headerGap - 2)
             .accessibilityIdentifier("settings.tree.project.\(project).environmentsHeading")
     }
 
@@ -2435,12 +2436,12 @@ struct SettingsPane: View {
         // label 22pt right of the cell it names (#271). Found by review;
         // the agent that wrote it could not see the window.
         .padding(.top, 14)
-        .padding(.bottom, 4)
+        .padding(.bottom, SettingsScale.headerGap)
     }
 
     private func columnLabel(_ text: String, width: CGFloat) -> some View {
         Text(text)
-            .font(.system(size: Scale.micro, weight: .medium))
+            .font(.system(size: Scale.micro, weight: SettingsScale.headerWeight))
             .tracking(Scale.microTracking)
             .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .frame(width: width, alignment: .leading)

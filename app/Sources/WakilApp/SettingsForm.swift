@@ -48,6 +48,14 @@ enum SettingsScale {
     static let labelWidth: CGFloat = 120
     /// The rhythm between a page's sections, and from a section's hairline to its header.
     static let sectionGap: CGFloat = 12
+    /// From a micro header to the first thing under it — a page section's header and the tree's
+    /// WAKIL / organisation / PROJECTS / ENVIRONMENTS. Less than the air above a header, so the
+    /// header reads as its group's, but enough that it is not mistaken for the row under it.
+    static let headerGap: CGFloat = 8
+    /// The air above a heading in the settings tree, parting one scope from the last.
+    static let treeHeadingGap: CGFloat = 18
+    /// A micro header's weight: one step over a row's, so a header never reads as a row.
+    static let headerWeight: Font.Weight = .semibold
     /// What opens under a row — a confirmation, **Replace token**'s field, a refusal — sits this
     /// far from the next row (2e-iii).
     static let openGap: CGFloat = 8
@@ -91,7 +99,7 @@ struct FormCard<Accessory: View, Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: SettingsScale.fieldGap) {
                 Text(title)
-                    .font(.system(size: SettingsScale.micro, weight: .medium))
+                    .font(.system(size: SettingsScale.micro, weight: SettingsScale.headerWeight))
                     .tracking(SettingsScale.microTracking)
                     .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
@@ -401,13 +409,13 @@ struct SettingsSection<Accessory: View, Content: View>: View {
             if drawsTitle {
                 HStack(alignment: .center, spacing: 6) {
                     Text(title.uppercased())
-                        .font(.system(size: SettingsScale.micro, weight: .medium))
+                        .font(.system(size: SettingsScale.micro, weight: SettingsScale.headerWeight))
                         .tracking(SettingsScale.microTracking)
                         .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                     accessory
                 }
                 .padding(.top, SettingsScale.sectionGap)
-                .padding(.bottom, 4)
+                .padding(.bottom, SettingsScale.headerGap)
             }
             content
         }
