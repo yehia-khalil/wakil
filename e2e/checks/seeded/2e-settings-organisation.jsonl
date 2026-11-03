@@ -2,16 +2,17 @@
 {"do":{"click":"settings.tree.organisation"}}
 {"expect":{"tree":"contains","text":"IDENTITY"}}
 {"expect":{"tree":"contains","text":"Display name"}}
-{"expect":{"tree":"contains","text":"ACCOUNTS"}}
+{"expect":{"tree":"contains","text":"AGENT INSTRUCTIONS"}}
 {"expect":{"tree":"contains","text":"CONNECTIONS"}}
 {"expect":{"tree":"contains","text":"GIT"}}
 {"do":{"click":"settings.org.connections.jira"}}
 {"expect":{"tree":"contains","text":"Site"}}
 {"do":{"type":{"into":"settings.org.jiraBase","text":"https://e2e.atlassian.net"}}}
 {"expect":{"tree":"contains","text":"https://e2e.atlassian.net"}}
-{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","jiraBase":"https://e2e.atlassian.net"},"click":"settings.org.jiraBase.save","assert":"tree"}}
-{"do":{"type":{"into":"settings.org.displayName","text":"-abandoned"}}}
-{"expect":{"tree":"contains","text":"-abandoned"}}
-{"do":{"click":"settings.org.displayName.revert"}}
-{"expect":{"tree":"absent","text":"-abandoned"}}
-{"expect":{"tree":"contains","text":"E2E Fixture"}}
+{"do":{"press":"Tab"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.jiraBase","equals":"https://e2e.atlassian.net"}}
+{"expect":{"tree":"absent","text":"Save"}}
+{"do":{"type":{"into":"settings.org.displayName","text":"-left"}}}
+{"do":{"press":"Tab"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.displayName","contains":"-left"}}
+{"expect":{"tree":"contains","text":"-left"}}

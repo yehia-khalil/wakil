@@ -25,7 +25,7 @@ struct NumberSettingRow: View {
                     TextField("", text: Binding(get: { draft ?? "\(value)" }, set: { draft = $0 }))
                         .textFieldStyle(.plain)
                         .font(.system(size: SettingsScale.body, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.88))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                         .frame(width: 44)
                         .inPlaceField(focused: focused)
                         .focused($focused)
@@ -37,7 +37,7 @@ struct NumberSettingRow: View {
                         .accessibilityIdentifier("\(identifier).stepper")
                     Text("\(range.lowerBound)–\(range.upperBound)")
                         .font(.system(size: SettingsScale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.30))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
             }
             if let refusal {
@@ -192,7 +192,7 @@ struct EditorAppSettingsForm: View {
             }
             Text("Yours across every organisation and project — stored in ~/.wakil/settings.json.")
                 .font(.system(size: SettingsScale.meta))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.40))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
         }
     }
 }
@@ -227,7 +227,7 @@ struct EditorProjectSettingsForm: View {
             Text("A file's own indentation wins: tab size and indent apply to new files and files with none. "
                  + "Stored in this project's project.json, so they travel with the code.")
                 .font(.system(size: SettingsScale.meta))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.40))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -269,11 +269,11 @@ struct HeavyFoldersSettingRow: View {
             HStack(spacing: 8) {
                 Text(".git")
                     .font(.system(size: SettingsScale.body, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fieldBox(width: 180)
                 Text("always heavy")
                     .font(.system(size: SettingsScale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.projectEditor.heavy.git")
@@ -289,7 +289,7 @@ struct HeavyFoldersSettingRow: View {
                         Image(systemName: "xmark").font(.system(size: SettingsScale.meta))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .disabled(inFlight)
                     .accessibilityLabel("Remove \(name)")
                     .accessibilityIdentifier("settings.projectEditor.heavy.\(i).remove")
@@ -330,7 +330,7 @@ struct HeavyFoldersSettingRow: View {
         TextField("folder name", text: text)
             .textFieldStyle(.plain)
             .font(.system(size: SettingsScale.body, design: .monospaced))
-            .foregroundStyle(coolWhite.opacity(0.88))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
             .fieldBox(width: 180)
             .focused($focused, equals: row)
             .onSubmit { commit(row) }

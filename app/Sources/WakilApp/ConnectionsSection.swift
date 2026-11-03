@@ -188,11 +188,11 @@ struct ConnectionPagePart: View {
     init(_ title: String) { self.title = title }
     var body: some View {
         Text(title.uppercased())
-            .font(.system(size: SettingsScale.micro, weight: .medium))
+            .font(.system(size: SettingsScale.micro, weight: SettingsScale.headerWeight))
             .tracking(SettingsScale.microTracking)
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.42))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
             .padding(.top, 14)
-            .padding(.bottom, 2)
+            .padding(.bottom, SettingsScale.headerGap)
     }
 }
 

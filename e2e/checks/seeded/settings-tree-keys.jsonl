@@ -1,0 +1,22 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.editor"}}
+{"expect":{"tree":"contains","text":"Wakil  ›  Editor"}}
+{"do":{"press":"Down"}}
+{"expect":{"tree":"contains","text":"Wakil  ›  Browser"}}
+{"do":{"press":"Down"}}
+{"expect":{"tree":"contains","text":"Wakil  ›  Keyboard"}}
+{"do":{"press":"Up"}}
+{"expect":{"tree":"contains","text":"Wakil  ›  Browser"}}
+{"do":{"press":"Up"}}
+{"do":{"press":"Up"}}
+{"expect":{"tree":"contains","text":"Wakil  ›  Editor"}}
+{"do":{"keys":"ke"}}
+{"expect":{"tree":"contains","text":"Wakil  ›  Keyboard"}}
+{"do":{"keys":"sp"}}
+{"expect":{"tree":"contains","text":"›  Speech"}}
+{"do":{"click":"settings.tree.environment.e2e-project.staging"}}
+{"do":{"click":"settings.environment.remove"}}
+{"expect":{"tree":"contains","text":"Remove staging from e2e-project?"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Remove staging from e2e-project?"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.staging"}}

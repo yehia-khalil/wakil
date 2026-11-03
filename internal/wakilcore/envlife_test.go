@@ -184,3 +184,38 @@ func TestEnvironmentWritersRefuseOtherOrg(t *testing.T) {
 	_, err = RemoveEnvironment(path, "staging", time.Now())
 	check(err)
 }
+
+func TestSetEnvironmentProductionDeclaresAndClears(t *testing.T) {
+	path := envLifeProject(t, `{"name":"shop","org":"acme","roots":[],"environments":{"live":{},"production":{}}}`)
+	yes, no := true, false
+	if err := SetEnvironmentProduction(path, "live", &yes); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := LoadProject(path)
+	if env := p.Environments["live"]; env.Production == nil || !*env.Production || !EnvironmentIsProduction("live", env) {
+		t.Fatalf("live not declared production: %+v", env)
+	}
+	if err := SetEnvironmentProduction(path, "production", &no); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = LoadProject(path)
+	if EnvironmentIsProduction("production", p.Environments["production"]) {
+		t.Fatal("declaring false did not override the name")
+	}
+	if err := SetEnvironmentProduction(path, "production", nil); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = LoadProject(path)
+	if env := p.Environments["production"]; env.Production != nil || !EnvironmentIsProduction("production", env) {
+		t.Fatalf("clearing did not hand the decision back to the name: %+v", env)
+	}
+}
+
+func TestSetEnvironmentProductionRefusesAnUnknownEnvironment(t *testing.T) {
+	path := envLifeProject(t, `{"name":"shop","org":"acme","roots":[],"environments":{}}`)
+	yes := true
+	err := SetEnvironmentProduction(path, "qa", &yes)
+	if err == nil || err.Error() != `no environment "qa" in project "shop"` {
+		t.Fatalf("got %v", err)
+	}
+}

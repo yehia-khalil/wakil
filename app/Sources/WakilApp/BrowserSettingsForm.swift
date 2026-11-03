@@ -1,22 +1,16 @@
 import SwiftUI
 import WakilKit
 
-/// The top-level Browser node (3c-i): the operator's search engine and start page, and the
-/// organisation's browsing data. The first two are app-wide (~/.wakil/settings.json); the data is
-/// this organisation's (Invariant 4).
+/// The Wakil scope's Browser node (3c-i): search, tabs and picture in picture, all app-wide
+/// (~/.wakil/settings.json). The organisation's browsing data and passwords are its own node,
+/// `BrowsingDataSettingsForm`, under the organisation (settings revamp).
 struct BrowserSettingsForm: View {
     let browser: SettingsBrowser
     /// The keymap in force, for the Tabs hint that names Toggle Tab Column's chord.
     @Environment(\.keymap) private var keymap
-    /// What the confirmation names: the organisation's display name.
-    let organisation: String
-    /// The organisation's id: what Delete passes, so the action refuses if another is active by then.
-    let organisationId: String
     /// 3d-i: why this organisation has no pull-request group, in one line under Tabs; nil, it has one.
     var pullRequestsAbsent: String?
     let save: ([String: JSONValue]) async -> String?
-    /// Deletes the named organisation's browsing data; answers the refusal's sentence, or nil.
-    let clearData: (_ org: String) async -> String?
     /// Why picture in picture is off on this Mac (its WebKit lacks the private API), or nil when it is there.
     let pictureInPictureUnavailable: String?
 
@@ -27,12 +21,6 @@ struct BrowserSettingsForm: View {
     @State private var draft: String?
     @State private var startRefusal: String?
     @State private var inFlight = false
-    @State private var confirming = false
-    @State private var clearing = false
-    @State private var clearRefusal: String?
-    @State private var cleared = false
-    /// The organisation the open question names, as (id, display name), fixed when it was asked.
-    @State private var asked: (id: String, name: String)?
     @FocusState private var focused: Bool
 
     private var coolWhite: Color { SettingsPalette.coolWhite }
@@ -70,7 +58,7 @@ struct BrowserSettingsForm: View {
             }
             SettingsSection("Picture in picture") {
                 ChoiceSettingRow(
-                    label: "Picture in picture", options: ["On", "Off"],
+                    label: "Picture in picture", options: ["Off", "On"],
                     selected: browser.pictureInPicture ? "On" : "Off",
                     identifier: { option in let choice = option.lowercased(); return "settings.browser.pictureInPicture.\(choice)" },
                     refusalIdentifier: "settings.browser.pictureInPicture.refusal",
@@ -90,14 +78,10 @@ struct BrowserSettingsForm: View {
                         .accessibilityIdentifier("settings.browser.pictureInPicture.unavailable")
                 }
             }
-            SettingsSection("Browsing data") {
-                clearSection
-            }
-            SettingsSection("Passwords") { BrowserPasswordsSettings(org: organisationId, name: organisation) }
-            Text("Search and start page are yours across every organisation — stored in ~/.wakil/settings.json. "
-                 + "Browsing data is this organisation's.")
+            Text("Yours across every organisation — stored in ~/.wakil/settings.json. "
+                 + "Browsing data and passwords are each organisation's, under its name.")
                 .font(.system(size: SettingsScale.meta))
-                .foregroundStyle(coolWhite.opacity(0.40))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -130,7 +114,7 @@ struct BrowserSettingsForm: View {
         if let pullRequestsAbsent {
             Text(pullRequestsAbsent)
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(coolWhite.opacity(0.62))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .padding(.vertical, 6)
@@ -144,7 +128,7 @@ struct BrowserSettingsForm: View {
                 TextField("Blank", text: Binding(get: { draft ?? browser.startPage }, set: { draft = $0 }))
                     .textFieldStyle(.plain)
                     .font(.system(size: SettingsScale.body, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.88))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .inPlaceField(focused: focused)
                     .focused($focused)
                     .onSubmit(commit)
@@ -181,68 +165,4 @@ struct BrowserSettingsForm: View {
         }
     }
 
-    private var clearSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Button {
-                    clearRefusal = nil
-                    cleared = false
-                    asked = (organisationId, organisation)
-                    confirming = true
-                } label: {
-                    Text("Clear this organisation's browsing data…")
-                        .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(caution.opacity(clearing ? 0.4 : 0.9))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(clearing)
-                .accessibilityIdentifier("settings.browser.clear")
-                if clearing { ProgressView().controlSize(.small) }
-            }
-            FormHint("Cookies, logins and site storage for every project of this organisation.")
-            if confirming {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(BrowserClearDataQuestion.text(org: asked?.name ?? organisation))
-                        .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(caution)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("settings.browser.clear.question")
-                    HStack(spacing: 10) {
-                        FormButton(title: BrowserClearDataQuestion.deleteLabel, tone: caution, filled: true,
-                                   identifier: "settings.browser.clear.confirm") {
-                            confirming = false
-                            clearing = true
-                            let org = asked?.id ?? organisationId
-                            Task {
-                                clearRefusal = await clearData(org)
-                                cleared = clearRefusal == nil
-                                clearing = false
-                            }
-                        }
-                        FormButton(title: BrowserClearDataQuestion.keepLabel, tone: coolWhite.opacity(0.62),
-                                   identifier: "settings.browser.clear.keep") {
-                            confirming = false
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-                .padding(.top, 4)
-            }
-            if cleared {
-                Text(BrowserClearDataQuestion.receipt(asked: asked?.name, current: organisation))
-                    .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(coolWhite.opacity(0.62))
-                    .accessibilityIdentifier("settings.browser.clear.done")
-            }
-            if let clearRefusal {
-                Text(clearRefusal)
-                    .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(caution)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("settings.browser.clear.refusal")
-            }
-        }
-        .padding(.vertical, 10)
-    }
 }

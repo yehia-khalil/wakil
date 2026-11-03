@@ -19,3 +19,37 @@ private func decodeEnvironment(_ json: String) throws -> SettingsEnvironment {
     #expect(env.production == nil)
     #expect(env.name == "live")
 }
+
+/// The raw flag behind `production`, so the page can say whether the name decided (Rule 9).
+@Test func anEnvironmentDecodesItsDeclaredFlag() throws {
+    let env = try decodeEnvironment(#"{"name":"production","production":false,"productionDeclared":false,"databases":[],"api":[]}"#)
+    #expect(env.productionDeclared == false)
+    #expect(env.production == false)
+}
+
+/// The environment page's Production row (Rule 9): No / Yes / From the name.
+@Test func theChoiceReadsTheDeclaration() {
+    #expect(SettingsProductionChoice.current(declared: nil) == .fromName)
+    #expect(SettingsProductionChoice.current(declared: true) == .yes)
+    #expect(SettingsProductionChoice.current(declared: false) == .no)
+    #expect(SettingsProductionChoice.allCases.map(\.rawValue) == ["No", "Yes", "From the name"])
+}
+
+@Test func eachChoiceDeclaresWhatItSays() {
+    #expect(SettingsProductionChoice.fromName.declared == nil)
+    #expect(SettingsProductionChoice.yes.declared == true)
+    #expect(SettingsProductionChoice.no.declared == false)
+}
+
+@Test func theHintSaysWhatTheNameDecided() {
+    #expect(SettingsProductionChoice.hint(declared: nil, production: true) == "From the name: production.")
+    #expect(SettingsProductionChoice.hint(declared: nil, production: false) == "From the name: not production.")
+    #expect(SettingsProductionChoice.hint(declared: false, production: false) == nil)
+    #expect(SettingsProductionChoice.hint(declared: nil, production: nil) == nil)
+}
+
+@Test func anUndeclaredFlagDecodesNil() throws {
+    let env = try decodeEnvironment(#"{"name":"production","production":true,"databases":[],"api":[]}"#)
+    #expect(env.productionDeclared == nil)
+    #expect(env.production == true)
+}

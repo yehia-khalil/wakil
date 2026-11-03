@@ -1,0 +1,11 @@
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","displayName":"An Organisation Whose Display Name Runs Well Past Any Column Width"}}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"longurl","label":"A local model with a long name","baseURL":"http://127.0.0.1:8012/v1/chat/completions?model=qwen2.5-coder-7b-instruct-q4_K_M&keep_alive=forever&context=32768"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"dispatch":{"action":"pane_resize","params":{"id":"settings-1","width":640,"height":600}}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"AN ORGANISATION WHOSE DISPLAY NAME RUNS WELL PAST ANY COLUMN WIDTH"}}
+{"expect":{"frame":"settings.tree.organisationHeading","inside":"settings.pane"}}
+{"expect":{"tree":"contains","text":"An Organisation Whose Display Name Runs Well Past Any Column Width  ›  Accounts"}}
+{"expect":{"frame":"settings.breadcrumb","inside":"settings.pane"}}
+{"expect":{"tree":"contains","text":"keep_alive=forever&context=32768"}}
+{"expect":{"frame":"settings.section.localModels","inside":"settings.pane"}}

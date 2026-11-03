@@ -82,16 +82,13 @@ struct LeaveSavedTextField: View {
 
     private var input: some View {
         HStack(spacing: 8) {
-            TextField(prompt, text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 }))
+            TextField(prompt, text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 }), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(monospaced
                     ? .system(size: SettingsScale.identifier, design: .monospaced)
                     : .system(size: SettingsScale.body))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
-                .lineLimit(1)
-                // A value longer than its column (a base URL) is shortened in the middle while
-                // it is not being edited, rather than cut at the column's edge.
-                .truncationMode(.middle)
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: maxWidth)
                 .inPlaceField(focused: focused)
                 .focused($focused)
@@ -104,7 +101,7 @@ struct LeaveSavedTextField: View {
                 ProgressView().controlSize(.small)
                 Text("Saving…")
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.35))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize()
             }
         }

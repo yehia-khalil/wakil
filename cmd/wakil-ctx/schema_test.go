@@ -113,6 +113,8 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"create_environment",
 		"rename_environment",
 		"remove_environment",
+		// The settings revamp: an environment declared production or not, or left to its name.
+		"set_environment_production",
 	})
 }
 
@@ -203,6 +205,7 @@ func TestLifecycleToolsRequireTheirParameters(t *testing.T) {
 		"create_environment": {"projectPath"},
 		"rename_environment": {"projectPath", "name", "newName"},
 		"remove_environment": {"projectPath", "name"},
+		"set_environment_production": {"projectPath", "name", "production"},
 	}
 	for _, tool := range res.Tools {
 		need, ok := want[tool.Name]
