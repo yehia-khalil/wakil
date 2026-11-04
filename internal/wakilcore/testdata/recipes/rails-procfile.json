@@ -1,0 +1,35 @@
+{
+  "repo": "rails-procfile",
+  "kind": "rails",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "setup": [
+      "bundle install",
+      "bin/rails db:prepare"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "bin/dev"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "ports.PORT": "bin/dev reads PORT",
+      "processes.dev": "bin/dev — the repo's own entry point",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "Gemfile; config/database.yml: the database is created and migrated in setup"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": [
+    "Procfile.dev's web pins port 3000, so two workspaces would collide; make it read $PORT (bin/dev passes $WAKIL_PORT as PORT), or write its command here with $WAKIL_PORT."
+  ]
+}

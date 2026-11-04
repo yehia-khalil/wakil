@@ -89,6 +89,23 @@ struct SettingsPane: View {
     /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
     /// or pull requests, exactly one given. Answers the refusal or nil.
     var saveProjectAgentInstructions: (String, String?, String?, String?) async -> String? = { _, _, _, _ in nil }
+    /// The project's Jira project, by project.json path: the refusal whole, or nil.
+    var saveProjectPMKey: (String, String) async -> String? = { _, _ in nil }
+    /// Workspaces, piece 2: the Running settings' actions, dispatched as the operator, and the
+    /// environment a Try's throwaway workspace records.
+    var runningDispatch: (String, JSONValue) async -> (result: JSONValue?, error: String?) = { _, _ in (nil, "no window") }
+    var runningEnvironment: String = ""
+    /// A Try's progress as it runs, by project key and repo.
+    var runningTryProgress: (String, String) -> TryProgressState? = { _, _ in nil }
+    /// A Try's app link (`WakilLinks.open`).
+    var runningOpenLink: (String, Bool) -> Void = { _, _ in }
+    /// Workspaces, piece 2: Detect's drafting conversation and Try's fix, per project.
+    var runningDrafting: (SettingsProject) -> RunningDrafting = { _ in .none }
+    /// Workspaces (decision 10): a project's Branches text.
+    var saveProjectBranchInstructions: (String, String) async -> String? = { _, _ in nil }
+    /// Workspaces piece 4: Agents woken by messages — the value, the organisation, and the project's
+    /// path for its override (nil for the organisation's; -1 clears the override).
+    var saveMessageWakes: (Int, String, String?) async -> String? = { _, _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String) async -> String? = { _, _, _ in nil }
     /// Saves the org's ghost-text or fast-path switch (3b-ix). Answers the refusal or nil.
@@ -454,6 +471,7 @@ struct SettingsPane: View {
                         }
                         if projectOpen {
                             row(.projectEditor(project.name), label: "Editor", depth: 2, disclosure: .leaf)
+                            row(.projectRunning(project.name), label: "Running", depth: 2, disclosure: .leaf)
                             // A label over the environments, not a level: they stay at depth 2.
                             environmentsHeading(project: project.name)
                             ForEach(project.environments, id: \.name) { environment in
@@ -605,7 +623,7 @@ struct SettingsPane: View {
         case .organisation, .providers, .quickTasks, .browsingData, .speech,
              .editor, .browser, .keyboard, .projects: return
         case .project: expansion.projectsOpen = true
-        case .projectEditor(let project), .environment(let project, _):
+        case .projectEditor(let project), .projectRunning(let project), .environment(let project, _):
             expansion.reveal(project: project)
         case .databases(let project, let environment), .api(let project, let environment):
             expansion.reveal(project: project, environment: environment)
@@ -622,6 +640,7 @@ struct SettingsPane: View {
             rows.append((.project(project.name), project.name))
             guard expansion.isOpen(project: project.name) else { continue }
             rows.append((.projectEditor(project.name), "Editor"))
+            rows.append((.projectRunning(project.name), "Running"))
             for environment in project.environments {
                 rows.append((.environment(project: project.name, environment: environment.name), environment.name))
                 guard expansion.isOpen(project: project.name, environment: environment.name) else { continue }
@@ -1176,6 +1195,16 @@ struct SettingsPane: View {
                                 identifier: "settings.org.git.commits", in: tree)
                 organisationBox(.gitPRInstructions, placeholder: Self.pullRequestsPlaceholder,
                                 identifier: "settings.org.git.pullRequests", in: tree)
+                // Workspaces (decision 10): how a workspace's branch is named.
+                organisationBox(.gitBranchInstructions, placeholder: Self.branchesPlaceholder,
+                                identifier: "settings.org.git.branches", in: tree)
+                // Workspaces piece 4 (decision 16): how many turns messages may wake per operator message.
+                NumberSettingRow(
+                    label: "Agents woken by messages", value: tree.org.messageWakes, range: 0...99,
+                    identifier: "settings.org.agent.messageWakes",
+                    save: { n in await saveMessageWakes(n, tree.org.id, nil) })
+                    .id("messageWakes:\(tree.org.id)")
+                FormHint(Self.messageWakesHint).underRowValue().padding(.vertical, 6)
             }
 
         case .providers:
@@ -1244,6 +1273,18 @@ struct SettingsPane: View {
             } else {
                 gone(name)
             }
+        case .projectRunning(let name):
+            if let project = tree.projects.first(where: { $0.name == name }) {
+                // Workspaces, piece 2: how the project's repos run. Keyed to the project, so one
+                // project's drafts and Try never carry into another's.
+                RunningSettingsForm(project: project, environment: runningEnvironment, dispatch: runningDispatch,
+                                    drafting: runningDrafting(project),
+                                    tryProgress: { repo in runningTryProgress(project.name, repo) },
+                                    openLink: runningOpenLink)
+                    .id(project.path)
+            } else {
+                gone(name)
+            }
         case .project(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 // Two groups, two headed sections (2026-10-21): what the project is, and its roots.
@@ -1255,6 +1296,16 @@ struct SettingsPane: View {
                         save: { new in await rename(project: name, to: new) },
                         unseen: showUnseenRefusal)
                     .id("name.\(project.path)")
+                    // Its Jira project: the project's Ticket tab and ⌘P's tickets hold its tickets
+                    // and those on its repos (the walk, 2026-10-31).
+                    SettingsRow("Jira project") {
+                        LeaveSavedTextField(
+                            label: nil, stored: project.pmProjectKey, identifier: "settings.project.jiraProject",
+                            prompt: "None — INI, say",
+                            save: { key in await saveProjectPMKey(project.path, key) },
+                            unseen: showUnseenRefusal)
+                    }
+                    .id("jira.\(project.path)")
                     fields([("File", project.path, true)])
                 }
                 // 3a-iii-b: this project's own instructions, after the organisation's.
@@ -1274,6 +1325,33 @@ struct SettingsPane: View {
                                identifier: "settings.project.agent.pullRequests", project: project) { path, text in
                         await saveProjectAgentInstructions(path, nil, nil, text)
                     }
+                    projectBox("Branches", stored: project.agent.branches, placeholder: Self.branchesPlaceholder,
+                               identifier: "settings.project.agent.branches", project: project) { path, text in
+                        await saveProjectBranchInstructions(path, text)
+                    }
+                    // Workspaces piece 4: the project's own count, or the organisation's.
+                    NumberSettingRow(
+                        label: "Agents woken by messages",
+                        value: project.agent.messageWakes ?? tree.org.messageWakes, range: 0...99,
+                        identifier: "settings.project.agent.messageWakes",
+                        save: { n in await saveMessageWakes(n, tree.org.id, project.path) })
+                        .id("messageWakes:\(project.path)")
+                    HStack(spacing: 8) {
+                        FormHint(project.agent.messageWakes == nil
+                            ? "The organisation's, \(tree.org.messageWakes). A number here is this project's own."
+                            : "This project's own; the organisation's is \(tree.org.messageWakes).")
+                        if project.agent.messageWakes != nil {
+                            Button("Use the organisation's") {
+                                Task { _ = await saveMessageWakes(-1, tree.org.id, project.path) }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(coolWhite.opacity(0.70))
+                            .accessibilityIdentifier("settings.project.agent.messageWakes.inherit")
+                        }
+                    }
+                    .underRowValue()
+                    .padding(.vertical, 6)
                 }
                 if !project.roots.isEmpty {
                     SettingsSection("Roots") {
@@ -1486,9 +1564,15 @@ struct SettingsPane: View {
         }
     }
 
+    /// Workspaces piece 4 (decision 16).
+    private static let messageWakesHint = "Each message you send in a workspace lets other "
+        + "conversations' messages wake its agents this many times; 0 never wakes them. Messages "
+        + "beyond it wait for you."
+
     // 3a-iii-b: examples of what a box holds, read as its placeholder.
     private static let generalPlaceholder = "Tell the agent how to work here — e.g. ask before running migrations"
     private static let commitsPlaceholder = "Tell the agent how to write commits — e.g. imperative subject under 72 characters"
+    private static let branchesPlaceholder = "Tell Wakil how to name a workspace's branch and which branch it starts from — e.g. <KEY>-<short summary>, lower case, from staging; a hotfix from production"
     private static let pullRequestsPlaceholder = "Tell the agent how to write pull requests — e.g. what changed and why, then how to test"
 
     /// An organisation's agent box, saved through the organisation's one-field write. Keyed to the
@@ -1760,6 +1844,7 @@ struct SettingsPane: View {
         case .agentGeneral: return tree.org.agentGeneral
         case .gitCommitInstructions: return tree.org.gitCommitInstructions
         case .gitPRInstructions: return tree.org.gitPRInstructions
+        case .gitBranchInstructions: return tree.org.gitBranchInstructions
         }
     }
 

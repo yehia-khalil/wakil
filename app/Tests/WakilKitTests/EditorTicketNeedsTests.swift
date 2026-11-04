@@ -111,6 +111,23 @@ private func row(key: String = "INI-142", pr: Int = 0, threads: [String] = [], f
         #expect(ticketNeedsCount(nil) == 0)
     }
 
+    /// The walk: "Ticket · 1" over a body that could only say the project's root is not a git
+    /// repository. A project with no repository counts nothing; one with a repository, or roots
+    /// not read yet, counts the organisation's as before.
+    @Test func aProjectWithNoRepositoryCountsNothing() {
+        let s = InFlightState(waitingOnYou: [row(pr: 212, threads: ["T1"])], count: 1)
+        func root(_ error: String?) -> GitRootState {
+            GitRootState(root: "/p/plain", name: "plain", branch: "", detached: "", ahead: 0, behind: 0, files: [],
+                         error: error, loading: false)
+        }
+        #expect(ticketNeedsCount(s, roots: [root("not a git repository")]) == 0)
+        #expect(ticketNeedsLabel(s, roots: [root("not a git repository")]) == nil)
+        #expect(ticketNeedsCount(s, roots: [root(nil)]) == 1)
+        #expect(ticketNeedsCount(s, roots: [root("not a git repository"), root(nil)]) == 1)
+        #expect(ticketNeedsCount(s, roots: []) == 1)
+        #expect(ticketNeedsLabel(s, roots: [root(nil)]) == ticketNeedsLabel(s))
+    }
+
     @Test func labelSaysEachKind() {
         let four = InFlightState(waitingOnYou: [row(pr: 212, threads: ["T1", "T2", "T3"]), row(key: "", pr: 215, failing: ["unit (Linux)"])],
                                  count: 4)
@@ -214,5 +231,48 @@ private func row(key: String = "INI-142", pr: Int = 0, threads: [String] = [], f
         let waiting = row(pr: 209, threads: ["T1"], conversations: ["c2"])
         let rows = ticketNeedsRows(InFlightState(waitingOnYou: [waiting], count: 1), handoffs: ["c2": .done], drafts: [:])
         #expect(landingTicketState(rows[0]).words == "#209 · 1 comment")
+    }
+}
+
+/// "When a project is selected we scope stuff" (the walk, 2026-10-31): a project's Ticket tab, its
+/// count and ⌘P's tickets hold only the project's — a key in its Jira project, or a branch or PR on
+/// one of its repos (Go's `project`) — and the organisation's whole list stays on the home.
+@Suite struct TicketProjectScopeTests {
+    private func r(_ key: String, project: String, pr: Int = 0, threads: [String] = []) -> InFlightRowState {
+        InFlightRowState(key: key, root: project.isEmpty ? "" : "/p/\(project)", branch: key.lowercased(), pr: pr,
+                         project: project, repo: "github.com/initech/\(project)", threads: threads, count: threads.count)
+    }
+
+    @Test func aProjectKeepsItsJiraProjectsTicketsAndThoseOnItsRepos() {
+        let s = InFlightState(
+            waitingOnYou: [r("AQ247-141", project: "walk", pr: 7, threads: ["T1"]), r("INI-9", project: "", pr: 3, threads: ["T2", "T3"])],
+            inFlight: [r("INI-142", project: "parkour"), r("WEB-1", project: "web"), r("", project: "parkour", pr: 12)],
+            count: 3)
+        let scoped = ticketScoped(s, to: TicketScope(project: "parkour", pmKey: "INI"))
+        #expect(scoped?.waitingOnYou.map(\.key) == ["INI-9"])
+        #expect(scoped?.inFlight.map(\.key) == ["INI-142", ""])
+        #expect(scoped?.count == 2, "the count is the kept Waiting on you rows' items")
+        // No scope (the home): the organisation's, unchanged.
+        #expect(ticketScoped(s, to: nil) == s)
+    }
+
+    /// A ticket is the project's when any of its PRs is: its other PRs come with it.
+    @Test func aTicketWithOnePullRequestOnTheProjectsReposKeepsAllItsRows() {
+        let s = InFlightState(inFlight: [r("AQ247-141", project: "walk", pr: 7), r("AQ247-141", project: "parkour", pr: 8)])
+        #expect(ticketScoped(s, to: TicketScope(project: "parkour", pmKey: ""))?.inFlight.count == 2)
+    }
+
+    /// The walk: parkour-warriors declares no Jira project and holds none of the branches — its tab
+    /// is empty, counts nothing, and says why with a way to set it.
+    @Test func aProjectWithNoJiraProjectAndNoBranchesShowsNothingAndSaysWhy() {
+        let s = InFlightState(waitingOnYou: [r("AQ247-141", project: "walk", pr: 7, threads: ["T1"])], count: 1)
+        let scope = TicketScope(project: "parkour-warriors", pmKey: "")
+        let scoped = ticketScoped(s, to: scope)
+        #expect(scoped?.waitingOnYou.isEmpty == true)
+        #expect(ticketNeedsCount(scoped) == 0)
+        #expect(ticketNeedsLabel(scoped) == nil)
+        #expect(ticketScopeEmptyLine(scoped, scope: scope) == "No Jira project is set for this project")
+        #expect(ticketScopeEmptyLine(scoped, scope: TicketScope(project: "parkour-warriors", pmKey: "PW")) == nil)
+        #expect(ticketScopeEmptyLine(s, scope: nil) == nil)
     }
 }

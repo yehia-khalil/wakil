@@ -1,0 +1,37 @@
+{
+  "repo": "phoenix",
+  "kind": "phoenix",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "clone": [
+      "deps",
+      "_build"
+    ],
+    "setup": [
+      "mix deps.get"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "mix phx.server"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "mix.exs",
+      "ports.PORT": "Phoenix's config/dev.exs reads PORT",
+      "processes.app": "mix.exs depends on :phoenix",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "mix.exs"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

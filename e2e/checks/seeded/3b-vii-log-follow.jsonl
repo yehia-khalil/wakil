@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"for i in $(seq 1 200); do echo \"[2026-10-18 13:33:20] local.INFO: line $i\"; done > ~/../e2e-project/small.log && echo small-written"}}
 {"do":{"press":"Return"}}

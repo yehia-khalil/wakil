@@ -78,7 +78,22 @@ public actor PaneStore {
     /// landing where it left from; else the dispatching caller's own (`ScopeRouting.home`,
     /// background agents 3 of 4), for an agent working in a place the operator has left; else
     /// the one on screen.
-    private var scope: LayoutScope { pinned ?? ScopeRouting.home ?? screen }
+    private var scope: LayoutScope { pinned ?? ScopeRouting.home.map { carried[$0] ?? $0 } ?? screen }
+    /// Canvases a workspace's first change carried into the workspace's view (`scopeCarried`): a
+    /// dispatch homed on the old one when the view moved under it lands in the new one.
+    private var carried: [LayoutScope: LayoutScope] = [:]
+    /// Workspaces, piece 1: step 0 carried the canvas filed as `from` into `to`. A dispatch still
+    /// homed on `from` — the very write that moved it — reads and writes `to` from now on.
+    public func scopeCarried(from: LayoutScope, to: LayoutScope) {
+        carried[to] = nil
+        if from != to { carried[from] = to }
+    }
+    /// Workspaces, piece 1 (decision 22): pane `paneId`'s contents move from `from` to `to`, as they
+    /// are — a terminal step 0 leaves in Main's view keeps its history there.
+    public func moveContents(paneId: String, from: LayoutScope, to: LayoutScope) {
+        guard from != to, let slot = byScope[from]?.removeValue(forKey: paneId) else { return }
+        byScope[to, default: [:]][paneId] = slot
+    }
     /// The scope on screen, whatever scope the caller is routed to: the window asks it to tell
     /// whether a swap is owed.
     public var screenScope: LayoutScope { screen }

@@ -2292,6 +2292,8 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // credential's value, which is what puts it beside
         // `ctx_list_providers` rather than beside the org-plane four.
         // Names: `.control` and agent-reachable, for the agent's own conversation.
+        // Workspaces piece 4: `.control` and agent-reachable — how one conversation tells another.
+        "mcp__wakil__conversation_message",
         "mcp__wakil__conversation_rename",
         "mcp__wakil__ctx_browser_settings",
         "mcp__wakil__ctx_config_tree",

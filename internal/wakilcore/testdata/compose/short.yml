@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+      - "127.0.0.1:5432:5432"
+      - "${APP_PORT:-3000}:3000"
+      - "9000"
+      - "[::1]:6379:6379/tcp"
+      - "8080:80/udp"
+  mysql:
+    image: mysql:8
+    container_name: initech_mysql
+    ports:
+      - 3306:3306
+  worker:
+    image: initech/worker

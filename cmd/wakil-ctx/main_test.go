@@ -59,6 +59,26 @@ func TestSetEnvironmentValidates(t *testing.T) {
 	}
 }
 
+// Workspaces, piece 3 walk: a conversation started with no environment chosen lives in that place,
+// and opening it from the home goes back there — so "" leaves the project with none chosen, as a
+// project switch to one lacking the environment does.
+func TestSetEnvironmentEmptyLeavesNoneChosen(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	if err := setEnvironment("staging"); err != nil {
+		t.Fatalf("staging: %v", err)
+	}
+	if err := setEnvironment(""); err != nil {
+		t.Fatalf("an empty name must clear the environment: %v", err)
+	}
+	a, err := wakilcore.ReadActive()
+	if err != nil {
+		t.Fatalf("ReadActive: %v", err)
+	}
+	if a.Environment != "" {
+		t.Fatalf("environment = %q, want none", a.Environment)
+	}
+}
+
 func TestSetEnvironmentRejectsUnknownAsUserError(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]}`)
 
@@ -1058,6 +1078,15 @@ func TestEditorSettingsRoundTrip(t *testing.T) {
 	if res := call("set_project_editor_settings", map[string]any{"projectPath": resolved.ProjectPath, "heavyFolders": []string{".git"}}); !res.IsError {
 		t.Fatal(".git was accepted as a heavy folder")
 	}
+	if res := call("set_project_pm_key", map[string]any{"projectPath": resolved.ProjectPath, "projectKey": "ini"}); res.IsError {
+		t.Fatalf("set_project_pm_key: %s", textOf(t, res))
+	}
+	if p, err := wakilcore.LoadProject(resolved.ProjectPath); err != nil || p.Scopes.PM == nil || p.Scopes.PM.ProjectKey != "INI" {
+		t.Errorf("the Jira project after set_project_pm_key: %+v %v", p, err)
+	}
+	if res := call("set_project_pm_key", map[string]any{"projectPath": resolved.ProjectPath, "projectKey": "9X"}); !res.IsError {
+		t.Error("a malformed Jira project key was accepted")
+	}
 	if res := call("set_editor_settings", map[string]any{"fontSize": 99}); !res.IsError {
 		t.Fatal("an out-of-range font size was accepted")
 	}
@@ -1228,6 +1257,23 @@ func TestUpdateOrgToolWritesTheGitIdentity(t *testing.T) {
 	o, err := wakilcore.LoadOrgFor("initech")
 	if err != nil || o.GitName != "N" || o.GitEmail != "e@x" {
 		t.Fatalf("%+v %v", o, err)
+	}
+}
+
+// Workspaces piece 4's e2e run: the organisation's Agents woken by messages reached the tool and
+// was dropped on the way to UpdateOrg, so the Settings field never saved.
+func TestUpdateOrgToolWritesMessageWakes(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "update_org", Arguments: map[string]any{"id": "initech", "messageWakes": 3},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("update_org: %v %v", err, res)
+	}
+	o, err := wakilcore.LoadOrgFor("initech")
+	if err != nil || o.MessageWakes == nil || *o.MessageWakes != 3 {
+		t.Fatalf("messageWakes not written: %+v %v", o.MessageWakes, err)
 	}
 }
 

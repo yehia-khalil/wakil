@@ -1,0 +1,34 @@
+{
+  "repo": "node-npm-angular",
+  "kind": "angular-npm",
+  "recipe": {
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "npm ci"
+    ],
+    "processes": [
+      {
+        "name": "start",
+        "command": "npm run start -- --port $WAKIL_PORT"
+      }
+    ],
+    "build": "npm run build",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "build": "package.json script build",
+      "clone": "package.json",
+      "processes.start": "package.json script start; angular.json takes --port $WAKIL_PORT",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "package-lock.json"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

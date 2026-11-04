@@ -1,0 +1,11 @@
+{
+  "repo": "library",
+  "kind": "php-library",
+  "recipe": {},
+  "doesntRun": true,
+  "why": "a composer library (composer.json type \"library\"), with no entry point",
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

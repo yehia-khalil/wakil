@@ -1,0 +1,31 @@
+{"expect":{"frame":"window.composer","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"frame":"landing.main","minWidth":40}}
+{"expect":{"tree":"absent","text":"Value: selected"}}
+{"do":{"click":"window.composer.startIn"}}
+{"expect":{"tree":"contains","text":"START IN · MAIN OF"}}
+{"do":{"click":"window.composer.startIn.e2e-git/staging"}}
+{"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn two"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"second reply in the thread"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"frame":"landing.pill.all","inside":"window"}}
+{"expect":{"frame":"landing.pill.e2e-git","inside":"window"}}
+{"expect":{"frame":"landing.pill.e2e-project","inside":"window"}}
+{"expect":{"tree":"contains","text":"thread turn one"}}
+{"do":{"click":"landing.pill.e2e-git"}}
+{"expect":{"tree":"absent","text":"thread turn one"}}
+{"expect":{"tree":"contains","text":"thread turn two"}}
+{"expect":{"frame":"landing.pill.e2e-project","inside":"window"}}
+{"expect":{"frame":"landing.pill.all","inside":"window"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"do":{"click":"landing.pill.all"}}
+{"expect":{"tree":"contains","text":"thread turn one"}}
+{"expect":{"tree":"contains","text":"thread turn two"}}

@@ -1,0 +1,30 @@
+{
+  "repo": "java-maven",
+  "kind": "spring-maven",
+  "recipe": {
+    "ports": {
+      "SERVER_PORT": "$WAKIL_PORT"
+    },
+    "processes": [
+      {
+        "name": "app",
+        "command": "./mvnw spring-boot:run"
+      }
+    ],
+    "build": "./mvnw package",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/actuator/health"
+    },
+    "notes": {
+      "build": "pom.xml",
+      "ports.SERVER_PORT": "Spring Boot reads SERVER_PORT",
+      "processes.app": "pom.xml uses spring-boot",
+      "ready": "pom.xml has spring-boot-starter-actuator"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

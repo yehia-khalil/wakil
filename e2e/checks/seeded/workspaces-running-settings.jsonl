@@ -1,0 +1,23 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.projectRunning.e2e-project"}}
+{"expect":{"tree":"contains","text":"Running"}}
+{"expect":{"tree":"contains","text":"e2e-project has no recipe yet: Detect or Draft one, or pick one under Recipe."}}
+{"expect":{"tree":"absent","text":"NO RECIPE"}}
+{"expect":{"frame":"settings.running.draftAll","inside":"settings.pane"}}
+{"expect":{"tree":"contains","text":"✨ Draft"}}
+{"expect":{"tree":"absent","text":"Draft all"}}
+{"do":{"click":"settings.running.detect"}}
+{"expect":{"tree":"contains","text":"Detect — e2e-project"}}
+{"expect":{"tree":"contains","text":"Nothing changes until you save."}}
+{"do":{"click":"settings.running.proposal.discard"}}
+{"expect":{"tree":"absent","text":"Detect — e2e-project"}}
+{"do":{"click":"settings.running.draftAll"}}
+{"expect":{"tree":"contains","text":"Draft all — "}}
+{"do":{"click":"settings.running.proposal.discard"}}
+{"expect":{"tree":"absent","text":"Draft all — "}}
+{"expect":{"tree":"contains","text":"e2e-project has no recipe yet"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.running.detect","inside":"settings.pane"}}
+{"expect":{"frame":"settings.running.try","inside":"settings.pane"}}
+{"expect":{"frame":"settings.running.recipeMenu","clear":"settings.running.detect"}}

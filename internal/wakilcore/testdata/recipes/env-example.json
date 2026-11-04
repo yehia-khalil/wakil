@@ -1,0 +1,57 @@
+{
+  "repo": "env-example",
+  "kind": "node-npm",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "copy": [
+      ".env",
+      ".env.testing",
+      "config/local.json"
+    ],
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "npm install"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "npm run dev"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "package.json",
+      "copy": "the ignored env files in your folder and .worktreeinclude",
+      "ports.PORT": "most Node servers read PORT",
+      "processes.dev": "package.json script dev",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "package.json (no lockfile: npm)"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [
+    {
+      "key": "MAIL_FROM_ADDRESS",
+      "example": "hello@example.com"
+    },
+    {
+      "key": "SENTRY_DSN",
+      "example": ""
+    }
+  ],
+  "hosts": [
+    {
+      "key": "DATABASE_URL",
+      "host": "umbrella_pg",
+      "file": ".env.example"
+    }
+  ],
+  "questions": []
+}

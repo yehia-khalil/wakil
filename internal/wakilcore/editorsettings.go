@@ -354,3 +354,32 @@ func LoadEditorSettings() EditorSettings {
 	out.TabSize, out.InsertSpaces, out.HeavyFolders = pv.TabSize, pv.InsertSpaces, pv.HeavyFolders
 	return out
 }
+
+// SetProjectPMKey sets one project's Jira project (scopes.pm.projectKey, provider jira), read-modify-
+// write; an empty key clears the scope. The key is trimmed and upper-cased, and must be a Jira
+// project key. Refuses a project filed under another organisation.
+func SetProjectPMKey(projectPath, key string) error {
+	org, err := CurrentOrg()
+	if err != nil {
+		return err
+	}
+	project, err := LoadProject(projectPath)
+	if err != nil {
+		return err
+	}
+	if project.Org != org {
+		return UserError("project " + strconv.Quote(project.Name) + " belongs to org " +
+			strconv.Quote(project.Org) + ", not " + strconv.Quote(org) +
+			" — a project stored in another organisation is read-only here")
+	}
+	key = strings.ToUpper(strings.TrimSpace(key))
+	if key == "" {
+		project.Scopes.PM = nil
+		return SaveProject(projectPath, *project)
+	}
+	if !projectKeyPattern.MatchString(key) {
+		return UserError(strconv.Quote(key) + " is not a Jira project key: a letter, then letters, digits or _ (INI, WEB2)")
+	}
+	project.Scopes.PM = &PMScope{Provider: "jira", ProjectKey: key}
+	return SaveProject(projectPath, *project)
+}

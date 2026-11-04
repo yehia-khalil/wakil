@@ -95,10 +95,25 @@ public let operatorOnlyActions: Set<String> = [
     // start conversations (conversations: "no agent tool to start or switch conversations"), and a
     // spoken turn may open the popover but never press Start (Invariant 7).
     "ticket_hand_off", "ticket_hand_off_cancel",
+    // Item 8: Send to is the operator's own message, and a queued one's Cancel is theirs too.
+    "ticket_hand_off_send", "conversation_queued_cancel",
     "session_set_provider", "ctx_set_provider",
     // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
     // push aside the operator's conversation.
     "session_new", "session_switch",
+    // Workspaces, piece 1: archiving, restoring, Bring to Main and moving a conversation between
+    // workspaces are the operator's (the card's ⋯ menu); an agent does not move work out from under
+    // another conversation, nor itself.
+    "workspace_archive", "workspace_restore", "workspace_bring_home", "workspace_set_environment", "conversation_move",
+    // Workspaces, piece 2: how a repo runs, and its secrets, are the operator's to write (decision 12:
+    // the agent runs only the saved recipe, through workspace_run).
+    "running_read", "running_detect", "running_draft_all", "running_save", "running_secret_set",
+    "running_try", "running_try_end",
+    // Workspaces, piece 3: which view is on screen is the operator's, as which conversation is.
+    "workspace_open", "workspace_new_conversation",
+    // Workspaces piece 5 (decision 17): an agent proposes a teammate; starting it, dismissing it
+    // and editing its brief are the operator's.
+    "conversation_teammate_start", "conversation_teammate_dismiss", "conversation_teammate_brief",
     // Conversations 3 of 3: nor end it.
     "session_close",
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
@@ -127,6 +142,8 @@ public let operatorOnlyActions: Set<String> = [
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.
     "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // Which Jira project a project's tickets come from is the operator's, as its other settings are.
+    "ctx_set_project_pm_key",
     // 3c-i (final review I6). Printing raises the system's print panel over the operator's window.
     "browser_print",
     // 3c-i. Which search engine and start page the operator's browser uses is theirs, as the editor's are.
@@ -288,6 +305,21 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator switches between conversations — an agent must not "
             + "push aside the operator's conversation. Tell the operator which conversation the work "
             + "needs; they can switch to it with \u{2318}P."
+    case "workspace_archive", "workspace_restore", "workspace_bring_home", "workspace_set_environment", "conversation_move":
+        return "\(toolName): only the operator archives, restores and brings a workspace to Main, and moves a "
+            + "conversation between workspaces. Your writes already land in your own workspace; tell the "
+            + "operator what the work needs, and they can do it from the workspace's card."
+    case "running_read", "running_detect", "running_draft_all", "running_save", "running_secret_set",
+         "running_try", "running_try_end":
+        return "\(toolName): only the operator writes and tries how a repo runs, in the project's Running settings. "
+            + "You run the saved recipe with workspace_run (decision 12); tell the operator what the recipe needs."
+    case "workspace_open", "workspace_new_conversation":
+        return "\(toolName): only the operator opens a workspace's view or starts a conversation in it — an agent "
+            + "must not push aside what is on screen. Tell the operator which workspace the work needs; they can "
+            + "open it from its card or \u{2318}P."
+    case "conversation_teammate_start", "conversation_teammate_dismiss", "conversation_teammate_brief":
+        return "\(toolName): only the operator starts, dismisses or edits a proposed teammate (decision 17). "
+            + "Propose one with conversation_propose_teammate; the operator decides."
     case "session_close":
         return "\(toolName): only the operator closes a conversation — an agent must not end the "
             + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."
@@ -401,6 +433,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "— choices that are theirs. You may READ them: ctx_editor_settings "
             + "answers the settings in force. Ask the operator to change them in the settings "
             + "pane (\u{2318},)."
+    case "ctx_set_project_pm_key":
+        return "\(toolName): only the operator sets which Jira project a project's tickets come from. "
+            + "Ask the operator to set it in the settings pane (\u{2318},), under the project."
     case "ctx_update_org":
         return "\(toolName): only the operator edits an organisation's settings. Its default "
             + "account decides which credentials Wakil reaches for when a project names none, "
@@ -411,6 +446,11 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "ticket_hand_off is the operator's: an agent does not start conversations."
     case "ticket_hand_off_cancel":
         return "ticket_hand_off_cancel is the operator's: an agent does not start or stop conversations."
+    case "ticket_hand_off_send":
+        return "ticket_hand_off_send is the operator's: it sends their own message. Message a conversation with "
+            + "conversation_message."
+    case "conversation_queued_cancel":
+        return "conversation_queued_cancel is the operator's: a queued message is theirs to take back."
     case "capacity_record":
         return "\(toolName): readings are recorded from the agent's own stream, not supplied by the "
             + "agent. Read them with ctx_capacity."

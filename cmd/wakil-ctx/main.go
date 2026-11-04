@@ -63,7 +63,10 @@ func setEnvironment(name string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := r.Project.Environments[name]; !ok {
+	// "" leaves the project with no environment chosen, as a project switch to one lacking the
+	// environment does: the place a conversation started with none chosen lives in (workspaces,
+	// piece 3 walk — the home opens it there).
+	if _, ok := r.Project.Environments[name]; !ok && name != "" {
 		return wakilcore.UserError("unknown environment: " + name)
 	}
 	a, err := wakilcore.ReadActive()
@@ -170,6 +173,8 @@ type updateOrgArgs struct {
 	AgentGeneral          *string `json:"agentGeneral,omitempty" jsonschema:"the organisation's general agent instructions"`
 	GitCommitInstructions *string `json:"gitCommitInstructions,omitempty" jsonschema:"how the agent writes commit messages here"`
 	GitPRInstructions     *string `json:"gitPRInstructions,omitempty" jsonschema:"how the agent writes PR titles and descriptions here"`
+	GitBranchInstructions *string `json:"gitBranchInstructions,omitempty" jsonschema:"how a workspace's branch is named here"`
+	MessageWakes          *int    `json:"messageWakes,omitempty" jsonschema:"Agents woken by messages: message-woken turns per operator message per workspace, 0 to 99 (0 never wakes); -1 clears it back to the default, 8"`
 }
 
 type setProjectAgentArgs struct {
@@ -177,6 +182,8 @@ type setProjectAgentArgs struct {
 	General      *string `json:"general,omitempty" jsonschema:"the project's general agent instructions"`
 	Commits      *string `json:"commits,omitempty" jsonschema:"the project's commit message instructions"`
 	PullRequests *string `json:"pullRequests,omitempty" jsonschema:"the project's PR instructions"`
+	Branches     *string `json:"branches,omitempty" jsonschema:"the project's branch naming instructions"`
+	MessageWakes *int    `json:"messageWakes,omitempty" jsonschema:"the project's own Agents woken by messages, 0 to 99; -1 clears it back to the organisation's"`
 }
 
 type gitSecretArgs struct {
@@ -348,6 +355,11 @@ type setBrowserSettingsArgs struct {
 }
 
 // setProjectEditorSettingsArgs is one project's editor tier's edit (3b-v).
+type setProjectPMKeyArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	ProjectKey  string `json:"projectKey" jsonschema:"the project's Jira project key (INI); empty clears it"`
+}
+
 type setProjectEditorSettingsArgs struct {
 	ProjectPath  string    `json:"projectPath" jsonschema:"absolute path to the project.json"`
 	TabSize      *int      `json:"tabSize,omitempty" jsonschema:"1 to 16; omit to leave unchanged"`
@@ -619,7 +631,7 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_environment", Description: "Switch the active environment within the active project."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_environment", Description: "Switch the active environment within the active project; an empty name leaves none chosen."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a nameArg) (*mcp.CallToolResult, empty, error) {
 			if err := setEnvironment(a.Name); err != nil {
 				return toolErr(err), empty{}, nil
@@ -785,6 +797,8 @@ func newServer() *mcp.Server {
 				AgentGeneral:          a.AgentGeneral,
 				GitCommitInstructions: a.GitCommitInstructions,
 				GitPRInstructions:     a.GitPRInstructions,
+				GitBranchInstructions: a.GitBranchInstructions,
+				MessageWakes:          a.MessageWakes,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -794,6 +808,10 @@ func newServer() *mcp.Server {
 	// Added by 3b-v (Decision 38): the editor's settings, in two tiers. The read is the agent's
 	// as much as the operator's; the two writes are operator-only on the Swift side
 	// (Decision 30), and read-modify-write from disk here.
+	registerRecipeTools(s)
+	registerRecipeRunTools(s)
+	registerRecipeTryJobTools(s)
+
 	mcp.AddTool(s, &mcp.Tool{Name: "editor_settings", Description: "Read the editor settings in force: font size, word wrap, autosave (off, pause or focus) and whether gitignored files are shown, from the operator's app-wide settings; tab size, tabs-or-spaces and the heavy folders (.git is always heavy besides) from the active project. Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.EditorSettings, error) {
 			return nil, wakilcore.LoadEditorSettings(), nil
@@ -862,6 +880,14 @@ func newServer() *mcp.Server {
 			if err := wakilcore.UpdateProjectEditorSettings(a.ProjectPath, wakilcore.EditorProjectPatch{
 				TabSize: a.TabSize, InsertSpaces: a.InsertSpaces, HeavyFolders: a.HeavyFolders,
 			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_project_pm_key", Description: "Set one project's Jira project (scopes.pm.projectKey, provider jira): the key is trimmed and upper-cased and must be a Jira project key (a letter, then letters, digits or _); empty clears it. Written to the project's project.json, read-modify-write. A project's Ticket tab, its ⌘P tickets and recall scope by it. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectPMKeyArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetProjectPMKey(a.ProjectPath, a.ProjectKey); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil
@@ -1374,10 +1400,10 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests), written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests) and its Agents woken by messages, written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectAgentArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateProjectAgentInstructions(a.ProjectPath, wakilcore.ProjectAgentPatch{
-				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests,
+				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests, Branches: a.Branches, MessageWakes: a.MessageWakes,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

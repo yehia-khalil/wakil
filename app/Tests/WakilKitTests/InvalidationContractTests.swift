@@ -40,7 +40,16 @@ private let orgDerived: Set<String> = [
     // again. `invalidateForOrgChange` empties the one and cancels the other; the switch reads the
     // incoming org and starts the read again (WindowModelTicketNoticingTests.orgSwitchEmptiesNeedsAndReadsTheNewOrg).
     "ticketNeeds", "ticketPollTask",
-    "project", "projectKey", "environment", "environmentProduction",
+    // Workspaces, piece 3: the home's merged-PRs reads are the outgoing org's roots' branches, and the
+    // workspaces ⌘P's ticket rows know are its record's; `invalidateForOrgChange` empties all of them
+    // (a read landing after the switch is dropped by its organisation).
+    "homeBranchPRs", "homeBranchReadAt", "homeBranchReading", "knownWorkspaces",
+    // Which repos of the outgoing org's projects have a recipe, and the reads of them; emptied, and a
+    // read landing after the switch dropped by its organisation.
+    "homeRecipeRepos", "homeRecipeReading",
+    // Start in's choice names a place of the outgoing org; `invalidateForOrgChange` drops it.
+    "homeStartIn",
+    "project", "projectKey", "pmProjectKey", "settingsProjectWanted", "settingsProjectWantsRunning", "runningTryProgress", "runLineTickers", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
     "browserSites", "browserAllowedOnScreen", "browserCloseArm", "browserCopiedTip",
@@ -66,7 +75,7 @@ private let orgDerived: Set<String> = [
     "conversationNamingTasks",
     "quickTasksConfigError",
     "providerId",
-    "lookup", "rootPaths", "hasProjectRoot",
+    "lookup", "rootPaths", "hasProjectRoot", "sendNeededProvider",
     "organization", "resumedParentForTesting",
     // 2e (#198): `settings` is the active organisation's whole
     // configuration — its three strings, its accounts, its projects —
@@ -164,12 +173,20 @@ private let keptPerPlace: Set<String> = [
     // the order they were created in, which one each place shows, and the id each place's next
     // one takes (conversations 1 of 3). `agents` is their projection by place.
     "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
+    // Piece 3 walk: the environment last used in each project, keyed by its organisation and
+    // project — a door back into one of them lands there, whichever organisation is on screen now.
+    "environmentsLastUsed",
     // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
     // canvas held when its conversation went to the background.
     "landingBaselines", "landingsLoading",
     // Conversations 3 of 3: the Close question names a conversation by its id, and the ones
     // being closed — both survive an org switch, as the conversations they name do.
     "closeQuestion", "closing",
+    // Workspaces piece 4: each workspace's wake budget and each organisation's Agents woken by
+    // messages, kept per organisation: the conversations they serve survive the switch.
+    "messageState",
+    // Workspaces piece 5: proposals and dismissals, by the conversation and workspace they name.
+    "teammateProposals",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",
@@ -198,9 +215,26 @@ private let keptPerPlace: Set<String> = [
     // The pool of clients pinned to agent places, and what their `wakil-ctx`s said: the places
     // with a live agent are still in use after a switch.
     "placeClients", "placeContexts",
+    // Workspaces, piece 2: each repo's drafting conversation, keyed by its project file and naming
+    // the conversation by id — that conversation survives a switch, and so does what it drafts.
+    "recipeDraftBook",
+    // Workspaces, piece 3: what runs in each workspace, by id — the apps keep running across a switch
+    // (spec, Errors and edges), and the home draws only the incoming organisation's workspaces.
+    "homeRunLines",
+    "homeRunPorts",
+    "homeRunTones",
 ]
 
 private let orgIndependent: Set<String> = [
+    // Workspaces, piece 1: the router box. Its store keys the record by organisation itself
+    // (`WorkspaceStore.ensure(org:)` reads the incoming one's at its first write there).
+    "workspaceRouter",
+    // Workspaces, piece 2: the runner box. It cleans leftover Try workspaces once per organisation,
+    // keyed by the organisation it is handed.
+    "workspaceRunner",
+    // Its wiring and the latest sweep: the runner keys each sweep by the organisation it is handed.
+    "runnerWiring",
+    "trySweep",
     // The rail's collapse is the window's own, kept in `window.json`; no switch changes it.
     "railCollapsed",
     // Names: a landed name's journal line, written whichever organisation is on screen; awaited only by
@@ -255,6 +289,9 @@ private let orgIndependent: Set<String> = [
     // Fix round 1. The operator's environment switch in progress: a task the pump waits on,
     // not org-derived state. An org switch starts no environment switch of its own.
     "operatorEnvironmentSwitch",
+    // Piece 3 walk: set and cleared by that same switch while it holds the view it was made in;
+    // presentation of the switch in flight, not org-derived state.
+    "holdingViewThroughSwitch",
     // Plan 4 final review I1: `goTosInFlight` counts chip clicks between switches, raised and
     // lowered by the `goTo` that runs each, whichever org it ends in — the shape of `switching`.
     "goTosInFlight",
@@ -388,6 +425,9 @@ private let orgIndependent: Set<String> = [
     // 3b-ix: how long the composer keeps the keyboard after a fast-path action — the operator's
     // hand on the composer, `paletteShowing`'s shape, and over in 1.5 s whatever the org.
     "composerHoldsKeyboardUntil",
+    // New conversation here's hold (Rule 3): the screen it opened, and the focus-request count it
+    // began under — `composerHoldsKeyboardUntil`'s shape, ended by an org switch's change of screen.
+    "composerKeyboardPin",
 ]
 
 /// **A stable reference whose CONTENTS are org-scoped and must be torn

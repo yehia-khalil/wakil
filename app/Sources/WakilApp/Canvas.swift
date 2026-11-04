@@ -407,9 +407,11 @@ extension WakilWindow {
                     isKeyboardOwner: !(
                         model.showOrgPlane || model.organization.isEmpty || model.pending != nil
                         || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
+                    folderTag: { model.folderTag(for: $0) },
                     isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                     keyboardFocusRequests: model.keyboardFocusRequests,
-                    keyboardReturns: model.keyboardReturns)
+                    keyboardReturns: model.keyboardReturns,
+                    keyboardHeld: { model.composerHoldsKeyboard })
             case "api":
                 // It takes `dispatch` now: the Send control presses the
                 // same registry the agent speaks to, which is what makes
@@ -500,10 +502,12 @@ extension WakilWindow {
                     // 3a-v-a: inline blame, the app-tier setting.
                     inlineBlame: model.editorSettings.app.inlineBlame,
                     blameFor: { root, path, text in await model.editorBlame(root: root, path: path, text: text) },
+                    folderTag: { model.folderTag(for: $0) },
                     openCommitDiff: { root, ref in
                         Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
                     },
                     openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
+                    openProjectSettings: { Task { await model.openProjectSettings() } },
                     timeline: EditorTimelineControls(
                         load: { root, path, skip in await model.editorTimeline(root: root, path: path, skip: skip) },
                         openCommit: { root, ref in
@@ -599,8 +603,8 @@ extension WakilWindow {
                         t.liveHandOffs = model.ticketLiveHandOffs
                         return t
                     }(),
-                    ticketCount: ticketNeedsCount(model.ticketNeeds),
-                    ticketCountLabel: ticketNeedsLabel(model.ticketNeeds),
+                    ticketCount: ticketNeedsCount(model.ticketNeedsInProject, roots: model.gitRoots),
+                    ticketCountLabel: ticketNeedsLabel(model.ticketNeedsInProject, roots: model.gitRoots),
                     dispatchThrowingReply: { name, params in
                         var withPane = params
                         withPane["pane"] = .string(pane.id)
@@ -703,6 +707,31 @@ extension WakilWindow {
                     saveProjectAgentInstructions: { path, general, commits, pullRequests in
                         await model.saveProjectAgentInstructions(
                             projectPath: path, general: general, commits: commits, pullRequests: pullRequests)
+                    },
+                    saveProjectPMKey: { path, key in await model.saveProjectPMKey(projectPath: path, key) },
+                    runningDispatch: { action, params in await model.runningDispatch(action, params) },
+                    runningEnvironment: model.environment,
+                    runningTryProgress: { project, repo in model.runningTryProgress(project: project, repo: repo) },
+                    runningOpenLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
+                    runningDrafting: { project in
+                        RunningDrafting(
+                            draft: { model.recipeDraft(projectPath: project.path, repo: $0) },
+                            start: { repo, root, detected, kind in
+                                await model.startRecipeDraft(project: project, repo: repo, root: root, detected: detected, kind: kind)
+                            },
+                            fix: { repo, root, recipe, report in
+                                await model.proposeRecipeFix(project: project, repo: repo, root: root, recipe: recipe, report: report)
+                            },
+                            settle: { model.settleRecipeDraft(projectPath: project.path, repo: $0) },
+                            stop: { await model.stopRecipeDraft(projectPath: project.path, repo: $0) },
+                            open: { await model.openRecipeDraftConversation(projectPath: project.path, repo: $0) },
+                            askAgain: { await model.askRecipeDraftAgain(projectPath: project.path, repo: $0) })
+                    },
+                    saveProjectBranchInstructions: { path, branches in
+                        await model.saveProjectAgentInstructions(projectPath: path, branches: branches)
+                    },
+                    saveMessageWakes: { value, organisation, path in
+                        await model.saveMessageWakes(value, organisation: organisation, projectPath: path)
                     },
                     saveLocalProvider: { id, label, url in
                         await model.setLocalProvider(id: id, label: label, baseURL: url)

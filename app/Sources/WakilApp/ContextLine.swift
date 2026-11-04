@@ -110,11 +110,37 @@ struct ContextLine: View {
     private func hasChoice(_ segment: Segment) -> Bool {
         switch segment {
         case .project: return projects.count > 1
-        case .environment: return environments.count > 1
+        // Piece 3 walk: while none is chosen, even one declared is a choice to make (Invariant 8).
+        case .environment: return environmentHasChoice(environment: model.environment, declaredCount: environments.count)
         // 3a-iv: the picker always has something to offer (create, fetch) when there is a git root.
         case .branch: return model.branchSegment != nil
         case .none: return false
         }
+    }
+
+    /// The home is on screen (workspaces, amendment 2026-10-30): it is the organisation's, so the
+    /// line names the organisation only — no project, environment, branch or workspace is selected
+    /// there. *Start in*, in the composer, shows where a send goes (red for production, Invariant 8).
+    private var onHome: Bool { !model.sessionStarted && !model.organization.isEmpty }
+
+    /// Home, at the far left in both states: back to the organisation's home from anywhere, by the
+    /// same path as ⇧⌘H (`window.home`, which dispatches `session_new` as ⌘N does). A press the
+    /// operator makes moves the screen (Rule 6); nothing is closed or asked (Rule 1).
+    private var homeButton: some View {
+        let chord = model.keymap.chord("window.home")?.text
+        return Button {
+            Task { _ = await model.runKeyCommand("window.home") }
+        } label: {
+            Image(systemName: "house")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(coolWhite.opacity(onHome ? 0.95 : 0.78))
+                .padding(4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Home: every workspace and conversation of \(model.organization)" + (chord.map { " (\($0))" } ?? ""))
+        .accessibilityLabel("Home")
+        .accessibilityIdentifier("window.contextLine.home")
     }
 
     private var isProduction: Bool {
@@ -236,26 +262,55 @@ struct ContextLine: View {
             Text("ORGANISATION")
                 .font(.system(size: 9, weight: .medium))
                 .tracking(1.7)
-                .foregroundStyle(coolWhite.opacity(0.52))
+                // The home comp's floor for a micro-label: 0.58 clears 4.5:1 on the void (`HomePalette.micro`).
+                .foregroundStyle(coolWhite.opacity(0.58))
             HStack(alignment: .firstTextBaseline, spacing: 15) {
+                homeButton
                 Text(model.organization.isEmpty ? "unknown" : model.organization)
                     .font(.system(size: 19))
                     .foregroundStyle(coolWhite)
-                // §6: identifiers are monospace, always.
-                Text(model.project.isEmpty ? "no project" : model.project)
+                if !onHome { restingPlace }
+            }
+        }
+    }
+
+    /// The rest of the resting line, off the home: the project, its environment, the branch and the
+    /// view's workspace.
+    @ViewBuilder
+    private var restingPlace: some View {
+        Group {
+            // §6: identifiers are monospace, always.
+            Text(model.project.isEmpty ? "no project" : model.project)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(coolWhite.opacity(0.50))
+            // Absent with no project, for the reason the segment is: an
+            // environment lives inside a project's own map, so there is
+            // nothing here to be unset from.
+            // Pressable at rest too: it opens the Environment picker, so an environment can be chosen
+            // without first hovering the line (piece 3 walk).
+            if !model.project.isEmpty {
+                chip
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggle(.environment) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(.default) { toggle(.environment) }
+                    .accessibilityIdentifier("window.contextLine.environment")
+            }
+            // 3a-iv: the active root's branch, an identifier, so monospace (§6).
+            if let branch = model.branchSegment {
+                Text(branch)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(coolWhite.opacity(0.50))
-                // Absent with no project, for the reason the segment is: an
-                // environment lives inside a project's own map, so there is
-                // nothing here to be unset from.
-                if !model.project.isEmpty { chip }
-                // 3a-iv: the active root's branch, an identifier, so monospace (§6).
-                if let branch = model.branchSegment {
-                    Text(branch)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.50))
-                        .lineLimit(1).truncationMode(.middle)
-                }
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            // Workspaces, piece 1: the view's workspace (Main names none), whole.
+            if let workspace = model.workspaceOnScreen {
+                Text("› \(workspace.name)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(coolWhite.opacity(0.62))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("window.contextLine.workspace")
             }
         }
     }
@@ -264,7 +319,8 @@ struct ContextLine: View {
     /// promoted: Invariant 8's treatment does not change because the pointer
     /// arrived, and only the chevron is added.
     private var chip: some View {
-        Text(model.environmentLabel.uppercased())
+        // *None chosen* while the project declares environments; *unknown* only when it declares none.
+        Text(environmentBadgeLabel(environment: model.environment, declaredCount: environments.count).uppercased())
             .font(.system(size: 8.5, weight: .medium))
             .tracking(1.6)
             .foregroundStyle(Color(EnvironmentBadge.chipColour(isProduction: isProduction)))
@@ -280,10 +336,14 @@ struct ContextLine: View {
 
     private var promoted: some View {
         HStack(alignment: .top, spacing: 28) {
+            homeButton
             organisation
-            project
-            environment
-            branch
+            if !onHome {
+                project
+                environment
+                branch
+                workspace
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)
@@ -341,6 +401,26 @@ struct ContextLine: View {
         }
     }
 
+    /// Workspaces, piece 1: the view's workspace, kept when the line is promoted — a fact of *where
+    /// I am* does not leave because the pointer arrived (the resting cluster's `›`, same words, so a
+    /// reader of either state reads one thing). Not a control: no chevron, no press.
+    @ViewBuilder
+    private var workspace: some View {
+        if let workspace = model.workspaceOnScreen {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WORKSPACE")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(1.7)
+                    .foregroundStyle(coolWhite.opacity(0.52))
+                Text("› \(workspace.name)")
+                    .font(.system(size: 14.5))
+                    .foregroundStyle(coolWhite.opacity(0.82))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("window.contextLine.workspace")
+            }
+        }
+    }
+
     @ViewBuilder
     private var environment: some View {
         if !model.project.isEmpty {
@@ -355,6 +435,10 @@ struct ContextLine: View {
                 toggle(.environment)
             }
             .background(reporting(.environment))
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { toggle(.environment) }
+            .accessibilityIdentifier("window.contextLine.environment")
         }
     }
 
@@ -509,7 +593,8 @@ struct ContextLine: View {
                             // moment it is chosen — a list is the last one
                             // before the room turns.
                             tint: row.isProduction
-                                ? Color(red: 0.910, green: 0.361, blue: 0.361) : nil
+                                ? Color(red: 0.910, green: 0.361, blue: 0.361) : nil,
+                            identifier: "window.contextLine.environment.\(row.name)"
                         ) {
                             withAnimation(Self.promote) { open = .none }
                             Task { await model.setEnvironment(row.name) }
@@ -557,6 +642,7 @@ struct ContextLine: View {
         notice: String? = nil,
         isCurrent: Bool,
         tint: Color?,
+        identifier: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let isHovered = hoveredRow == title
@@ -627,6 +713,24 @@ struct ContextLine: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
+        .modifier(MenuRowIdentity(identifier: identifier, action: action))
+    }
+
+    /// An environment row is a named button in the tree, so a check can press it.
+    private struct MenuRowIdentity: ViewModifier {
+        let identifier: String?
+        let action: () -> Void
+        func body(content: Content) -> some View {
+            if let identifier {
+                content
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(.default, action)
+                    .accessibilityIdentifier(identifier)
+            } else {
+                content
+            }
+        }
     }
 
     // MARK: - Opening a segment

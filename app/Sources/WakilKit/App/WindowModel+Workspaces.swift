@@ -1,0 +1,475 @@
+import Foundation
+
+// Workspaces, piece 1: the window's side of the write rule — what it knows of a conversation, its
+// state, its thread, and where its view goes when the rule moves it.
+extension WindowModel {
+    /// Points the write rule at this window (`WakilWiring.useActiveContext(of:)`).
+    public func useWorkspaces(_ router: WorkspaceRouter) {
+        workspaceRouter = router
+        let hooks = WorkspaceRouterHooks(
+            conversation: { [weak self] id in await self?.workspaceFacts(id) },
+            states: { [weak self] in await self?.conversationStates() ?? [:] },
+            say: { [weak self] conversation, line in await self?.sayWorkspace(conversation, line) },
+            moved: { [weak self] conversation, from, to in await self?.workspaceMoved(conversation, from: from, to: to) },
+            branchName: { [weak self] request in await self?.draftBranchName(request) },
+            environmentChanged: { [weak self] w, from in await self?.workspaceDataPanesFollow(w, from: from) })
+        Task { await router.install(hooks) }
+    }
+
+    /// What the write rule needs of conversation `id`; nil when it is not live. `agentRuns` is false
+    /// for one no agent was started in (a place's reserved conversation the e2e harness dispatches as).
+    func workspaceFacts(_ id: String) async -> WorkspaceConversationFacts? {
+        guard let agent = conversations[id] else { return nil }
+        let roots = agent.place == place ? mainGitRootPaths : await mainRootPaths(forCaller: agent.caller)
+        return WorkspaceConversationFacts(
+            id: agent.id, lineageRoot: agent.lineageRoot, title: agent.title, ticket: agent.handoff?.key,
+            organization: agent.place.organization, project: agent.place.project,
+            environment: agent.place.environment, mainRoots: roots, firstMessage: agent.firstMessage,
+            agentRuns: agent.runsOrStarts)
+    }
+
+    /// Every live conversation's state, for the rule's idle/working test.
+    func conversationStates() -> [String: ConversationState] {
+        Dictionary(liveConversationRows().map { ($0.id, $0.state) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// The rule's sentence in the conversation's thread; a failure as an error row, whole (Rule 8).
+    func sayWorkspace(_ conversation: String, _ line: WorkspaceLine) {
+        guard let agent = conversations[conversation] else { return }
+        var failed = false
+        if case .addFailed = line { failed = true }
+        agent.appendRow(label: "workspace", detail: line.text, isError: failed)
+    }
+
+    /// A conversation the rule moved into a workspace. Its view follows (decision 22) once views
+    /// are filed by workspace; until then the canvas it is on stays (Rule 6).
+    func workspaceMoved(_ conversation: String, from: Workspace?, to: Workspace) async {
+        await workspaceViewFollows(conversation, from: from, to: to)
+        // Piece 3: a new workspace's branch may carry a ticket (`INI-142-…`), which is then that
+        // workspace's — on the home, not under Tickets not started here, and opened by ⌘P's `#`
+        // (decision 27). In flight is read again, not waited for.
+        if from == nil { Task { @MainActor [weak self] in await self?.ticketNeedsRead(force: true) } }
+    }
+
+    /// The branch name the ✨ quick task drafts from the Branches instructions (decision 10); nil
+    /// falls back to `fallbackBranchName`.
+    func draftBranchName(_ request: BranchNameRequest) async -> String? {
+        let rules = branchInstructions(project: request.project)
+        guard !rules.isEmpty, commitDraftsEnabled, let tasks = quickTasks else { return nil }
+        let draft = Task { try BranchDraft.parse(try await tasks.respond(BranchDraft.request(request, instructions: rules))) }
+        let timer = Task {
+            try? await Task.sleep(for: BranchDraft.patience)
+            draft.cancel()
+        }
+        defer { timer.cancel() }
+        return try? await draft.value
+    }
+
+    /// Where a conversation's view goes when it moves (decision 22). From Main (step 0), the canvas
+    /// it was in becomes the new workspace's view — on screen, both stores move it, as a new
+    /// conversation adopts the seed — its editor tabs on files in Main's folders reopen in the
+    /// copy, and its terminals stay in Main's view, a new one in the copy in each one's place.
+    /// From a workspace (a branch-off, a Move), it goes to the other workspace's view.
+    func workspaceViewFollows(_ conversation: String, from: Workspace?, to: Workspace) async {
+        guard let agent = conversations[conversation] else { return }
+        let before = agent.layoutScope
+        agent.workspace = to
+        guard let after = agent.layoutScope, after != before else { return }
+        guard currentAgent === agent else { return }
+        let terminals = layoutSnapshot.panes.filter { PaneKinds.is($0.kind, TerminalPaneKind.self) }.map(\.id)
+        await activateLayout(adoptingFrom: from == nil ? before : nil)
+        if from == nil, let before {
+            await repointEditorTabs(in: after, into: to)
+            // The write that moved it is still homed on the canvas it left: it lands in this one.
+            await panes.scopeCarried(from: before, to: after)
+            await layout.scopeCarried(from: before, to: after)
+            // Terminals stay in Main's view; the new view opens its own in the copy (decision 22).
+            await leaveTerminalsInMain(terminals, of: agent.place, view: after, into: to)
+        }
+    }
+
+    /// Every file tab of an editor pane in `scope` on a path in Main's folder of a repo `w` has a
+    /// copy of, re-pointed to the copy (its buffer kept), and the pane's saved tabs written.
+    func repointEditorTabs(in scope: LayoutScope, into w: Workspace) async {
+        for target in await panes.editorPanesInEveryScope() where target.scope == scope {
+            let snapshot = await panes.updateEditor(in: scope, paneId: target.paneId) { s -> EditorSnapshot in
+                for i in s.tabs.indices {
+                    guard case .file(let path, let root) = s.tabs[i].subject,
+                          let moved = workspacePath(path, in: w) else { continue }
+                    s.tabs[i].subject = .file(path: moved, root: workspacePath(root, in: w) ?? root)
+                }
+                return s
+            }
+            await ScopeRouting.$home.withValue(scope) {
+                await layout.setEditorTabs(id: target.paneId, to: editorSavedTabs(snapshot))
+            }
+        }
+    }
+
+    /// What `agent`'s map reads (spec, "The agent sees real paths"): its workspace from the record,
+    /// with holders and states; for one in Main, Main's folders, the conversations there and the
+    /// project's workspaces.
+    func workspaceMapInput(for agent: PlaceAgent) async -> WorkspaceMapInput {
+        let place = agent.place
+        let listings = await workspaceRouter?.listing(project: place.project) ?? []
+        let own = agent.workspace.map { w in
+            listings.first { $0.workspace.id == w.id } ?? WorkspaceListing(workspace: w, holders: [:], live: [:])
+        }
+        let roots = place == self.place ? mainGitRootPaths : await mainRootPaths(forCaller: agent.caller)
+        var branches: [String: String] = [:]
+        if place == self.place {
+            for r in gitRoots where roots.contains(r.root) { branches[r.root] = r.branch }
+        }
+        let rows = liveConversationRows(in: place)
+        var mainLive: [String: ConversationState] = [:]
+        for row in rows where conversations[row.id]?.workspace == nil { mainLive[row.id] = row.state }
+        return WorkspaceMapInput(
+            conversation: agent.id, project: place.project, environment: place.environment, own: own,
+            mainRoots: roots, mainBranches: branches, workspaces: listings, mainLive: mainLive,
+            titles: Dictionary(rows.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a }))
+    }
+
+    /// The map block `agent`'s next turn carries after its words: on its session's first turn, and
+    /// whenever the map changed since it was last sent; nil otherwise, with no project (no folders
+    /// to map), and in a window the write rule is not wired into (no record: `useWorkspaces`).
+    func workspaceMapUpdate(for agent: PlaceAgent) async -> String? {
+        takeWorkspaceMap(await workspaceMapNow(for: agent), for: agent)
+    }
+
+    /// `agent`'s map as it reads now, nothing recorded; nil where no map is sent (no project, or a
+    /// window the write rule is not wired into).
+    func workspaceMapNow(for agent: PlaceAgent) async -> String? {
+        guard workspaceRouter != nil, !agent.place.project.isEmpty else { return nil }
+        return workspaceMapText(await workspaceMapInput(for: agent))
+    }
+
+    /// The block for `map` when it differs from what `agent` was last sent, recorded as sent; nil
+    /// otherwise. No suspension: a woken turn reads the map first, then takes it after its last check.
+    func takeWorkspaceMap(_ map: String?, for agent: PlaceAgent) -> String? {
+        guard let map, map != agent.sentWorkspaceMap else { return nil }
+        agent.sentWorkspaceMap = map
+        return workspaceMapHeader + "\n" + map
+    }
+
+    /// The workspace on screen: the shown conversation's (nil: Main). The context line names it.
+    public var workspaceOnScreen: Workspace? { currentAgent?.workspace }
+
+    /// The tag a folder carries in the editor's and a terminal's header (spec, piece 1).
+    public func folderTag(for path: String) -> String {
+        checkoutTag(for: path, in: currentAgent?.workspace.map { [$0] } ?? [])
+    }
+}
+
+// Workspaces, piece 2: a run's failure in the thread of the conversation that asked, and the
+// project.json the runner reads a workspace's recipes from.
+extension WindowModel {
+    /// Points the runner at this window (`WakilWiring.useActiveContext(of:)`).
+    public func useRunner(_ runner: WorkspaceRunner) {
+        workspaceRunner = runner
+        runnerWiring = Task {
+            await runner.use(say: { [weak self] conversation, text, isError in
+                await self?.sayRun(conversation, text, isError: isError)
+            })
+            await runner.use(projectPath: { [weak self] project in await self?.projectFilePath(project) })
+            await runner.use(tryProgress: { [weak self] project, repo, progress in
+                await self?.setRunningTryProgress(project: project, repo: repo, progress)
+            })
+            // Piece 3: the card's running line follows every change, whoever ran it (Rule 5).
+            await runner.use(changed: { [weak self, runner] id in
+                let states = await runner.state(of: id)
+                await self?.runLineChanged(id, runStatusLine(states), ports: runAppPorts(states), tone: runTone(states))
+                // While a step runs, its time on the card goes on (the walk): read again each second.
+                if states.contains(where: runIsOnAStep) { await self?.tickRunLine(id, runner: runner) }
+            })
+            // The window may already have its organisation (it was read before the wiring ended).
+            self.sweepLeftoverTries()
+        }
+    }
+
+    /// Sweeps the active organisation's leftover Try workspaces: whenever an organisation becomes
+    /// active (`organization`'s didSet), after each context read, and once the runner is wired —
+    /// never before. The runner sweeps each organisation once per launch; one whose record could
+    /// not be read is swept at the next of these. A copy kept for its changes is said whole (Rule 8).
+    func sweepLeftoverTries() {
+        guard let runner = workspaceRunner, let wiring = runnerWiring, !organization.isEmpty else { return }
+        let org = organization
+        let previous = trySweep
+        trySweep = Task {
+            await wiring.value
+            await previous?.value
+            do {
+                let kept = try await runner.cleanLeftoverTries(org: org)
+                if !kept.isEmpty { self.say(kept.joined(separator: "\n")) }
+            } catch {
+                self.say("Leftover Try workspaces of \(org) were not cleaned: \(error)")
+            }
+        }
+    }
+
+    /// A Try's progress as it runs (the walk), by project and repo: the Running settings draw it.
+    func setRunningTryProgress(project: String, repo: String, _ progress: TryProgressState) {
+        runningTryProgress[runningTryKey(project: project, repo: repo)] = progress
+    }
+
+    public func runningTryProgress(project: String, repo: String) -> TryProgressState? {
+        runningTryProgress[runningTryKey(project: project, repo: repo)]
+    }
+
+    /// Reads `workspace`'s run line again each second while one of its repos is getting going on a step.
+    func tickRunLine(_ workspace: String, runner: WorkspaceRunner) {
+        guard runLineTickers[workspace] == nil else { return }
+        runLineTickers[workspace] = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                let states = await runner.state(of: workspace)
+                guard let self else { return }
+                self.runLineChanged(workspace, runStatusLine(states), ports: runAppPorts(states), tone: runTone(states))
+                if !states.contains(where: runIsOnAStep) { break }
+            }
+            self?.runLineTickers[workspace] = nil
+        }
+    }
+
+    func runLineChanged(_ workspace: String, _ line: String, ports: [Int] = [], tone: RunTone? = nil) {
+        if line.isEmpty { homeRunLines[workspace] = nil } else if homeRunLines[workspace] != line { homeRunLines[workspace] = line }
+        let toned = line.isEmpty ? nil : tone
+        if homeRunTones[workspace] != toned { homeRunTones[workspace] = toned }
+        let ready = line.isEmpty ? [] : ports
+        if ready.isEmpty { homeRunPorts[workspace] = nil } else if homeRunPorts[workspace] != ready { homeRunPorts[workspace] = ready }
+    }
+
+    /// The card's ▶ Run for `repo` of `workspace` (`workspace_run`, as the operator): the saved
+    /// recipe only (decision 12). Answers the refusal or failure whole (Rule 8), nil when it ran.
+    public func runOnCard(_ workspace: String, repo: String) async -> String? {
+        await runningDispatch("workspace_run", .object(["workspace": .string(workspace), "repo": .string(repo)])).error
+    }
+
+    /// The card's **Stop** (`workspace_stop` with no repo): every process, then the teardown.
+    public func stopOnCard(_ workspace: String) async -> String? {
+        await runningDispatch("workspace_stop", .object(["workspace": .string(workspace)])).error
+    }
+
+    func sayRun(_ conversation: String, _ text: String, isError: Bool) {
+        conversations[conversation]?.appendRow(label: "run", detail: text, isError: isError)
+    }
+
+    /// A project registry key's project.json, from the settings tree; nil when it is not read yet.
+    func projectFilePath(_ project: String) -> String? {
+        settings?.projects.first { $0.name == project }?.path
+    }
+}
+
+// Workspaces, piece 2: the Running settings dispatch their actions as the operator.
+extension WindowModel {
+    /// Dispatches one `running_*` (or `workspace_run`…) action from Settings; answers its result,
+    /// or the refusal's text whole (Rule 8).
+    public func runningDispatch(_ action: String, _ params: JSONValue) async -> (result: JSONValue?, error: String?) {
+        do {
+            let r = try await registry.dispatch(
+                name: action, params: params, origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            var value = r
+            if case .object(let o) = r, let s = o["structuredContent"] { value = s }
+            return (value, nil)
+        } catch {
+            return (nil, "\(error)")
+        }
+    }
+}
+
+// Workspaces, piece 3: the home screen's reads.
+extension WindowModel {
+    /// The organisation's workspaces with their holders and live states; empty, with the reason in
+    /// `status` whole (Rule 8), when the record cannot be read.
+    public func workspaceListings() async -> [WorkspaceListing] {
+        let org = organization
+        guard let router = workspaceRouter, !org.isEmpty else { return [] }
+        if let failure = await router.load(org: org) {
+            status = failure
+            return []
+        }
+        let listings = await router.listing()
+        if org == organization { knownWorkspaces = (org, listings.map(\.workspace)) }
+        return listings
+    }
+
+    /// The workspaces last read for the window's organisation; none for another's (Invariant 4).
+    var workspacesKnownNow: [Workspace] {
+        knownWorkspaces.organization == organization ? knownWorkspaces.workspaces : []
+    }
+
+    /// The home screen (spec, piece 3), from what the window knows now. `projects` and `past` are
+    /// the Landing's own reads (`listProjects`, `landingSessions`); a conversation slot with no turn
+    /// is a view, not a conversation, so it draws no line — nor does one with a session and no turn yet.
+    /// `projectPaths` names each project's project.json (`listProjects`), for the recipe reads.
+    public func readHomeScreen(projects: [String], past: [PaletteItem], filter: String?,
+                               projectPaths: [String: String] = [:]) async -> HomeScreen {
+        let listings = await workspaceListings()
+        readHomeMergedBranches(listings.map(\.workspace))
+        readHomeRecipes(Set(listings.filter { !$0.workspace.archived }.map(\.workspace.project)), paths: projectPaths)
+        let judge = await environmentJudge()
+        let input = HomeInput(
+            organization: organization, project: projectKey, environment: environment, projects: projects,
+            workspaces: listings,
+            live: liveConversationRows().filter { conversations[$0.id]?.hasTurn == true },
+            tickets: ticketNeedsRows,
+            past: past.map { HomePastConversation(id: $0.payload, title: $0.title, subtitle: $0.subtitle, chain: $0.chain) },
+            filter: filter,
+            branchPRs: homeBranchPRs, running: homeRunLines, runningPorts: homeRunPorts, runningTones: homeRunTones,
+            recipeRepos: homeRecipeRepos, proposals: teammateProposals.all, isProduction: judge)
+        return homeScreen(input)
+    }
+
+    /// Reads, not waited for, the Running settings of each project with an open workspace
+    /// (`running_read`), so a card none of whose copies has a recipe offers Set up running… rather
+    /// than a ▶ Go would refuse. Asked on every home read, so a recipe saved in Settings shows on the
+    /// way back; a read that fails leaves what was known (unread: ▶ stays). One that lands after an
+    /// organisation switch is dropped (Invariant 4).
+    func readHomeRecipes(_ projects: Set<String>, paths: [String: String]) {
+        let org = organization
+        for project in projects.sorted() where !homeRecipeReading.contains(project) {
+            guard let path = projectFilePath(project) ?? paths[project] else { continue }
+            homeRecipeReading.insert(project)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let (r, _) = await self.runningDispatch("running_read", .object(["projectPath": .string(path)]))
+                guard self.organization == org else { return }
+                self.homeRecipeReading.remove(project)
+                guard let r, let s = try? RunningSettings.decode(r) else { return }
+                let known = homeReposWithRecipe(s)
+                if self.homeRecipeRepos[project] != known { self.homeRecipeRepos[project] = known }
+            }
+        }
+    }
+
+    /// Reads, not waited for, the PRs of each open workspace's branch never read or read over 60 s
+    /// ago (`homeMergedReads`), so a card can offer Archive once every PR is merged (decision 11). A
+    /// read that fails leaves the branch as it was (unread: no offer; Archive stays in ⋯), asked again
+    /// after 60 s. One that lands
+    /// after an organisation switch is dropped (Invariant 4).
+    func readHomeMergedBranches(_ workspaces: [Workspace]) {
+        guard let ticket else { return }
+        let org = organization
+        for at in homeMergedReads(workspaces)
+        where !homeBranchReading.contains(at) && ticketStale(lastRead: homeBranchReadAt[at], now: Date()) {
+            homeBranchReading.insert(at)
+            Task { @MainActor [weak self] in
+                let read = try? await ticket.readBranchPRs(root: at.root, branch: at.branch)
+                guard let self, self.organization == org else { return }
+                self.homeBranchReading.remove(at)
+                // A failure waits its 60 s too, so a branch GitHub cannot answer is not asked on every draw.
+                self.homeBranchReadAt[at] = Date()
+                guard let read else { return }
+                if self.homeBranchPRs[at] != read.prs { self.homeBranchPRs[at] = read.prs }
+            }
+        }
+    }
+
+    /// ⌘P's Running group's workspaces (decision 27): every unarchived one of the organisation.
+    func runningWorkspaces() async -> [RunningWorkspace] {
+        let judge = await environmentJudge()
+        return await workspaceListings().map(\.workspace).filter { !$0.archived }.map { w in
+            RunningWorkspace(
+                id: w.id, name: w.tickets.first.map { "\($0) \(w.name)" } ?? w.name,
+                place: Place(organization: organization, project: w.project, environment: w.environment),
+                isProduction: judge(w.project, w.environment))
+        }
+    }
+
+    /// Every project's environments, from the configuration tree the window holds for its
+    /// organisation — read now when it holds none or another organisation's (Invariant 4). Unread
+    /// when that read fails: each environment then answers by its name.
+    func orgEnvironments() async -> OrgEnvironments {
+        let org = organization
+        guard !org.isEmpty else { return .unread }
+        var tree = settings
+        if tree?.org.id != org {
+            tree = try? await decodeSettingsTree(fromResult: registry.dispatch(
+                name: "ctx_config_tree", params: .object([:]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil))
+        }
+        guard let tree, tree.org.id == org else { return .unread }
+        return OrgEnvironments(projects: Dictionary(
+            tree.projects.map { p in (p.name, p.environments.map { OrgEnvironments.Environment(name: $0.name, production: $0.production) }) },
+            uniquingKeysWith: { a, _ in a }))
+    }
+
+    /// Whether an environment of any project is production (Invariant 8): the screen's project by
+    /// the window's own flags, every other by its own declarations (`orgEnvironments`).
+    func environmentJudge() async -> @Sendable (String, String) -> Bool {
+        let current = projectKey
+        let flags = environmentProduction
+        return await orgEnvironments().judge(current: current, flags: flags)
+    }
+
+    /// *Start in*'s rows: the window's place, its project's other environments, then every other
+    /// project's environments as its configuration declares them — each tagged production by its
+    /// own project's declaration (Invariant 8).
+    public func startInChoices() async -> [HomeStartChoice] {
+        let projects = await listProjects().map(\.name)
+        let environments = await listEnvironments().map(\.name)
+        let envs = await orgEnvironments()
+        return homeStartChoices(
+            projects: projects, current: place, environments: environments, otherEnvironments: envs.names,
+            isProduction: envs.judge(current: projectKey, flags: environmentProduction))
+    }
+}
+
+// Workspaces, piece 3 walk: the home composer's *Start in* is where the next send goes, and only that.
+extension WindowModel {
+    /// Where a send from the home goes: *Start in*'s choice, else the window's place.
+    public var startInPlace: Place {
+        guard let chosen = homeStartIn, chosen.organization == organization else { return place }
+        return chosen
+    }
+
+    /// *Start in*'s choice: sets where the next send goes, and nothing else — the screen stays on the
+    /// home, no project or environment is selected (amendment "the home is the organisation's").
+    public func chooseStartIn(_ choice: HomeStartChoice) {
+        let target = Place(organization: organization, project: choice.project, environment: choice.environment)
+        homeStartIn = target == place ? nil : target
+    }
+
+    /// A project's name on the home points *Start in* at it: its environment when it is the window's
+    /// project, else the one a project switch lands on.
+    public func chooseStartIn(project: String) {
+        chooseStartIn(HomeStartChoice(project: project, environment: project == projectKey ? environment : "",
+                                      current: false, isProduction: false))
+    }
+
+    /// Whether a send typed now must first go where *Start in* points (`enterStartIn`) — or, with no
+    /// choice made, into the window's own project with an environment chosen (piece 3 walk).
+    public var sendGoesElsewhere: Bool {
+        !sessionStarted && (homeStartIn != nil || (environment.isEmpty && !projectKey.isEmpty))
+    }
+
+    /// A send from the home goes where *Start in* points: the window goes there, onto Main's Landing
+    /// there — a conversation on screen in that place goes to the background untouched, as ⌘N puts
+    /// it (`newConversation`) — and the choice is spent. Answers whether the window got there; a
+    /// switch refused leaves its reason in `status`, whole (Rule 8).
+    public func enterStartIn() async -> Bool {
+        guard sendGoesElsewhere else { return true }
+        let target = homeStartIn ?? place
+        homeStartIn = nil
+        await goTo(target)
+        guard place.organization == target.organization, place.project == target.project,
+              target.environment.isEmpty || place.environment == target.environment else { return false }
+        if sessionStarted { await newConversation() }
+        return true
+    }
+
+    /// A conversation's line on the home: brought back when it is live (`session_switch`), else its
+    /// thread opened as Earlier's Continue opens one (`session_resume`).
+    public func openHomeLine(_ id: String, session: String?) async {
+        if conversation(id: id) != nil {
+            await switchToRunning(id)
+        } else if let session {
+            await continueSession(session)
+        }
+    }
+}
+
+/// A repo whose run is getting going on a step: its line's time goes on.
+func runIsOnAStep(_ s: RepoRunState) -> Bool {
+    if case .starting = s.phase { return s.step != nil }
+    return false
+}

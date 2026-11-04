@@ -1,0 +1,22 @@
+{"expect":{"frame":"landing","minWidth":40}}
+{"parity":{"action":"workspace_open","params":{"workspace":"main","project":"e2e-project","environment":"staging"},"click":"landing.project.e2e-project","assert":"tree"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"journal":{"contains":"\"action\":\"workspace_open\""}}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"IN MAIN"}}
+{"expect":{"tree":"contains","text":"quiet projects —"}}
+{"expect":{"tree":"absent","text":"NEEDS YOU"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"dispatch":{"action":"workspace_open","params":{"workspace":"main"}}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}

@@ -86,14 +86,14 @@ import Testing
     // choices, saved on their press.
     let leaving = WindowModel.OrganisationField.allCases.filter(\.savesOnLeave)
     #expect(leaving == [.displayName, .jiraBase, .defaultProvider, .gitName, .gitEmail,
-                        .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
+                        .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions])
 }
 
 @Test func onlyTheAuthorFieldsSaveWhileTypingPauses() {
     // A pause mid-typing must not rename the organisation, try half a Jira site or name half an
     // account (review, settings revamp): those three save when left or on Return, never on a pause.
     let typing = WindowModel.OrganisationField.allCases.filter(\.savesWhileTyping)
-    #expect(typing == [.gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
+    #expect(typing == [.gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions])
     #expect(!WindowModel.OrganisationField.displayName.savesWhileTyping)
     #expect(!WindowModel.OrganisationField.jiraBase.savesWhileTyping)
     #expect(!WindowModel.OrganisationField.defaultProvider.savesWhileTyping)

@@ -6,6 +6,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	go.mongodb.org/mongo-driver/v2 v2.8.2
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.33.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.47.0

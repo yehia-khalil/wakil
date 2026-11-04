@@ -1,0 +1,12 @@
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"tree":"contains","text":"⌘K ACTIONS"}}
+{"expect":{"frame":"window.contextLine.environment","minWidth":10}}
+{"do":{"click":"window.contextLine.environment"}}
+{"expect":{"frame":"window.contextLine.environment.qa","minWidth":40}}
+{"do":{"click":"window.contextLine.environment.qa"}}
+{"expect":{"tree":"contains","text":"QA"}}
+{"expect":{"tree":"absent","text":"STAGING"}}
+{"expect":{"tree":"contains","text":"⌘K ACTIONS"}}
+{"expect":{"tree":"absent","text":"e2e-project · qa"}}

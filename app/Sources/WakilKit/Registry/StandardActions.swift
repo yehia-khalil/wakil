@@ -1132,7 +1132,7 @@ public func registerStandardActions(
         ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
         ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
         ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
-         ["projectPath", "general", "commits", "pullRequests"], ["projectPath"], []),
+         ["projectPath", "general", "commits", "pullRequests", "branches", "messageWakes"], ["projectPath"], []),
     ] {
         await registry.register(Action(
             name: name,
@@ -1161,7 +1161,9 @@ public func registerStandardActions(
                 "type": .string("object"),
                 // `apiAccess` (device poll) is the one switch among the strings.
                 "properties": .object(Dictionary(uniqueKeysWithValues: keys.map {
-                    ($0, JSONValue.object(["type": .string($0 == "apiAccess" ? "boolean" : "string")]))
+                    // Workspaces piece 4: `messageWakes` is the one number (-1 clears the override).
+                    ($0, JSONValue.object(["type": .string(
+                        $0 == "apiAccess" ? "boolean" : $0 == "messageWakes" ? "integer" : "string")]))
                 })),
                 "required": .array(required.map { .string($0) }),
             ]),
@@ -1172,6 +1174,9 @@ public func registerStandardActions(
                 for key in keys where arguments[key] == nil {
                     if case .object(let o) = params, case .string(let v)? = o[key] { arguments[key] = .string(v) }
                     if key == "apiAccess", case .object(let o) = params, case .bool(let b)? = o[key] { arguments[key] = .bool(b) }
+                    if key == "messageWakes", case .object(let o) = params, case .integer(let n)? = o[key] {
+                        arguments[key] = .integer(n)
+                    }
                 }
                 return try await callChecked(
                     context, tool: tool, arguments: .object(arguments), action: name,
@@ -1532,6 +1537,9 @@ public func registerStandardActions(
                 "agentGeneral": .object(["type": .string("string")]),
                 "gitCommitInstructions": .object(["type": .string("string")]),
                 "gitPRInstructions": .object(["type": .string("string")]),
+                "gitBranchInstructions": .object(["type": .string("string")]),
+                // Workspaces piece 4: Agents woken by messages, 0–99; -1 clears it back to 8.
+                "messageWakes": .object(["type": .string("integer")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1550,12 +1558,13 @@ public func registerStandardActions(
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
             for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail", "pullStrategy",
-                        "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
+                        "agentGeneral", "gitCommitInstructions", "gitPRInstructions", "gitBranchInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             for key in ["ghostText", "fastPath", "commitDrafts", "conversationNames"] {
                 if let value = fields[key], case .bool = value { arguments[key] = value }
             }
+            if let value = fields["messageWakes"], case .integer = value { arguments["messageWakes"] = value }
             return try await callChecked(
                 context, tool: "update_org", arguments: .object(arguments),
                 action: "ctx_update_org", timeout: MCPClient.readReplyTimeout)
@@ -1799,6 +1808,41 @@ public func registerStandardActions(
             return try await callChecked(
                 context, tool: "set_project_editor_settings", arguments: .object(arguments),
                 action: "ctx_set_project_editor_settings", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    // The project's Jira project (scopes.pm.projectKey): a project's Ticket tab and its ⌘P tickets
+    // scope by it, so a project with none is set from Settings. Operator-only like every Settings
+    // write (Decision 30).
+    await registry.register(Action(
+        name: "ctx_set_project_pm_key",
+        description: "Set one project's Jira project key (INI) in its project.json; empty clears it. The "
+            + "project's Ticket tab and ⌘P tickets show that Jira project's tickets and those on its repos. "
+            + "Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "projectPath": .object(["type": .string("string")]),
+                "projectKey": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("projectPath"), .string("projectKey")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_set_project_pm_key", role: "context")
+            }
+            guard case .object(let fields) = params, case .string(let path)? = fields["projectPath"], !path.isEmpty else {
+                throw StandardActionError.missingParam(action: "ctx_set_project_pm_key", param: "projectPath")
+            }
+            guard case .string(let key)? = fields["projectKey"] else {
+                throw StandardActionError.missingParam(action: "ctx_set_project_pm_key", param: "projectKey")
+            }
+            return try await callChecked(
+                context, tool: "set_project_pm_key",
+                arguments: .object(["projectPath": .string(path), "projectKey": .string(key)]),
+                action: "ctx_set_project_pm_key", timeout: MCPClient.readReplyTimeout)
         }
     ))
 
@@ -2721,6 +2765,9 @@ public func registerStandardActions(
     // Names, call 3: beside the `session_*` actions, parked on the same broker for the same reason.
     await registry.register(conversationRenameAction(
         conversationRequests: conversationRequests, liveConversations: liveConversations))
+    // Workspaces piece 4: parked on the same broker; the window delivers it.
+    await registry.register(conversationMessageAction(
+        conversationRequests: conversationRequests, liveConversations: liveConversations))
 
     // **`.control`, for the identical reason `session_resume` above is:**
     // this changes which account Wakil's own session runs under and
@@ -2824,7 +2871,10 @@ public func registerStandardActions(
             + "\"none exist\". `live` lists the conversations running in this window now in this "
             + "organization — every project's, or, given `project` and/or `environment`, those "
             + "places' — newest activity first, each with its title and state (working, waiting, done, "
-            + "failed, idle). Only the operator brings one on screen, with ⌘P.",
+            + "failed, idle), its workspace, and the messages it holds for the operator. Called by an "
+            + "agent, `self` marks its own row and `sameWorkspace` the conversations working beside it: "
+            + "conversation_message reaches any of them by `conversation` id. Only the operator brings "
+            + "one on screen, with ⌘P.",
         kind: .read,
         audience: .agentReachable,
         schema: .object([
@@ -2859,7 +2909,17 @@ public func registerStandardActions(
                     && (project == nil || row.place.project == project)
                     && (environment == nil || row.place.environment == environment)
             }
-            return withStructured(past, "live", .array(live.map(\.json)))
+            // Workspaces piece 4: an agent's own row, and which rows share its workspace, so a
+            // message (`conversation_message`) has an address.
+            let own = ActionRegistry.dispatchCaller?.conversation
+            let key = { (row: LiveConversation) in MessageWorkspace(of: row.workspace, place: row.place).key }
+            let ownWorkspace = live.first { $0.id == own }.map(key)
+            return withStructured(past, "live", .array(live.map { row in
+                guard case .object(var o) = row.json, let own else { return row.json }
+                o["self"] = .bool(row.id == own)
+                o["sameWorkspace"] = .bool(ownWorkspace != nil && key(row) == ownWorkspace)
+                return .object(o)
+            }))
         }
     ))
 

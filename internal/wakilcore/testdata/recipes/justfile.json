@@ -1,0 +1,32 @@
+{
+  "repo": "justfile",
+  "kind": "just",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "setup": [
+      "just install"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "just serve"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "ports.PORT": "just serve — check it reads PORT",
+      "processes.app": "justfile target serve — the repo's own entry point",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "justfile target install — the repo's own entry point"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

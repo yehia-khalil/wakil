@@ -382,13 +382,17 @@ struct SettingsSection<Accessory: View, Content: View>: View {
     /// False for a section whose first row already says its name (an API entry's editable Name,
     /// 2e-iii): the hairline and its identifier stay, the heading is not drawn twice.
     var drawsTitle: Bool = true
+    /// The hairline's identifier when the page names its sections itself (Running's
+    /// `settings.running.section.<key>`); nil derives `settings.section.<title>`.
+    var identifier: String? = nil
     let accessory: Accessory
     let content: Content
 
-    init(_ title: String, drawsTitle: Bool = true,
+    init(_ title: String, drawsTitle: Bool = true, identifier: String? = nil,
          @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
         self.title = title
         self.drawsTitle = drawsTitle
+        self.identifier = identifier
         self.accessory = accessory()
         self.content = content()
     }
@@ -401,7 +405,7 @@ struct SettingsSection<Accessory: View, Content: View>: View {
             // reports one as the union of its children.
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.10)).frame(height: 0.5)
                 .accessibilityElement()
-                .accessibilityIdentifier("settings.section.\(fragment)")
+                .accessibilityIdentifier(identifier ?? "settings.section.\(fragment)")
                 // Untitled, the rule is all that parts one section from the next, so it takes the
                 // air a title would have had above it — and the row before it draws no hairline of
                 // its own (`SettingsRow(rule: false)`), or the two read as one doubled line.
@@ -412,6 +416,7 @@ struct SettingsSection<Accessory: View, Content: View>: View {
                         .font(.system(size: SettingsScale.micro, weight: SettingsScale.headerWeight))
                         .tracking(SettingsScale.microTracking)
                         .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
                     accessory
                 }
                 .padding(.top, SettingsScale.sectionGap)
@@ -432,8 +437,8 @@ struct SettingsSection<Accessory: View, Content: View>: View {
 }
 
 extension SettingsSection where Accessory == EmptyView {
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.init(title, accessory: { EmptyView() }, content: content)
+    init(_ title: String, identifier: String? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title, identifier: identifier, accessory: { EmptyView() }, content: content)
     }
 }
 

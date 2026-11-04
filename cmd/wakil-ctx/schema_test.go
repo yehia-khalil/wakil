@@ -103,6 +103,8 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"set_editor_settings",
 		"set_browser_settings",
 		"set_project_editor_settings",
+		// set_project_pm_key: a project's Jira project, set from Settings (the Ticket tab scopes by it).
+		"set_project_pm_key",
 		// set_local_provider added by 3b-viii — a local endpoint's URL and operations.
 		"set_local_provider",
 		// 2e-ii: a project and an environment, created, renamed and
@@ -113,6 +115,10 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"create_environment",
 		"rename_environment",
 		"remove_environment",
+		// Workspaces piece 2: how a repo runs.
+		"recipe_detect", "recipe_draft_all", "recipe_effective", "recipe_save",
+		"recipe_plan", "recipe_ready_wait", "ports_allocate", "compose_override",
+		"recipe_prepare", "recipe_run_steps", "recipe_try", "recipe_try_start", "recipe_try_status", "recipe_try_cancel", "recipe_secret_set", "recipe_list",
 		// The settings revamp: an environment declared production or not, or left to its name.
 		"set_environment_production",
 	})

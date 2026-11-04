@@ -60,7 +60,7 @@ func runner(root string) (*wakilcore.GitRunner, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	g, err := wakilcore.NewGitRunner(root, wakilcore.ProjectRootPaths(*r))
+	g, err := wakilcore.NewGitRunner(root, wakilcore.AllowedRootPaths(*r))
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
@@ -181,13 +181,18 @@ func writer(root string) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
+	return writerIn(root, r)
+}
+
+// writerIn is writer for a resolved project: its roots and its live workspace checkouts.
+func writerIn(root string, r *wakilcore.Resolved) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	// An unreadable org.json is refused, not read as "no identity": that would commit as git
 	// config's identity, which may be another organisation's (Invariant 4).
 	org, err := wakilcore.LoadOrg()
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	w, err := wakilcore.NewGitWriter(root, wakilcore.ProjectRootPaths(*r), wakilcore.OrgGitIdentity(org))
+	w, err := wakilcore.NewGitWriter(root, wakilcore.AllowedRootPaths(*r), wakilcore.OrgGitIdentity(org))
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
@@ -209,7 +214,7 @@ func remote(root string) (*wakilcore.GitRemote, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	g, err := wakilcore.NewGitRemote(org, root, wakilcore.ProjectRootPaths(*r), remoteOptions())
+	g, err := wakilcore.NewGitRemote(org, root, wakilcore.AllowedRootPaths(*r), remoteOptions())
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
@@ -373,6 +378,7 @@ func newServer() *mcp.Server {
 
 // addWriteTools registers the 3a-ii writes. Each runs the repository's hooks and signing.
 func addWriteTools(s *mcp.Server) {
+	addWorkspaceTools(s)
 	// 3a-iii-a: the remote operations, with the organisation's account for the remote's host.
 	for _, op := range []struct {
 		name, desc string

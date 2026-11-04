@@ -1,0 +1,32 @@
+{
+  "repo": "python-uv-fastapi",
+  "kind": "fastapi-uv",
+  "recipe": {
+    "clone": [
+      ".venv"
+    ],
+    "setup": [
+      "uv sync"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "uv run uvicorn app.main:api --reload --port $WAKIL_PORT"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/docs"
+    },
+    "notes": {
+      "clone": "uv.lock",
+      "processes.app": "app/main.py creates FastAPI() as api; uvicorn takes --port",
+      "ready": "FastAPI's docs page on $WAKIL_PORT",
+      "setup": "uv.lock"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

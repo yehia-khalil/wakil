@@ -388,6 +388,11 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var agentGeneral: String
     public var gitCommitInstructions: String
     public var gitPRInstructions: String
+    /// Workspaces (decision 10): how a workspace's branch is named.
+    public var gitBranchInstructions: String = ""
+    /// Workspaces piece 4: Agents woken by messages — message-woken turns per operator message per
+    /// workspace; Go fills the default (`defaultMessageWakes`). 0 never wakes.
+    public var messageWakes: Int
     /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
     /// Empty means the repository's own git config decides.
     public var gitName: String
@@ -404,8 +409,10 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true, conversationNames: Bool = true,
         gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = "",
         gitSignIn: [String] = [], agentGeneral: String = "", gitCommitInstructions: String = "",
-        gitPRInstructions: String = "", connections: [SettingsConnection] = [], jiraTokenStored: Bool = false
+        gitPRInstructions: String = "", connections: [SettingsConnection] = [], jiraTokenStored: Bool = false,
+        messageWakes: Int = defaultMessageWakes
     ) {
+        self.messageWakes = messageWakes
         self.id = id
         self.displayName = displayName
         self.jiraBase = jiraBase
@@ -448,6 +455,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         agentGeneral = try container.decodeIfPresent(String.self, forKey: .agentGeneral) ?? ""
         gitCommitInstructions = try container.decodeIfPresent(String.self, forKey: .gitCommitInstructions) ?? ""
         gitPRInstructions = try container.decodeIfPresent(String.self, forKey: .gitPRInstructions) ?? ""
+        gitBranchInstructions = try container.decodeIfPresent(String.self, forKey: .gitBranchInstructions) ?? ""
+        messageWakes = (try? container.decodeIfPresent(Int.self, forKey: .messageWakes)) ?? defaultMessageWakes
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
         // `try?`: a malformed connections field must not blank the whole Settings tree.
@@ -458,7 +467,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, conversationNames, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
-            agentGeneral, gitCommitInstructions, gitPRInstructions
+            agentGeneral, gitCommitInstructions, gitPRInstructions, gitBranchInstructions, messageWakes
         case gitName, gitEmail, connections, jiraTokenStored
     }
 
@@ -524,11 +533,17 @@ public struct SettingsAgentTexts: Sendable, Equatable, Decodable {
     public var general: String
     public var commits: String
     public var pullRequests: String
+    /// Workspaces (decision 10): how a workspace's branch is named.
+    public var branches: String
+    /// Workspaces piece 4: the project's own Agents woken by messages; nil inherits the organisation's.
+    public var messageWakes: Int?
 
-    public init(general: String = "", commits: String = "", pullRequests: String = "") {
+    public init(general: String = "", commits: String = "", pullRequests: String = "", branches: String = "", messageWakes: Int? = nil) {
         self.general = general
         self.commits = commits
         self.pullRequests = pullRequests
+        self.branches = branches
+        self.messageWakes = messageWakes
     }
 
     public init(from decoder: Decoder) throws {
@@ -536,9 +551,11 @@ public struct SettingsAgentTexts: Sendable, Equatable, Decodable {
         general = try c.decodeIfPresent(String.self, forKey: .general) ?? ""
         commits = try c.decodeIfPresent(String.self, forKey: .commits) ?? ""
         pullRequests = try c.decodeIfPresent(String.self, forKey: .pullRequests) ?? ""
+        branches = try c.decodeIfPresent(String.self, forKey: .branches) ?? ""
+        messageWakes = try? c.decodeIfPresent(Int.self, forKey: .messageWakes)
     }
 
-    private enum CodingKeys: String, CodingKey { case general, commits, pullRequests }
+    private enum CodingKeys: String, CodingKey { case general, commits, pullRequests, branches, messageWakes }
 }
 
 public struct SettingsProject: Sendable, Equatable, Decodable {
@@ -549,12 +566,16 @@ public struct SettingsProject: Sendable, Equatable, Decodable {
     public var editor: SettingsProjectEditor
     /// 3a-iii-b: the project's agent instructions.
     public var agent: SettingsAgentTexts
+    /// The project's Jira project (`scopes.pm.projectKey`), "" when it has none.
+    public var pmProjectKey: String
 
     public init(
         name: String, path: String = "",
         roots: [SettingsRoot] = [], environments: [SettingsEnvironment] = [],
-        editor: SettingsProjectEditor = .defaults, agent: SettingsAgentTexts = SettingsAgentTexts()
+        editor: SettingsProjectEditor = .defaults, agent: SettingsAgentTexts = SettingsAgentTexts(),
+        pmProjectKey: String = ""
     ) {
+        self.pmProjectKey = pmProjectKey
         self.name = name
         self.path = path
         self.roots = roots
@@ -571,9 +592,15 @@ public struct SettingsProject: Sendable, Equatable, Decodable {
         roots = try container.decodeIfPresent([SettingsRoot].self, forKey: .roots) ?? []
         environments = try container.decodeIfPresent([SettingsEnvironment].self, forKey: .environments) ?? []
         editor = try container.decodeIfPresent(SettingsProjectEditor.self, forKey: .editor) ?? .defaults
+        pmProjectKey = (try? container.decodeIfPresent(Scopes.self, forKey: .scopes))??.pm?.projectKey ?? ""
     }
 
-    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor, agent }
+    private struct Scopes: Decodable {
+        struct PM: Decodable { var projectKey: String? }
+        var pm: PM?
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor, agent, scopes }
 }
 
 public struct SettingsRoot: Sendable, Equatable, Decodable {
@@ -780,4 +807,15 @@ public func decodeSettingsTree(fromResult result: JSONValue?) -> SettingsTree? {
     // pane.
     guard let data = try? JSONEncoder().encode(structured) else { return nil }
     return try? JSONDecoder().decode(SettingsTree.self, from: data)
+}
+
+/// Agents woken by messages when nothing sets it (workspaces piece 4, decision 16): Go's
+/// `DefaultMessageWakes`.
+public let defaultMessageWakes = 8
+
+/// Agents woken by messages in force for `project`: its own override, else the organisation's, else
+/// the default (no tree read yet).
+public func messageWakesSetting(in tree: SettingsTree?, project: String) -> Int {
+    guard let tree else { return defaultMessageWakes }
+    return tree.projects.first { $0.name == project }?.agent.messageWakes ?? tree.org.messageWakes
 }

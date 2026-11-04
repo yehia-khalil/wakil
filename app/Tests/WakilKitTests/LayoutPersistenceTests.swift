@@ -562,6 +562,30 @@ private func conversation(
     #expect(store.load(for: scope("personal", "booking")).snapshot == snapshot)
 }
 
+/// Workspaces (decision 22): the seed is Main's — what Main's next canvas opens on. A workspace's
+/// view writes its own file and never the seed: its terminals' shells and its editor's files live
+/// in the copy, so Main's next canvas would draw a terminal with no shell and restore files from
+/// outside Main's folders (e2e workspaces-take-over-idle, 2026-10-31).
+@Test func aWorkspacesViewDoesNotRefreshTheProjectsSeed() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    let mains = LayoutSnapshot(panes: [
+        Pane(id: "terminal-1", kind: "terminal", title: "core", frame: PaneFrame(x: 1, y: 1, width: 1, height: 1))
+    ])
+    try store.save(mains, for: conversation("personal", "booking", "root-a"))
+    let view = LayoutSnapshot(panes: [
+        Pane(id: "terminal-3", kind: "terminal", title: "core", frame: PaneFrame(x: 1, y: 1, width: 1, height: 1))
+    ])
+    let workspace = conversation("personal", "booking", LayoutScope.workspaceViewPrefix + "fix-otp")
+    #expect(workspace.isWorkspaceView)
+
+    try store.save(view, for: workspace)
+
+    #expect(store.load(for: workspace).snapshot == view)
+    #expect(store.load(for: scope("personal", "booking")).snapshot == mains)
+}
+
 /// #161. The seed's job is to be a useful STARTING POINT for the next new
 /// conversation in the project, and nothing never is. A conversation is
 /// entitled to have nothing open — that is a state #142 names outright —

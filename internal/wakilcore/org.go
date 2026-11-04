@@ -73,6 +73,10 @@ type Org struct {
 	AgentGeneral          string `json:"agentGeneral,omitempty"`
 	GitCommitInstructions string `json:"gitCommitInstructions,omitempty"`
 	GitPRInstructions     string `json:"gitPRInstructions,omitempty"`
+	// GitBranchInstructions (workspaces, decision 10): how a workspace's branch is named.
+	GitBranchInstructions string `json:"gitBranchInstructions,omitempty"`
+	// MessageWakes is Agents woken by messages (workspaces piece 4); nil is the default, 8.
+	MessageWakes *int `json:"messageWakes,omitempty"`
 }
 
 const orgFileName = "org.json"

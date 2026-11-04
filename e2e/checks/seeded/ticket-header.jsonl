@@ -28,3 +28,10 @@
 {"dispatch":{"action":"ticket_refresh","params":{"pane":"editor-1"}}}
 {"expect":{"pane":"editor-1","field":"ticket.prs[0].number","equals":"212"}}
 {"expect":{"tree":"contains","text":"waiting on reviewer, you"}}
+{"do":{"drag":{"from":"editor.column.edge","to":"editor.column.files"}}}
+{"expect":{"pane":"editor-1","field":"column.width","equals":"160"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"ticket"}}
+{"expect":{"frame":"editor.column.files","inside":"editor.column"}}
+{"expect":{"frame":"editor.column.search","inside":"editor.column"}}
+{"expect":{"frame":"editor.column.changes","inside":"editor.column"}}
+{"expect":{"frame":"editor.column.ticket","inside":"editor.column"}}

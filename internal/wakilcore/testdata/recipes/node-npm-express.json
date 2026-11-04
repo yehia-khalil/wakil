@@ -1,0 +1,36 @@
+{
+  "repo": "node-npm-express",
+  "kind": "node-npm",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "npm ci"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "npm run dev"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "package.json",
+      "ports.PORT": "most Node servers read PORT",
+      "processes.dev": "package.json script dev",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "package-lock.json"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

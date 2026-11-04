@@ -1,0 +1,34 @@
+{
+  "repo": "node-pnpm-vite",
+  "kind": "vite-pnpm",
+  "recipe": {
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "pnpm install"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "pnpm dev --port $WAKIL_PORT --strictPort"
+      }
+    ],
+    "build": "pnpm build",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "build": "package.json script build",
+      "clone": "package.json",
+      "processes.dev": "package.json script dev; vite.config.ts takes --port $WAKIL_PORT --strictPort",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "pnpm-lock.yaml"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

@@ -51,6 +51,11 @@ public struct WakilWiring: Sendable {
     /// Ticket noticing. The window's hand-off Start and Cancel, for `ticket_hand_off`; pointed at
     /// the window by `useActiveContext(of:)` once there is one.
     public let handOffLookup: TicketHandOffLookup
+    /// Workspaces, piece 2: where the drafting conversation's `running_draft_propose` lands — the
+    /// window's `recipeDraftBook`, pointed by `useActiveContext(of:)`.
+    public let recipeDrafts: RecipeDraftLookup
+    /// Workspaces piece 5: the crew actions' window (`WindowModel.useCrew`).
+    public let crewLookup: CrewLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -109,6 +114,12 @@ public struct WakilWiring: Sendable {
     /// window by `useActiveContext(of:)`, and read from `wakil-ctx` until then — which is
     /// all `--dispatch`, with no window, ever has.
     let gitRoots: GitRootsSource
+    /// Workspaces, piece 1: the record, the holds and the write rule every agent write action asks
+    /// (`registerEditorActions`'s `workspaces`). Pointed at the window by `useActiveContext(of:)`.
+    public let workspaces: WorkspaceRouter
+    /// Workspaces, piece 2: Run, Stop, Build and Try. Its terminals are the window's
+    /// (`WorkspaceRunTerminals`); `useActiveContext(of:)` points its thread lines at the window.
+    public let runner: WorkspaceRunner
     /// Clients pinned to an agent session's own place, for every call it makes, wherever the
     /// screen is (background agents, 2 of 4). Every handler `build` registers reaches Go
     /// through a `PlaceRoutedCaller` over the window's client and this pool. Not in
@@ -276,8 +287,8 @@ public struct WakilWiring: Sendable {
             await model?.runningAgent(in: project, environment: environment)
         }
         // Conversations 2 of 3: `session_list`'s live conversations are the window's, live.
-        liveLookup.use({ [weak model] place in
-            await model?.liveConversationRows(in: place) ?? []
+        liveLookup.use({ [weak model, workspaces] place in
+            await workspaces.annotate(await model?.liveConversationRows(in: place) ?? [])
         }, organization: { [weak model] in await model?.organization })
         // Ticket noticing: the operator's Start and Cancel reach the window's hand-off.
         handOffLookup.use(start: { [weak model] r, reserved in
@@ -287,6 +298,24 @@ public struct WakilWiring: Sendable {
             await model?.cancelHandOff(conversation)
         })
         handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
+        // Item 8: Send to, and a queued one's Cancel.
+        handOffLookup.use(send: { [weak model] conversation, text in
+            guard let model else { throw TicketHandOffError(description: "no window to send in") }
+            return try await model.sendToHandOff(conversation, text: text)
+        }, unqueue: { [weak model] conversation, id in await model?.unqueueTurn(conversation, id: id) ?? false })
+        recipeDrafts.use { [weak model] conversation, proposal in
+            guard let model else { throw RecipeDraftError("running_draft_propose: no window is open to show the draft in") }
+            try await model.receiveRecipeDraft(conversation: conversation, proposal)
+        }
+        handOffLookup.use(crew: { [weak model] requests, admit in
+            guard let model else { throw TicketHandOffError(description: "no window to start the crew in") }
+            return try await model.startCrew(requests, admit: admit)
+        })
+        // Workspaces piece 5: a proposed teammate's Start and Dismiss, and nothing to do.
+        model.useCrew(crewLookup)
+        // Workspaces, piece 1: the write rule asks the window about conversations and tells threads.
+        model.useWorkspaces(workspaces)
+        model.useRunner(runner)
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -446,6 +475,7 @@ public struct WakilWiring: Sendable {
         let agentLookup = ActiveAgentLookup()
         let liveLookup = LiveConversationLookup()
         let handOffLookup = TicketHandOffLookup()
+        let crewLookup = CrewLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
@@ -534,13 +564,35 @@ public struct WakilWiring: Sendable {
         // there is one, `wakil-ctx`'s until then.
         let gitRoots = GitRootsSource(context: contextClient)
         let gitStatus = GitStatus(git: routed(.git, gitClient), roots: { await gitRoots.current() })
+        // Workspaces, piece 1. Through the routed client, so an agent of another place reaches its
+        // own organisation's record and project (`routed`).
+        let workspaceStore = WorkspaceStore()
+        await workspaceStore.use(git: routed(.git, gitClient))
+        let workspaces = WorkspaceRouter(store: workspaceStore, git: routed(.git, gitClient))
         let gitWrites = GitWriteFlights()
         let ticketStore = EditorTicketStore(ticket: routed(.ticket, ticketClient))
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore,
-            organization: { await liveLookup.organization() }, handOff: handOffLookup)
+            organization: { await liveLookup.organization() }, handOff: handOffLookup, workspaces: workspaces)
+        // Workspaces, piece 1: the record's read, and the operator's archive, restore, Bring to Main and Move.
+        await registerWorkspaceActions(into: registry, router: workspaces, organization: { await liveLookup.organization() },
+                                       views: conversationRequests)
+        // Workspaces, piece 2: port blocks, Run / Stop / Build (agent-reachable, the saved recipe only),
+        // the Running settings and Try (operator-only); Archive stops what runs first.
+        await workspaces.use(ctx: routed(.context, contextClient))
+        let runner = WorkspaceRunner(
+            router: workspaces, ctx: routed(.context, contextClient),
+            terminals: WorkspaceRunTerminals(layout: layout, terminals: terminals,
+                                             organization: { await workspaceStore.organization }))
+        await workspaces.onArchive { [runner] w in await runner.archiving(w) }
+        await registerRunActions(into: registry, runner: runner, organization: { await liveLookup.organization() })
+        await registerRunningActions(into: registry, context: routed(.context, contextClient), runner: runner)
+        let recipeDrafts = RecipeDraftLookup()
+        await registerRecipeDraftActions(into: registry, drafts: recipeDrafts)
+        // Workspaces piece 5: a teammate proposed, started, dismissed; nothing to do.
+        await registerCrewActions(into: registry, crew: crewLookup)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         await registerBrowserPasswordActions(
@@ -605,6 +657,8 @@ public struct WakilWiring: Sendable {
             agentLookup: agentLookup,
             liveLookup: liveLookup,
             handOffLookup: handOffLookup,
+            recipeDrafts: recipeDrafts,
+            crewLookup: crewLookup,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,
@@ -619,6 +673,8 @@ public struct WakilWiring: Sendable {
             commitDrafts: commitDrafts,
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
+            workspaces: workspaces,
+            runner: runner,
             placeClients: placeClients,
             confirmations: ConfirmationBroker(),
             resumes: resumes,

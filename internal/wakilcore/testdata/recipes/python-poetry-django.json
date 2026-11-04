@@ -1,0 +1,32 @@
+{
+  "repo": "python-poetry-django",
+  "kind": "django-poetry",
+  "recipe": {
+    "clone": [
+      ".venv"
+    ],
+    "setup": [
+      "poetry install"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "poetry run python manage.py runserver 127.0.0.1:$WAKIL_PORT"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "poetry.lock",
+      "processes.app": "manage.py (Django) runserver takes the address",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "poetry.lock"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

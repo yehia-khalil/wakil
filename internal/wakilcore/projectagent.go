@@ -8,11 +8,18 @@ type ProjectAgentInstructions struct {
 	General      string `json:"general,omitempty"`
 	Commits      string `json:"commits,omitempty"`
 	PullRequests string `json:"pullRequests,omitempty"`
+	// Branches (workspaces, decision 10): how a workspace's branch is named.
+	Branches string `json:"branches,omitempty"`
+	// MessageWakes overrides the organisation's Agents woken by messages (workspaces piece 4);
+	// nil inherits it.
+	MessageWakes *int `json:"messageWakes,omitempty"`
 }
 
 // ProjectAgentPatch names the texts to change; nil leaves one as it is, "" clears it.
 type ProjectAgentPatch struct {
-	General, Commits, PullRequests *string
+	General, Commits, PullRequests, Branches *string
+	// MessageWakes: 0–99 overrides, -1 clears the override.
+	MessageWakes *int
 }
 
 func (p *Project) agentTexts() ProjectAgentInstructions {
@@ -26,7 +33,7 @@ func (p *Project) agentTexts() ProjectAgentInstructions {
 // now (read-modify-write, as UpdateProjectEditorSettings). A project of another organisation is
 // read-only here.
 func UpdateProjectAgentInstructions(projectPath string, patch ProjectAgentPatch) error {
-	if patch.General == nil && patch.Commits == nil && patch.PullRequests == nil {
+	if patch.General == nil && patch.Commits == nil && patch.PullRequests == nil && patch.Branches == nil && patch.MessageWakes == nil {
 		return nil
 	}
 	org, err := CurrentOrg()
@@ -51,7 +58,17 @@ func UpdateProjectAgentInstructions(projectPath string, patch ProjectAgentPatch)
 	if patch.PullRequests != nil {
 		a.PullRequests = *patch.PullRequests
 	}
-	if a == (ProjectAgentInstructions{}) {
+	if patch.Branches != nil {
+		a.Branches = *patch.Branches
+	}
+	if patch.MessageWakes != nil {
+		v, err := messageWakesValue(*patch.MessageWakes)
+		if err != nil {
+			return err
+		}
+		a.MessageWakes = v
+	}
+	if a.General == "" && a.Commits == "" && a.PullRequests == "" && a.Branches == "" && a.MessageWakes == nil {
 		project.Agent = nil
 	} else {
 		project.Agent = &a

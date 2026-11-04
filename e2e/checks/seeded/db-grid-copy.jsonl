@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
 {"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
 {"dispatch":{"action":"pane_open","params":{"kind":"db"}}}

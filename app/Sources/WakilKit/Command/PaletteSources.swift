@@ -190,28 +190,101 @@ public struct OpenPanesSource: PaletteSource {
 
 // MARK: - Running
 
+/// A workspace as ⌘P's Running group lists it (workspaces, piece 3): a row of its own, Return
+/// opening its view (`workspace_open`).
+public struct RunningWorkspace: Sendable, Equatable {
+    public let id: String
+    public let name: String
+    public let place: Place
+    public let isProduction: Bool
+    public init(id: String, name: String, place: Place, isProduction: Bool = false) {
+        self.id = id
+        self.name = name
+        self.place = place
+        self.isProduction = isProduction
+    }
+}
+
 /// Every live conversation, across every place (conversations 2 of 3): Return switches to it —
 /// the same session, brought on screen, no fork and no cost (`session_switch`).
+///
+/// **Grouped by workspace** (decision 27) when the window gives its workspaces: each workspace is a
+/// row (Return opens its view), its live conversations under it, Main of each place included —
+/// the screen's own place always, as a door to Main's view with no agent.
 public struct RunningConversationsSource: PaletteSource {
     public let id = "running"
     public let group = PaletteGroup.running
     private let conversations: @Sendable () async -> [LiveConversation]
+    private let workspaces: (@Sendable () async -> [RunningWorkspace])?
+    private let main: Place?
+    private let mainIsProduction: Bool
 
-    public init(conversations: @escaping @Sendable () async -> [LiveConversation]) {
+    public init(conversations: @escaping @Sendable () async -> [LiveConversation],
+                workspaces: (@Sendable () async -> [RunningWorkspace])? = nil, main: Place? = nil,
+                mainIsProduction: Bool = false) {
         self.conversations = conversations
+        self.workspaces = workspaces
+        self.main = main
+        self.mainIsProduction = mainIsProduction
+    }
+
+    private func row(_ c: LiveConversation) -> PaletteEntry {
+        PaletteEntry(
+            id: "running:\(c.id)", group: group, title: c.title,
+            subtitle: "\(c.placeLabel) \u{00b7} \(c.state.rawValue)", kindLabel: "conversation",
+            verb: "switch to",
+            action: .dispatch(action: "session_switch", params: .object(["conversation": .string(c.id)])),
+            isProduction: c.isProduction, state: c.state,
+            // Names, Calls made 11: ⌘R on the row, the name step for its conversation.
+            rename: conversationRename(id: c.id, current: c.title, fallback: c.fallbackTitle))
     }
 
     public func entries() async -> [PaletteEntry] {
-        await conversations().map { c in
-            PaletteEntry(
-                id: "running:\(c.id)", group: group, title: c.title,
-                subtitle: "\(c.placeLabel) \u{00b7} \(c.state.rawValue)", kindLabel: "conversation",
-                verb: "switch to",
-                action: .dispatch(action: "session_switch", params: .object(["conversation": .string(c.id)])),
-                isProduction: c.isProduction, state: c.state,
-                // Names, Calls made 11: ⌘R on the row, the name step for its conversation.
-                rename: conversationRename(id: c.id, current: c.title, fallback: c.fallbackTitle))
+        let live = await conversations()
+        guard let workspaces else { return live.map(row) }
+        let all = await workspaces()
+        let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        func mainKey(_ p: Place) -> String { "main:\(p.organization)/\(p.project)/\(p.environment)" }
+        var order: [String] = []
+        var rows: [String: [LiveConversation]] = [:]
+        var mains: [String: (place: Place, production: Bool)] = [:]
+        if let main, !main.project.isEmpty {
+            order.append(mainKey(main))
+            mains[mainKey(main)] = (main, mainIsProduction)
         }
+        for c in live {
+            let key: String
+            if let w = c.workspace, byId[w.id] != nil { key = w.id } else {
+                key = mainKey(c.place)
+                if mains[key] == nil || c.isProduction { mains[key] = (c.place, c.isProduction) }
+            }
+            if rows[key] == nil, !order.contains(key) { order.append(key) }
+            rows[key, default: []].append(c)
+        }
+        for w in all where !order.contains(w.id) { order.append(w.id) }
+        var out: [PaletteEntry] = []
+        for key in order {
+            if let w = byId[key] {
+                out.append(PaletteEntry(
+                    id: "workspace:\(w.id)", group: group, title: w.name,
+                    subtitle: "\([w.place.organization, w.place.project, w.place.environment].filter { !$0.isEmpty }.joined(separator: " \u{00b7} ")) \u{00b7} workspace",
+                    kindLabel: "workspace", verb: "open",
+                    action: .dispatch(action: "workspace_open", params: .object(["workspace": .string(w.id)])),
+                    isProduction: w.isProduction))
+            } else if let m = mains[key] {
+                let p = m.place
+                out.append(PaletteEntry(
+                    id: "workspace:\(key)", group: group, title: "Main",
+                    subtitle: "\([p.organization, p.project, p.environment].filter { !$0.isEmpty }.joined(separator: " \u{00b7} ")) \u{00b7} your folders",
+                    kindLabel: "workspace", verb: "open",
+                    action: .dispatch(action: "workspace_open", params: .object([
+                        "workspace": .string("main"), "project": .string(p.project), "environment": .string(p.environment),
+                    ])),
+                    isProduction: m.production))
+            }
+            out += (rows[key] ?? []).map(row)
+        }
+        return out
     }
 }
 
@@ -704,9 +777,13 @@ public struct PaletteTicket: Sendable, Equatable {
     /// The urgency tier, 1 most urgent, and the newest activity (RFC 3339): `#` lists by these.
     public let tier: Int
     public let activity: String
+    /// The workspace that carries the ticket (`homeTicketWorkspace`), by id: Return opens its view
+    /// (`workspace_open`, decision 27) rather than the ticket. Nil: the ticket opens.
+    public var workspace: String?
 
     public init(id: String, title: String, words: String, key: String?, numbers: [Int], prs: [PaletteTicketPR],
-                open: JSONValue, handOff: JSONValue?, tier: Int, activity: String) {
+                open: JSONValue, handOff: JSONValue?, tier: Int, activity: String, workspace: String? = nil) {
+        self.workspace = workspace
         self.id = id
         self.title = title
         self.words = words
@@ -717,6 +794,13 @@ public struct PaletteTicket: Sendable, Equatable {
         self.handOff = handOff
         self.tier = tier
         self.activity = activity
+    }
+
+    /// The same ticket, carried by workspace `id`.
+    public func inWorkspace(_ id: String?) -> PaletteTicket {
+        var t = self
+        t.workspace = id
+        return t
     }
 }
 
@@ -785,9 +869,14 @@ public struct TicketSource: PaletteSource {
         return keyed + others
     }
 
+    /// A ticket's row. One a workspace carries opens that workspace's view (decision 27); its PR rows
+    /// and ⌘↩'s hand-off stay the ticket's.
     private func row(_ t: PaletteTicket, tier: PaletteTier) -> PaletteEntry {
-        PaletteEntry(id: "ticket:\(t.id)", group: group, title: t.title, subtitle: t.words, kindLabel: "ticket",
-                     verb: "open", action: .dispatch(action: "ticket_open", params: t.open), tier: tier,
+        let action: PaletteAction = t.workspace.map {
+            .dispatch(action: "workspace_open", params: .object(["workspace": .string($0)]))
+        } ?? .dispatch(action: "ticket_open", params: t.open)
+        return PaletteEntry(id: "ticket:\(t.id)", group: group, title: t.title, subtitle: t.words, kindLabel: "ticket",
+                     verb: t.workspace == nil ? "open" : "open workspace", action: action, tier: tier,
                      altAction: Self.handOff(t, open: t.open), altVerb: t.handOff == nil ? nil : Self.handOffVerb)
     }
 

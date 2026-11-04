@@ -11,6 +11,8 @@ import SwiftUI
 /// a `ticket_hand_off_*` action. Start sends exactly what is drawn (`startParams`, the field's text
 /// as the brief), and reads `Starting…`, disabled, while it runs (Rule 5); Cancel then stops it
 /// (Rule 4). A failure shows here, whole, the brief intact (Rule 8). **Similar before** is not drawn.
+/// Item 8: when a live conversation carries the ticket, **Send to “<title>”** is primary (a ▾ picks
+/// another) and **Start another** second; one per repo offers Start alone.
 struct TicketHandOffPopover: View {
     let state: TicketHandOffState
     /// A `ticket_hand_off_*` action on the pane, its refusal on the status line.
@@ -44,10 +46,11 @@ struct TicketHandOffPopover: View {
                 Task { await dispatch("ticket_hand_off_open", p) }
             }
             .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .help("Refill the brief from where it was handed from")
             .accessibilityIdentifier("ticket.handoff.reset")
             choices
+            if !state.crewRepos.isEmpty { crew }
             if let error = state.error {
                 Text(error)
                     .font(.system(size: 11.5))
@@ -55,6 +58,9 @@ struct TicketHandOffPopover: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("ticket.handoff.error")
+            }
+            if state.offersSend {
+                sendRow
             }
             HStack(spacing: Space.s) {
                 Spacer()
@@ -64,11 +70,19 @@ struct TicketHandOffPopover: View {
                     Task { await dispatch(state.starting ? "ticket_hand_off_cancel" : "ticket_hand_off_close", p) }
                 }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(state.sending)
                     .accessibilityIdentifier("ticket.handoff.cancel")
-                Button(state.starting ? state.startLabel : "\(state.startLabel) ⌘↩") { start() }
-                    .buttonStyle(.borderedProminent).tint(EditorPaneStyle.violet)
-                    .disabled(state.starting)
-                    .accessibilityIdentifier("ticket.handoff.start")
+                if state.offersSend {
+                    // Item 8: the second choice beside Send to — a new conversation, numbered.
+                    HandOffPress(label: state.startLabel, prominent: false,
+                                 enabled: !(state.starting || state.sending)) { start() }
+                        .accessibilityIdentifier("ticket.handoff.startAnother")
+                } else {
+                    Button(state.starting ? state.startLabel : "\(state.startLabel) ⌘↩") { start() }
+                        .buttonStyle(.borderedProminent).tint(EditorPaneStyle.violet)
+                        .disabled(state.starting || state.sending)
+                        .accessibilityIdentifier("ticket.handoff.start")
+                }
             }
         }
         .padding(Space.m)
@@ -79,8 +93,14 @@ struct TicketHandOffPopover: View {
             text = state.brief
             draft.text = state.brief
             typed = false
-            // Only the operator's own open takes the keyboard (Rules 3 and 6).
-            if state.focus { briefFocused = true }
+        }
+        .task {
+            // Only the operator's own open takes the keyboard (Rules 3 and 6) — a beat after the
+            // popover appears: focus set as it appears is dropped (BranchPicker's, 3a-iii's sheet fix),
+            // which left the keyboard in the editor (piece 5's e2e run).
+            guard state.focus else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            briefFocused = true
         }
         .onChange(of: state.brief) { _, now in
             // The store's brief — Reset's, an agent's edit — reaches the field unless the operator is typing.
@@ -88,6 +108,36 @@ struct TicketHandOffPopover: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ticket.handoff")
+    }
+
+    /// Item 8: a live conversation carries the ticket, so **Send to “<title>”** is the primary
+    /// choice — the brief as the operator's own message to it; idle it starts a turn off screen, in a
+    /// turn it is queued (Rule 6, Rule 4) — with a ▾ to pick another when several carry it. Its title
+    /// wraps whole, never cut. ⌘↩ sends.
+    private var sendRow: some View {
+        HStack(alignment: .top, spacing: Space.s) {
+            Spacer(minLength: Space.m)
+            HandOffPress(label: state.sending ? state.sendLabel : "\(state.sendLabel) ⌘↩", prominent: true,
+                         enabled: !(state.sending || state.starting)) { send() }
+                .accessibilityIdentifier("ticket.handoff.send")
+            if state.carriers.count > 1 {
+                Menu {
+                    ForEach(Array(state.carriers.enumerated()), id: \.element.conversation) { i, c in
+                        Button(c.working ? "\(c.title) · working" : c.title) {
+                            set(["sendTo": .string(c.conversation)])
+                        }
+                        .accessibilityIdentifier("ticket.handoff.sendTo:\(i + 1)")
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .disabled(state.sending || state.starting)
+                .help("Send to another conversation carrying this ticket")
+                .accessibilityLabel("Send to another conversation")
+                .accessibilityIdentifier("ticket.handoff.sendTo")
+            }
+        }
     }
 
     /// The harness and provider menus, **May push** and the place line.
@@ -102,7 +152,7 @@ struct TicketHandOffPopover: View {
                 Text(ticketHandOffHarnesses.first { $0.id == state.harness }?.label ?? state.harness)
             }
             .menuStyle(.borderlessButton).fixedSize()
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .accessibilityIdentifier("ticket.handoff.harness")
             Menu {
                 ForEach(providerRows, id: \.id) { p in
@@ -113,17 +163,73 @@ struct TicketHandOffPopover: View {
                 Text(providerRows.first { $0.id == state.provider }?.shown ?? state.provider)
             }
             .menuStyle(.borderlessButton).fixedSize()
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .accessibilityIdentifier("ticket.handoff.provider")
             Toggle("May push", isOn: Binding(get: { state.mayPush }, set: { set(["mayPush": .bool($0)]) }))
                 .toggleStyle(.switch).controlSize(.mini)
-                .disabled(state.starting)
+                .disabled(state.starting || state.sending)
                 .help("On, the agent's push and sync run as any agent's; publish, merge and rebase still ask you")
                 .accessibilityIdentifier("ticket.handoff.mayPush")
             Spacer(minLength: Space.s)
             placeLine
         }
         .font(.system(size: 11.5))
+    }
+
+    /// Workspaces piece 5 (decision 17): **Agents: one / one per repo**, one by default (Rule 9); one
+    /// per repo lists the project's repos as toggles, the ticket's pre-ticked. Each change is kept at
+    /// once (`ticket_hand_off_brief`), so nothing waits on Enter (Rule 2). Names wrap, never cut.
+    private var crew: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            // Two buttons drawn as one segmented choice, each its own identifier: a segmented
+            // Picker's segments carry none, so neither a check nor VoiceOver could name one.
+            HStack(spacing: Space.s) {
+                Text("Agents")
+                HStack(spacing: 0) {
+                    agentsChoice("One", .one)
+                    agentsChoice("One per repo", .perRepo)
+                }
+                .background(RoundedRectangle(cornerRadius: 5).fill(EditorPaneStyle.text.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(EditorPaneStyle.text.opacity(0.18)))
+            }
+            if state.agents == .perRepo {
+                HStack(alignment: .top, spacing: Space.m) {
+                    ForEach(state.crewRepos, id: \.root) { repo in
+                        Toggle(repo.name, isOn: Binding(
+                            get: { repo.ticked },
+                            set: { on in
+                                var ticked = Set(state.crewRoots)
+                                if on { ticked.insert(repo.root) } else { ticked.remove(repo.root) }
+                                set(["repos": .array(state.crewRepos.map(\.root).filter(ticked.contains).map { .string($0) })])
+                            }))
+                            .toggleStyle(.checkbox)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .disabled(state.starting || state.sending)
+                            .accessibilityIdentifier("ticket.handoff.repo:\(repo.name)")
+                    }
+                }
+                Text("One agent per ticked repo, in one workspace; each is told who holds what, and they talk through messages.")
+                    .font(.system(size: 11)).foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(size: 11.5))
+    }
+
+    /// One segment of **Agents**: the chosen one filled, and said selected to VoiceOver.
+    private func agentsChoice(_ label: String, _ agents: TicketHandOffAgents) -> some View {
+        let chosen = state.agents == agents
+        return Button { if !chosen { set(["agents": .string(agents.rawValue)]) } } label: {
+            Text(label)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 5).fill(chosen ? EditorPaneStyle.violet.opacity(0.45) : .clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(state.starting || state.sending)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+        .accessibilityIdentifier("ticket.handoff.agents:\(agents.rawValue)")
     }
 
     /// The brief — the operator's words only; Wakil appends the record and its actions at Start,
@@ -139,7 +245,7 @@ struct TicketHandOffPopover: View {
             .background(RoundedRectangle(cornerRadius: 6).fill(EditorPaneStyle.lifted))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(EditorPaneStyle.text.opacity(briefFocused ? 0.3 : 0.12)))
             .focused($briefFocused)
-            .disabled(state.starting)
+            .disabled(state.starting || state.sending)
             .onChange(of: text) { _, now in
                 typed = now != state.brief
                 draft.text = now
@@ -148,10 +254,11 @@ struct TicketHandOffPopover: View {
                 if old, !now { keep() }
                 if now { Task { @MainActor in caretToEnd() } }
             }
-            // Return is a new line (the editor's own); ⌘↩ starts.
+            // Return is a new line (the editor's own); ⌘↩ presses the primary choice: Send to when
+            // a live conversation carries the ticket, else Start.
             .onKeyPress(.return, phases: .down) { press in
                 guard press.modifiers.contains(.command) else { return .ignored }
-                start()
+                if state.offersSend { send() } else { start() }
                 return .handled
             }
             .accessibilityLabel("Brief")
@@ -189,9 +296,18 @@ struct TicketHandOffPopover: View {
         Task { await dispatch("ticket_hand_off_brief", params) }
     }
 
-    /// Start: exactly what is drawn, the field's text as the brief. Not twice (Rule 5).
+    /// Send to: the field's text to the conversation drawn. Not twice (Rule 5); a failure is the
+    /// popover's to show, whole (`state.error`).
+    private func send() {
+        guard !state.sending, !state.starting else { return }
+        var params = state.sendParams
+        params["brief"] = .string(text)
+        Task { _ = try? await dispatchReply("ticket_hand_off_send", params) }
+    }
+
+    /// Start (or Start another): exactly what is drawn, the field's text as the brief. Not twice (Rule 5).
     private func start() {
-        guard !state.starting else { return }
+        guard !state.starting, !state.sending else { return }
         var params = state.startParams
         params["brief"] = .string(text)
         let keepFirst = text != state.brief
@@ -227,5 +343,33 @@ final class TicketHandOffDraft {
     func closeParams(_ state: TicketHandOffState?) -> [String: JSONValue] {
         guard let text, let state, text != state.brief else { return [:] }
         return ["brief": .string(text)]
+    }
+}
+
+/// Send to and Start another: a pressable element holding its Text, not a Button — a Button's label
+/// never reaches the tree the checks read, and they read these by their words (as the home's rows,
+/// piece 3). Drawn as the bordered (prominent: violet) button it stands for; disabled, it presses nothing.
+private struct HandOffPress: View {
+    let label: String
+    let prominent: Bool
+    let enabled: Bool
+    let press: () -> Void
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 13))
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(prominent ? Color.white : EditorPaneStyle.text)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5)
+                .fill(prominent ? EditorPaneStyle.violet : Color.white.opacity(0.12)))
+            .opacity(enabled ? 1 : 0.5)
+            .contentShape(Rectangle())
+            .onTapGesture { if enabled { press() } }
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { if enabled { press() } }
     }
 }

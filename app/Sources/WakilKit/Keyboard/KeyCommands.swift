@@ -62,6 +62,8 @@ public struct KeyCommand: Sendable {
             KeyCommand("editor.searchFiles", "Search Files", .editor, a, "⇧⌘F"),
             KeyCommand("editor.showChanges", "Show Changes", .editor, a, "⇧⌘G"),
             KeyCommand("editor.save", "Save", .editor, a, "⌘S"),
+            // Amendment 2026-10-30 (workspaces): the organisation's home, from anywhere.
+            KeyCommand("window.home", "Home", .window, a, "⇧⌘H"),
             KeyCommand("window.organisation", "Organisation…", .window, a, "⇧⌘O"),
             KeyCommand("window.open", "Open…", .window, a, "⌘P"),
             KeyCommand("window.commands", "Run a Command…", .window, a, "⌘K"),

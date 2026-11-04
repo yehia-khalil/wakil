@@ -194,6 +194,8 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 		"git_stash_drop_all", "git_stash_pop", "git_stash_undo_apply", "git_stashes", "git_status", "git_switch", "git_sync",
 		"git_undo_commit", "git_unstage"}
 	want = append(want, "git_abort", "git_continue", "git_merge", "git_rebase", "git_resolve", "git_skip")
+	want = append(want, "workspaces_read", "workspaces_write", "git_worktree_add", "git_worktree_discard", "git_worktree_remove",
+		"git_worktree_list", "git_worktree_prune", "git_snapshot_apply", "git_take_from_main", "git_release_branch")
 	sort.Strings(want)
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools %v", names)

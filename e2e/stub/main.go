@@ -249,7 +249,7 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 					return "", err
 				}
 			}
-			result, err := client.Call(rule.Call.Action, rule.Call.Params)
+			result, err := client.Call(rule.Call.Action, expandCwd(rule.Call.Params, filepath.Dir(socket)))
 			if err != nil {
 				said := driver.RefusalText(err)
 				if echo != nil {
@@ -285,7 +285,7 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 		}
 	}
 
-	text := rule.Render(value)
+	text := strings.ReplaceAll(rule.Render(value), driver.MapPlaceholder, driver.MapLine(prompt))
 	if text == "" {
 		text = "done"
 	}
@@ -473,4 +473,48 @@ func (e *echoedCall) result(text string, isError bool) error {
 		"type":    "user",
 		"message": map[string]interface{}{"role": "user", "content": []interface{}{block}},
 	})
+}
+
+// cwdToken in a call's string params is the agent's working directory: the project's root it was
+// started in, which a script cannot name ahead of the launch (workspaces: a write in Main's folder).
+const cwdToken = "{cwd}"
+
+// expandCwd is params with every string's cwdToken replaced by the working directory, spelled
+// under spelled (the socket's folder, which the window names as it names the fixture's roots).
+func expandCwd(params map[string]interface{}, spelled string) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return params
+	}
+	dir = underTempDir(dir, spelled)
+	out := make(map[string]interface{}, len(params))
+	for k, v := range params {
+		if s, ok := v.(string); ok {
+			v = strings.ReplaceAll(s, cwdToken, dir)
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// underTempDir is dir spelled under tmp when it is inside tmp's resolved target. getcwd answers
+// the resolved path (`/private/var/folders/…`), but the window registers the fixture's roots as
+// its own TMPDIR spells them (`/var/folders/…`, the socket's folder too) and confines an agent's
+// paths to those, so a resolved path would read as outside every root.
+func underTempDir(dir, tmp string) string {
+	tmp = filepath.Clean(tmp)
+	real, err := filepath.EvalSymlinks(tmp)
+	if err != nil || real == tmp {
+		return dir
+	}
+	if dir == real {
+		return tmp
+	}
+	if strings.HasPrefix(dir, real+string(filepath.Separator)) {
+		return tmp + dir[len(real):]
+	}
+	return dir
 }

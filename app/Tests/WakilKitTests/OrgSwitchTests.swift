@@ -210,9 +210,9 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
     #expect(
         model.rootPathForTesting == NSHomeDirectory(),
         "a failed read must fall back to home, not keep org A's root")
-    #expect(
-        model.noProjectRootNote?.contains("runs in \(NSHomeDirectory()) instead") == true,
-        "with no root read, the window says where it runs instead")
+    // Workspaces, piece 3: with no project left there is no root to have, and the home says what
+    // to do — the "runs in … instead" sentence is for a project with no root.
+    #expect(model.noProjectRootNote == nil, "with no project, no root sentence")
 }
 
 /// 2d-ii walk: the note used to be a `notes` append in `WindowSession`,
@@ -221,7 +221,18 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
 @MainActor
 @Test func noProjectRootNoteIsPresentUntilARootIsRead() {
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "beta")
+    model.seedForTesting(providerId: "main", rootPath: NSHomeDirectory(), thoughts: 0, project: "rootless", environment: "staging")
     #expect(model.noProjectRootNote != nil)
+}
+
+/// Workspaces, piece 3 (the operator's walk of an organisation's first-run home): with no project on
+/// the screen there is no root to have, and the home says what to do — the sentence is for a project
+/// that has none.
+@MainActor
+@Test func noProjectRootNoteIsNotDrawnWithNoProject() {
+    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "beta")
+    #expect(model.project.isEmpty)
+    #expect(model.noProjectRootNote == nil)
 }
 
 // MARK: - Task 12: `autoResumeAfterSwitch()`

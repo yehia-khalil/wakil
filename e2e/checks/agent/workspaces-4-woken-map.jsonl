@@ -1,0 +1,12 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"ask the first where it works"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"asked the first where it works"}}
+{"dispatch":{"action":"session_switch","params":{"conversation":"thread turn one"}}}
+{"expect":{"tree":"contains","text":"From ‘ask the first where it works’ · Main"}}
+{"expect":{"tree":"contains","text":"woken, map says: You are in Main of project e2e-project"}}

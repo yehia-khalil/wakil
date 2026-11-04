@@ -29,6 +29,11 @@ const (
 	TicketBranchNone = "feature-login"
 	// TicketBranchSeveral carries two keys in its name and has no PR: the several layout.
 	TicketBranchSeveral = "ini-170-ini-142-both"
+	// TicketBranchMerged is the branch a workspace started by "write the merged note" works on
+	// (decision 10's fallback name, the conversation's title as a slug): it heads one PR, #216,
+	// merged — the home's Archive offer (workspaces, piece 3; decision 11). The workspace makes it,
+	// so the seed does not.
+	TicketBranchMerged = "write-the-merged-note"
 )
 
 // TicketBrokenMessage is the GraphQL error TicketBranchBroken answers.
@@ -103,6 +108,8 @@ func githubStubAnswer(query string, vars map[string]any, headSHA string) any {
 		switch str("branch") {
 		case TicketBranchOwn:
 			heads = append(heads, githubStubPR(headSHA))
+		case TicketBranchMerged:
+			heads = append(heads, githubStubMergedPR())
 		case "main":
 			bases = append(bases, githubStubPR(headSHA))
 		case TicketBranchBroken:
@@ -172,6 +179,18 @@ func githubStubKeylessPR() map[string]any {
 					"detailsUrl": "https://github.com/initech/api/actions/runs/3"},
 			}}}}}}},
 		"reviewThreads": map[string]any{"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}, "nodes": []any{}},
+	}
+}
+
+// githubStubMergedPR is PR #216 on initech/api, by peter, merged: TicketBranchMerged's only PR.
+func githubStubMergedPR() map[string]any {
+	return map[string]any{
+		"id": "PR_216", "number": 216, "title": "Write the merged note", "body": "",
+		"url": "https://github.com/initech/api/pull/216", "state": "MERGED", "mergeStateStatus": "UNKNOWN",
+		"updatedAt": "2026-10-27T08:00:00Z", "isCrossRepository": false, "headRefName": TicketBranchMerged,
+		"baseRefName": "main", "headRefOid": "aaa216", "author": map[string]any{"login": "peter"},
+		"reviewRequests": map[string]any{"nodes": []any{}},
+		"reviewThreads":  map[string]any{"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}, "nodes": []any{}},
 	}
 }
 

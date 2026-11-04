@@ -257,7 +257,14 @@ public actor LayoutStore {
     /// The scope every implicit-current-scope method below reads and writes: the dispatching
     /// caller's own (`ScopeRouting.home`, background agents 3 of 4), else the one on screen. An
     /// agent working in a place the operator has left arranges that place's canvas, not this one.
-    private var scope: LayoutScope { ScopeRouting.home ?? screen }
+    private var scope: LayoutScope { ScopeRouting.home.map { carried[$0] ?? $0 } ?? screen }
+    /// `PaneStore.carried`'s twin: a canvas step 0 carried into a workspace's view.
+    private var carried: [LayoutScope: LayoutScope] = [:]
+    /// Workspaces, piece 1: `PaneStore.scopeCarried`'s twin.
+    public func scopeCarried(from: LayoutScope, to: LayoutScope) {
+        carried[to] = nil
+        if from != to { carried[from] = to }
+    }
     private var byScope: [LayoutScope: LayoutSnapshot]
     private var nextPaneNumber: Int
     /// Per scope, the panes in the order they last took focus, most recent last: what "the most
@@ -942,6 +949,35 @@ public actor LayoutStore {
         focusOrder[scope] = focusOrder.removeValue(forKey: outgoing)
         screen = scope
         refitMaximized(scope)
+    }
+
+    /// Workspaces, piece 1 (decision 22): pane `id` of the current scope leaves for `to`, exactly as it
+    /// is, and a new pane of the same kind takes its place here — same frame, links, focus and
+    /// maximized state, a new id, `terminalPath` as given. Answers the new pane; nil when there is
+    /// no pane `id`.
+    public func leave(id: String, for to: LayoutScope, replacedWith terminalPath: String?, title: String) -> Pane? {
+        var current = snapshot()
+        guard let index = current.panes.firstIndex(where: { $0.id == id }) else { return nil }
+        let leaving = current.panes[index]
+        let newId = "\(leaving.kind)-\(nextPaneNumber)"
+        nextPaneNumber += 1
+        var replacement = Pane(id: newId, kind: leaving.kind, title: title, frame: leaving.frame, terminalPath: terminalPath)
+        replacement.density = leaving.density
+        current.panes[index] = replacement
+        current.graph.rename(id, to: newId)
+        if current.focusedId == id { current.focusedId = newId }
+        if current.maximizedId == id { current.maximizedId = newId }
+        if let frame = current.preMaximizeFrames.removeValue(forKey: id) { current.preMaximizeFrames[newId] = frame }
+        byScope[scope] = current
+        if let i = focusOrder[scope]?.firstIndex(of: id) { focusOrder[scope]?[i] = newId }
+
+        var there = byScope[to] ?? LayoutSnapshot()
+        var kept = leaving
+        if current.maximizedId == newId, let frame = current.preMaximizeFrames[newId] { kept.frame = frame }
+        there.panes.removeAll { $0.id == id }
+        there.panes.append(kept)
+        byScope[to] = there
+        return replacement
     }
 
     /// Puts `pane` into the current scope's arrangement exactly as it is:

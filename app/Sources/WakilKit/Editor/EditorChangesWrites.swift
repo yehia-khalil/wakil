@@ -29,8 +29,14 @@ let gitRemoteReplyTimeout: TimeInterval = 600
 
 func registerEditorChangesWrites(
     into registry: ActionRegistry, gitStatus: GitStatus?, panes: PaneStore, layout: LayoutStore?,
-    writes: GitWriteFlights, ticket: EditorTicketStore? = nil
+    writes: GitWriteFlights, ticket: EditorTicketStore? = nil, workspaces: (any WorkspaceWriteRouting)? = nil
 ) async {
+    /// Workspaces, piece 1: the root an agent's write lands in — its checkout of the repo, made or
+    /// taken first by the write rule. The operator's dispatch keeps the root it named (call 12).
+    @Sendable func routed(_ root: String, _ action: String) async throws -> String {
+        guard let workspaces else { return root }
+        return try await workspaces.routeRoot(root, action: action)
+    }
     @Sendable func strings(_ params: JSONValue, _ key: String) -> [String]? {
         guard case .object(let o) = params, case .array(let a)? = o[key] else { return nil }
         return a.compactMap { if case .string(let s) = $0 { s } else { nil } }
@@ -50,6 +56,13 @@ func registerEditorChangesWrites(
     }
     @Sendable func rootState(_ root: String) async -> GitRootState? {
         await gitStatus?.roots.first { $0.root == root }
+    }
+    /// The root's state, read now when the window's status has none for it (a checkout an agent's
+    /// write just reached).
+    @Sendable func freshState(_ root: String) async -> GitRootState? {
+        if let s = await rootState(root) { return s }
+        await gitStatus?.refresh(only: root)
+        return await rootState(root)
     }
     @Sendable func rootName(_ root: String) async -> String {
         if let n = await rootState(root)?.name, !n.isEmpty { return n }
@@ -135,8 +148,9 @@ func registerEditorChangesWrites(
             name: name, description: description, kind: .mutate, audience: .agentReachable,
             schema: rootSchema(["paths": pathsSchema, "group": groupSchema]),
             handler: { params in
-                let root = try requireString(params, "root", action: name)
-                let paths = try await targets(params, root: root, action: name, groups: groups, renames: renames)
+                let asked = try requireString(params, "root", action: name)
+                let paths = try await targets(params, root: asked, action: name, groups: groups, renames: renames)
+                let root = try await routed(asked, name)
                 return try await write(root, action: name) { git in
                     try await call(git, tool, ["root": .string(root), "paths": .array(paths.map { .string($0) })], action: name)
                 }
@@ -157,9 +171,9 @@ func registerEditorChangesWrites(
         schema: rootSchema(["message": .object(["type": .string("string")]),
                             "all": .object(["type": .string("boolean")])], required: ["root", "message"]),
         handler: { params in
-            let root = try requireString(params, "root", action: "editor_changes_commit")
+            let root = try await routed(try requireString(params, "root", action: "editor_changes_commit"), "editor_changes_commit")
             let message = try requireString(params, "message", action: "editor_changes_commit")
-            let staged = await rootState(root)?.files.contains { $0.group == .staged } ?? false
+            let staged = await freshState(root)?.files.contains { $0.group == .staged } ?? false
             let all = bool(params, "all") ?? !staged
             return try await write(root, action: "editor_changes_commit") { git in
                 try await call(git, "git_commit", ["root": .string(root), "message": .string(message), "all": .bool(all)],
@@ -174,7 +188,7 @@ func registerEditorChangesWrites(
         kind: .mutate, audience: .agentReachable,
         schema: rootSchema(["message": .object(["type": .string("string")])]),
         handler: { params in
-            let root = try requireString(params, "root", action: "editor_changes_amend")
+            let root = try await routed(try requireString(params, "root", action: "editor_changes_amend"), "editor_changes_amend")
             var built: [String: JSONValue] = ["root": .string(root)]
             if let m = optionalString(params, "message") { built["message"] = .string(m) }
             let args = built
@@ -190,7 +204,7 @@ func registerEditorChangesWrites(
         kind: .mutate, audience: .agentReachable,
         schema: rootSchema(),
         handler: { params in
-            let root = try requireString(params, "root", action: "editor_changes_undo_commit")
+            let root = try await routed(try requireString(params, "root", action: "editor_changes_undo_commit"), "editor_changes_undo_commit")
             return try await write(root, action: "editor_changes_undo_commit") { git in
                 try await call(git, "git_undo_commit", ["root": .string(root)], action: "editor_changes_undo_commit")
             }
@@ -229,14 +243,15 @@ func registerEditorChangesWrites(
             let known = await gitStatus?.roots.map(\.root) ?? []
             var root = known.filter { path.hasPrefix($0 + "/") }.max { $0.count < $1.count }
             if root == nil, case .file(_, let r) = tab.subject { root = r }
-            guard let root else { throw EditorFilesError(description: "\(action): \(path) is in no git root of the project") }
-            let rel = relative(path, to: root)
-            return try await write(root, action: action) { git in
+            guard let asked = root else { throw EditorFilesError(description: "\(action): \(path) is in no git root of the project") }
+            let rel = relative(path, to: asked)
+            let into = try await routed(asked, action)
+            return try await write(into, action: action) { git in
                 // R1: the guard is the id of the text the peek was computed from (the tab's baseline), so an
                 // index that moved since refuses in Go. Asking git for the blob now would compare it to itself.
                 let expect = gitBlobId(base)
                 return try await call(git, "git_stage_hunk",
-                                      ["root": .string(root), "path": .string(rel), "content": .string(content), "expect": .string(expect)],
+                                      ["root": .string(into), "path": .string(rel), "content": .string(content), "expect": .string(expect)],
                                       action: action)
             }
         },
@@ -329,10 +344,11 @@ func registerEditorChangesWrites(
                 // The guard is the index text the ranges were computed against: the original when
                 // staging (index vs work tree), the modified side when unstaging (HEAD vs index).
                 let expect = gitBlobId(group == .staged ? state.modified : state.original)
-                return try await write(root, action: name) { git in
+                let into = try await routed(root, name)
+                return try await write(into, action: name) { git in
                     do {
                         return try await call(git, "git_stage_hunk",
-                                              ["root": .string(root), "path": .string(rel), "content": .string(content),
+                                              ["root": .string(into), "path": .string(rel), "content": .string(content),
                                                "expect": .string(expect)], action: name)
                     } catch let e where "\(e)".contains("the change moved") {
                         throw EditorFilesError(description: "\(name): the change moved — reopen the diff")
@@ -356,7 +372,9 @@ func registerEditorChangesWrites(
             kind: .mutate, audience: .agentReachable,
             schema: rootSchema(),
             handler: { params in
-                let root = try requireString(params, "root", action: name)
+                let asked = try requireString(params, "root", action: name)
+                // A pull changes the tree, so it is a write the rule routes; a fetch or a push is not.
+                let root = ["editor_changes_pull", "editor_changes_sync"].contains(name) ? try await routed(asked, name) : asked
                 let out = try await write(root, action: name) { git in
                     try await call(git, tool, ["root": .string(root)], action: name, timeout: gitRemoteReplyTimeout)
                 }
@@ -428,12 +446,11 @@ func registerEditorChangesWrites(
             name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
             schema: rootSchema(props, required: required),
             handler: { params in
-                let root = try requireString(params, "root", action: name)
+                var root = try requireString(params, "root", action: name)
                 for k in required where k != "root" {
                     if k == "index" { _ = try intParam(params, k, action: name) } else { _ = try requireString(params, k, action: name) }
                 }
                 var args = forward(params, keys)
-                args["root"] = .string(root)
                 if name == "editor_changes_branch_create", let n = args.removeValue(forKey: "name") {
                     args["branch"] = n
                     args["create"] = .bool(true)
@@ -442,6 +459,22 @@ func registerEditorChangesWrites(
                     args["create"] = .bool(true)   // a remote branch is checked out as a new local tracking it
                     args["track"] = track
                 }
+                // Workspaces: a switch to a branch another folder holds is taken over or branched off
+                // (never git's "already checked out"); every other write lands in the checkout.
+                if ["editor_changes_switch", "editor_changes_branch_create"].contains(name), let workspaces,
+                   case .string(let target)? = args["branch"] {
+                    let r = try await workspaces.routeSwitch(root: root, branch: target, action: name)
+                    root = r.root
+                    args["branch"] = .string(r.branch)
+                    if r.create {
+                        args["create"] = .bool(true)
+                        args["track"] = nil
+                        if let from = r.from { args["from"] = .string(from) }
+                    }
+                } else {
+                    root = try await routed(root, name)
+                }
+                args["root"] = .string(root)
                 let callArgs = args
                 let result = try await write(root, action: name) { git in
                     try await call(git, tool, callArgs, action: name, timeout: gitRemoteReplyTimeout)
@@ -472,7 +505,7 @@ func registerEditorChangesWrites(
             name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
             schema: rootSchema(Dictionary(uniqueKeysWithValues: keys.map { ($0, string) }), required: required),
             handler: { params in
-                let root = try requireString(params, "root", action: name)
+                let root = try await routed(try requireString(params, "root", action: name), name)
                 for k in required where k != "root" { _ = try requireString(params, k, action: name) }
                 var args = forward(params, keys)
                 args["root"] = .string(root)
@@ -497,8 +530,9 @@ func registerEditorChangesWrites(
             name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
             schema: rootSchema(props, required: takes.isEmpty ? ["root", "path"] : ["root", "path", "take"]),
             handler: { params in
-                let root = try requireString(params, "root", action: name)
-                let path = relative(try requireString(params, "path", action: name), to: root)
+                let asked = try requireString(params, "root", action: name)
+                let path = relative(try requireString(params, "path", action: name), to: asked)
+                let root = try await routed(asked, name)
                 var take = "keep"
                 if !takes.isEmpty {
                     take = try requireString(params, "take", action: name)
@@ -521,7 +555,7 @@ func registerEditorChangesWrites(
         schema: rootSchema(),
         handler: { params in
             let name = "editor_changes_stash_undo_apply"
-            let root = try requireString(params, "root", action: name)
+            let root = try await routed(try requireString(params, "root", action: name), name)
             guard let clash = await gitStatus?.clashes[root] else {
                 throw EditorFilesError(description: "\(name): No stash clash to undo")
             }

@@ -84,6 +84,39 @@ func (r AgentRule) Render(value string) string {
 	return strings.ReplaceAll(r.Reply, ValuePlaceholder, value)
 }
 
+// MapPlaceholder is what a reply interpolates the turn's workspace map into: its first line
+// after the header (workspaces, piece 1), or nothing when the turn carried no map — so a check
+// asserting on it fails against a window that sends none.
+const MapPlaceholder = "{map}"
+
+// wakilMapHeader opens the workspace map the window appends to a turn (`workspaceMapHeader` in
+// WakilKit), after the operator's words and any identifier hint.
+const wakilMapHeader = "[Wakil: where you work."
+
+// PromptWords is a turn's text without the workspace map: what a rule matches, so a map naming
+// another conversation's title cannot trigger its rule. **Only the map is cut.** The identifier
+// hint is a block the window appends too, and rules match it (2d-i-code-hint's
+// `→ buildlaunch (code`); cutting at every `[Wakil: ` block left those rules unreachable.
+func PromptWords(prompt string) string {
+	if i := strings.Index(prompt, "\n\n"+wakilMapHeader); i >= 0 {
+		return prompt[:i]
+	}
+	return prompt
+}
+
+// MapLine is the first line of the workspace map a turn carries, "" when it carries none.
+func MapLine(prompt string) string {
+	i := strings.Index(prompt, "\n\n"+wakilMapHeader)
+	if i < 0 {
+		return ""
+	}
+	lines := strings.SplitN(prompt[i+2:], "\n", 3)
+	if len(lines) < 2 {
+		return ""
+	}
+	return lines[1]
+}
+
 // AgentScript is everything the stub agent can answer.
 //
 // **A deterministic agent, not a mock of one.** It drives the real MCP
@@ -168,7 +201,7 @@ func LoadAgentScript(path string) (AgentScript, error) {
 // error turn, because a stub that improvised would let a check whose prompt
 // had drifted pass on an answer that proves nothing.
 func (s AgentScript) Rule(prompt string) (AgentRule, bool) {
-	folded := strings.ToLower(prompt)
+	folded := strings.ToLower(PromptWords(prompt))
 	for _, rule := range s.Rules {
 		if strings.Contains(folded, strings.ToLower(rule.Match)) {
 			return rule, true

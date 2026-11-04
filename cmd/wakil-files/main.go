@@ -65,14 +65,25 @@ type trashArg struct {
 	Path string `json:"path" jsonschema:"absolute path of the file or folder to move to the Trash, inside the roots"`
 }
 
-// project answers the active project's roots and its heavy folder names (.git, then the
-// project's list — 3b-v part 2), or the tool error saying why there are none.
+// project answers the roots a call is confined to — the active project's, then its workspaces'
+// checkouts (workspaces, piece 1) — and its heavy folder names (.git, then the project's list —
+// 3b-v part 2), or the tool error saying why there are none.
 func project() ([]string, []string, *mcp.CallToolResult) {
 	r, err := wakilcore.Resolve()
 	if err != nil {
 		return nil, nil, mcpx.ToolErr("wakil-files", err)
 	}
-	return wakilcore.ProjectRootPaths(*r), wakilcore.HeavyNames(r.Project.Editor.Resolved().HeavyFolders), nil
+	return wakilcore.AllowedRootPaths(*r), wakilcore.HeavyNames(r.Project.Editor.Resolved().HeavyFolders), nil
+}
+
+// mainRoots is the active project's own roots (Main's folders): what a search or replace naming
+// no roots covers, so a checkout is searched only when it is named.
+func mainRoots() []string {
+	r, err := wakilcore.Resolve()
+	if err != nil {
+		return nil
+	}
+	return wakilcore.ProjectRootPaths(*r)
 }
 
 // roots answers the active project's roots, or the tool error saying why there are none.
@@ -116,7 +127,11 @@ func newServer() *mcp.Server {
 			if fail != nil {
 				return fail, wakilcore.SearchResult{}, nil
 			}
-			r, err := wakilcore.SearchFiles(ctx, rs, heavy, a.Roots, wakilcore.SearchQuery{Query: a.Query, Case: a.Case, Word: a.Word, Regex: a.Regex})
+			only := a.Roots
+			if len(only) == 0 {
+				only = mainRoots()
+			}
+			r, err := wakilcore.SearchFiles(ctx, rs, heavy, only, wakilcore.SearchQuery{Query: a.Query, Case: a.Case, Word: a.Word, Regex: a.Regex})
 			if err != nil {
 				return mcpx.ToolErr("wakil-files", err), wakilcore.SearchResult{}, nil
 			}
@@ -138,8 +153,12 @@ func newServer() *mcp.Server {
 			if fail != nil {
 				return fail, wakilcore.ReplaceResult{}, nil
 			}
+			only := a.Roots
+			if len(only) == 0 {
+				only = mainRoots()
+			}
 			r, err := wakilcore.ReplaceFiles(ctx, rs, heavy, wakilcore.SearchQuery{Query: a.Query, Case: a.Case, Word: a.Word, Regex: a.Regex},
-				a.Replacement, wakilcore.ReplaceOptions{Roots: a.Roots, Only: a.Only, Skip: a.Skip, After: a.After, MaxFiles: a.MaxFiles})
+				a.Replacement, wakilcore.ReplaceOptions{Roots: only, Only: a.Only, Skip: a.Skip, After: a.After, MaxFiles: a.MaxFiles})
 			if err != nil {
 				return mcpx.ToolErr("wakil-files", err), wakilcore.ReplaceResult{}, nil
 			}

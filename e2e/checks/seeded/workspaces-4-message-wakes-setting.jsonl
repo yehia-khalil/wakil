@@ -1,0 +1,30 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"Agents woken by messages"}}
+{"expect":{"tree":"contains","text":"0 never wakes them"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.messageWakes","equals":"8"}}
+{"do":{"focus":"settings.org.agent.messageWakes"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"3"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.messageWakes","equals":"3"}}
+{"do":{"focus":"settings.org.agent.messageWakes"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"100"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Agents woken by messages must be a whole number from 0 to 99"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.messageWakes","equals":"3"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"The organisation's, 3. A number here is this project's own."}}
+{"do":{"focus":"settings.project.agent.messageWakes"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"1"}}
+{"do":{"focus":"settings.project.agent.general"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.messageWakes","equals":"1"}}
+{"expect":{"tree":"contains","text":"This project's own; the organisation's is 3."}}
+{"do":{"click":"settings.project.agent.messageWakes.inherit"}}
+{"expect":{"tree":"contains","text":"The organisation's, 3. A number here is this project's own."}}
+{"dispatch":{"action":"ctx_set_project_agent_instructions","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","messageWakes":5}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.messageWakes","equals":"5"}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"This project's own; the organisation's is 3."}}

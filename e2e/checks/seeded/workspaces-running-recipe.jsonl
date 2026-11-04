@@ -1,0 +1,75 @@
+{"dispatch":{"action":"running_save","params":{"recipes":{"e2e-static":{"processes":[{"name":"web","command":"python3 -m http.server $WAKIL_PORT"}],"ready":{"output":"Serving HTTP"}}},"repos":{"e2e-project":{"recipe":"e2e-static"}}}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"dispatch":{"action":"running_save","params":{"repos":{"e2e-project":{"recipe":"ghost"}}},"refuses":"names recipe \"ghost\""}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.projectRunning.e2e-project"}}
+{"expect":{"tree":"contains","text":"Recipe e2e-static"}}
+{"expect":{"tree":"absent","text":"RECIPE · E2E-STATIC"}}
+{"expect":{"tree":"contains","text":"What ▶ does in a workspace's own copy, on its own ports."}}
+{"expect":{"frame":"settings.running.stop.prepare","minWidth":1}}
+{"expect":{"tree":"contains","text":"Prepare a new copy"}}
+{"expect":{"tree":"contains","text":"once, on the first ▶ in a new workspace"}}
+{"expect":{"frame":"settings.running.stop.start","minWidth":1}}
+{"expect":{"tree":"contains","text":"every ▶, in this order"}}
+{"expect":{"frame":"settings.running.stop.ready","minWidth":1}}
+{"expect":{"tree":"contains","text":"the run counts as up"}}
+{"expect":{"frame":"settings.running.stop.stop","minWidth":1}}
+{"expect":{"tree":"contains","text":"on ■ Stop or Archive"}}
+{"expect":{"frame":"settings.running.portsAndEnv","minWidth":1}}
+{"expect":{"tree":"contains","text":"Ports and environment"}}
+{"expect":{"tree":"contains","text":"web  python3 -m http.server $WAKIL_PORT"}}
+{"expect":{"tree":"contains","text":"Serving HTTP"}}
+{"expect":{"frame":"settings.running.add.copy","inside":"settings.running.stop.prepare"}}
+{"expect":{"frame":"settings.running.add.needs","inside":"settings.running.stop.start"}}
+{"expect":{"tree":"contains","text":"start another repo first"}}
+{"expect":{"frame":"settings.running.add.teardown","inside":"settings.running.stop.stop"}}
+{"do":{"click":"settings.running.add.build"}}
+{"expect":{"focus":"settings.running.field.build"}}
+{"do":{"type":{"into":"settings.running.field.build","text":"make build"}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"expect":{"tree":"contains","text":"text this repo only"}}
+{"do":{"click":"settings.running.field.build.inherit"}}
+{"expect":{"tree":"absent","text":"text this repo only"}}
+{"expect":{"frame":"settings.running.add.build","inside":"settings.running.stop.prepare"}}
+{"expect":{"tree":"contains","text":"None set. Values may use $WAKIL_*; a secret goes to the Keychain."}}
+{"expect":{"tree":"contains","text":"None mapped."}}
+{"do":{"click":"settings.running.add.ports"}}
+{"expect":{"focus":"settings.running.field.ports"}}
+{"do":{"type":{"into":"settings.running.field.ports","text":"APP_PORT=$WAKIL_PORT_1"}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"do":{"click":"settings.running.env.addVariable"}}
+{"expect":{"focus":"settings.running.env.newName"}}
+{"expect":{"frame":"settings.running.ports","minWidth":1}}
+{"expect":{"tree":"contains","text":"41201"}}
+{"expect":{"tree":"contains","text":"“41200” is the first workspace's block; the next one running gets 41210."}}
+{"do":{"click":"settings.running.ports.edit"}}
+{"expect":{"focus":"settings.running.field.ports"}}
+{"do":{"type":{"into":"settings.running.env.newName","text":"APP_ENV"}}}
+{"expect":{"frame":"settings.running.ports","minWidth":1}}
+{"do":{"type":{"into":"settings.running.env.newValue","text":"local"}}}
+{"do":{"click":"settings.running.env.add"}}
+{"expect":{"tree":"contains","text":"text APP_ENV"}}
+{"expect":{"frame":"settings.running.env.APP_ENV","minWidth":1}}
+{"expect":{"frame":"settings.running.env.addSecret","minWidth":1}}
+{"do":{"click":"settings.running.env.APP_ENV.remove"}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"expect":{"tree":"absent","text":"APP_ENV"}}
+{"do":{"click":"settings.running.field.ports.inherit"}}
+{"expect":{"tree":"absent","text":"41201"}}
+{"expect":{"frame":"settings.running.add.ports","minWidth":1}}
+{"do":{"click":"settings.running.env.alsoWrite"}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"do":{"click":"settings.running.recipeMenu"}}
+{"expect":{"tree":"contains","text":"Doesn't run"}}
+{"do":{"click":"settings.running.doesntRun"}}
+{"expect":{"tree":"contains","text":"e2e-project doesn't run: ▶ starts nothing for it."}}
+{"expect":{"tree":"absent","text":"Prepare a new copy"}}
+{"do":{"click":"settings.running.recipeMenu"}}
+{"do":{"click":"settings.running.recipe.e2e-static"}}
+{"expect":{"tree":"contains","text":"Prepare a new copy"}}
+{"expect":{"tree":"absent","text":"e2e-project doesn't run:"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.running.try","inside":"settings.pane"}}
+{"expect":{"frame":"settings.running.recipeMenu","inside":"settings.pane"}}
+{"expect":{"frame":"settings.running.recipeMenu","clear":"settings.running.try"}}
+{"expect":{"frame":"settings.running.stop.prepare","inside":"settings.pane"}}

@@ -1003,14 +1003,17 @@ private let tabRenameEffect = PaletteEffect.runName(
         #expect(w.model.layoutSnapshot.focusedId == db)
     }
 
-    /// Conversations 2 of 3, Task 3: with nothing live, ⌘P draws no Running group — not an empty
-    /// header, not a loading row.
+    /// Conversations 2 of 3, Task 3: with nothing live, ⌘P draws no conversation row — not an empty
+    /// header, not a loading row. Workspaces, piece 3 (decision 27): the Running group keeps one row,
+    /// Main of the screen's place, the door to Main's view with no agent.
     @Test func nothingLiveDrawsNoRunningGroup() async throws {
         let w = await paletteWindow()
         await w.model.refreshContext()
         let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
         #expect(!entries.isEmpty)
-        #expect(!entries.contains { $0.group == .running }, "\(entries.map(\.id))")
+        let running = entries.filter { $0.group == .running }
+        #expect(running.map(\.kindLabel) == ["workspace"], "\(entries.map(\.id))")
+        #expect(running.first?.title == "Main")
     }
 
     /// Defence in depth: a step with no stamp after the window left an organisation is refused,
@@ -1067,6 +1070,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "review_open", "review_step", "review_reply_draft", "review_reply_draft_restore", "review_reply_send", "review_resolve",
     // Ticket noticing: Hand to agent's popover; its Start and Cancel are the operator's.
     "ticket_hand_off_open", "ticket_hand_off_brief", "ticket_hand_off", "ticket_hand_off_cancel", "ticket_hand_off_close",
+    "ticket_hand_off_send", "conversation_queued_cancel",
     // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
     "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_print", "browser_pull_requests_refresh", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_unpin", "browser_zoom",
     // 3c-ii: the agent's reach into the page; the five acts are mutations, revoke_site the operator's.
@@ -1078,11 +1082,27 @@ private let registeredBeforeThePalette: Set<String> = [
     "capacity_record", "ctx_capacity",
     // Names: the operator's and the agent's rename of a conversation and of a browser tab.
     "conversation_rename", "browser_rename_tab",
+    // Workspaces, piece 1: the read, the agent's start, and the operator's archive, restore, Bring to Main and Move.
+    "workspace_list", "workspace_start", "workspace_archive", "workspace_restore", "workspace_bring_home", "workspace_set_environment", "conversation_move",
+    // Workspaces, piece 2: Run, Stop, Build and the read; the Running settings and Try (operator-only).
+    "workspace_run", "workspace_stop", "workspace_build", "workspace_running",
+    "running_read", "running_detect", "running_draft_all", "running_save", "running_secret_set", "running_try", "running_try_end",
+    // Piece 2, part three: the drafting conversation's answer (agent-reachable, .control).
+    "running_draft_propose",
+    // Workspaces, piece 3: the home screen's view doors.
+    "workspace_open", "workspace_new_conversation",
+    // Workspaces piece 4.
+    "conversation_message",
+    // Workspaces piece 5.
+    "conversation_propose_teammate", "conversation_teammate_start", "conversation_teammate_dismiss",
+    "conversation_teammate_brief", "conversation_nothing_to_do",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",
     // 3b-v (Decision 38): the editor settings read, and the two operator-only writes.
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // The Ticket tab's scope: a project's Jira project, set from Settings.
+    "ctx_set_project_pm_key",
     // 3c-i: the browser settings read, and the operator-only write.
     "ctx_browser_settings", "ctx_set_browser_settings",
     // Keyboard: the keymap read, and the two operator-only writes.
@@ -1118,6 +1138,13 @@ private let registeredBeforeThePalette: Set<String> = [
 
 /// The agent's `--allowedTools`, captured at the same moment.
 private let agentToolsBeforeThePalette: Set<String> = [
+    // Workspaces, piece 1: the read only; the rest are operator-only and absent (`workspace_start`
+    // is `.mutate`, so it is priced, not pre-allowed).
+    "mcp__wakil__workspace_list",
+    // Workspaces, piece 2: the read is pre-approved; Run, Stop and Build are writes the gate prices.
+    "mcp__wakil__workspace_running",
+    // Piece 2, part three: the drafting conversation's answer writes nothing; it is pre-approved.
+    "mcp__wakil__running_draft_propose",
     "mcp__wakil__editor_refresh",
     // 3b-v (Decision 38): the read only; both writes are operator-only and absent.
     "mcp__wakil__ctx_editor_settings",
@@ -1126,6 +1153,9 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ctx_keyboard",
     // Names: `.control` and agent-reachable, for the agent's own conversation.
     "mcp__wakil__conversation_rename",
+    "mcp__wakil__conversation_message",
+    // Workspaces piece 5: the agent proposes a teammate and says it has nothing to do.
+    "mcp__wakil__conversation_propose_teammate", "mcp__wakil__conversation_nothing_to_do",
     // Names: `.control` and agent-reachable, a browser tab's name.
     "mcp__wakil__browser_rename_tab",
     "mcp__wakil__ctx_github_pull_requests",

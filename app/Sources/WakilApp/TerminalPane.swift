@@ -97,6 +97,8 @@ struct TerminalPane: View {
     /// plane are; a separate AppKit window would take first responder on its
     /// own.
     let isKeyboardOwner: Bool
+    /// Workspaces, piece 1: the folder tag for the shell's cwd — "Main · your folder" or "workspace copy".
+    var folderTag: (String) -> String? = { _ in nil }
 
     /// Whether the window says THIS pane is the focused one.
     ///
@@ -138,6 +140,11 @@ struct TerminalPane: View {
     /// the hosting view and handing it back focuses nothing (spec 46); this is the pane's way
     /// back. Answered the same way as a focus request: by the focused pane, and no other.
     let keyboardReturns: Int
+
+    /// `WindowModel.composerHoldsKeyboard`, read when the pane appears: the composer was handed the
+    /// keyboard (New conversation here, a fast-path action) and a terminal drawn on the screen it
+    /// opened stands down rather than taking it (Rule 3), as the editor's take does.
+    let keyboardHeld: () -> Bool
 
     /// 60 Hz — the same interval `TerminalStore.startPublishing()` polls
     /// the engine's own dirty range at. Polling faster would not see
@@ -205,12 +212,12 @@ struct TerminalPane: View {
         // A link in the output (3c-iii ruling 14) opens only on ⌘-click. A plain click is
         // discarded, so it selects text as it always has.
         .environment(\.openURL, openLinkAction)
-        .onAppear { focused = true }
+        .onAppear { if !keyboardHeld() { focused = true } }
         .onChange(of: isFocusedPane) { _, nowFocused in
             // Only ever takes focus, never gives it up: a pane that lost
             // `focusedId` has no business deciding who gets first responder
             // next, and the pane that gained it is about to ask for it.
-            if nowFocused, !searchFocused { focused = true }
+            if nowFocused, !searchFocused, !keyboardHeld() { focused = true }
         }
         // The other half, for the case the line above structurally cannot
         // see: a focus request that changed no state because this pane was
@@ -286,6 +293,13 @@ struct TerminalPane: View {
                 .foregroundStyle(Self.text.opacity(0.75))
                 .lineLimit(1)
                 .truncationMode(.head)
+            if !snapshot.cwd.isEmpty, let tag = folderTag(snapshot.cwd) {
+                Text(tag)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Self.text.opacity(0.6))
+                    .fixedSize()
+                    .accessibilityIdentifier("pane.\(pane.id).folderTag")
+            }
             Text("·")
                 .foregroundStyle(Self.text.opacity(0.25))
             // One line each, so a narrow pane truncates the row rather than stacking it.

@@ -1,5 +1,8 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"expect":{"pane":"terminal-1","field":"shell","equals":"zsh"}}
 {"do":{"type":{"into":"window.composer","text":"open the customers table"}}}

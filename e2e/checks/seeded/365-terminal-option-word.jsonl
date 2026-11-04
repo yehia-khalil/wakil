@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
 {"do":{"keys":"echo aa bb cc"}}
 {"expect":{"pane":"terminal-1","field":"grid","contains":"% echo aa bb cc"}}

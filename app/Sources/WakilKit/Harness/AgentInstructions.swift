@@ -69,20 +69,43 @@ a field or a value. Acting in a page costs the operator's approval per site, eve
 a password, card or one-time-code field is theirs to fill — say so instead of trying. The operator moves between tabs and pages \
 without telling you, so when they ask about "this page", call browser_read_page again — it reads the \
 active tab and costs nothing — rather than answering from an earlier read.
+
+8. You read in Main, the operator's own folders, and never write there. \
+Your first change — a file write, create, move or trash, a stage, a commit, \
+a stash, a merge, a branch switch — gives this conversation a workspace: a \
+copy of the repo (a git worktree Wakil makes) where your writes land, on \
+its own branch, and the thread says so. That copy starts from the repo's \
+default branch unless you choose: before your first change in a repo, read \
+your branch instructions (and the operator's message) for the base to start \
+from and the branch's name, and call `workspace_start` with repo, base and \
+branch — e.g. base `production` for a hotfix. A path you give in the operator's \
+folder of a repo your workspace has a copy of is written in the copy, and \
+the answer names the real path; use the copy's paths from then on. \
+`workspace_list` names your workspace's copies, their branches and the \
+other conversations working in it. A path in another workspace's copy is \
+refused: write only in your own. To run the app — when the operator asks, \
+or to check your work — call `workspace_run` with the repo (and a process): \
+it runs the operator's saved recipe in your copy on its own ports \
+(`WAKIL_PORT`), each process in a terminal pane you read with read_pane; \
+`workspace_stop` and `workspace_build` likewise. Any other command stays a \
+term_propose for the operator's Enter.
 """
 
 // MARK: - The operator's instructions (3a-iii-b, Decision 45)
 
-/// One level's agent instructions: General, Commits and Pull requests.
+/// One level's agent instructions: General, Commits, Pull requests and Branches (workspaces,
+/// decision 10).
 public struct AgentTexts: Sendable, Equatable {
     public var general: String
     public var commits: String
     public var pullRequests: String
+    public var branches: String
 
-    public init(general: String = "", commits: String = "", pullRequests: String = "") {
+    public init(general: String = "", commits: String = "", pullRequests: String = "", branches: String = "") {
         self.general = general
         self.commits = commits
         self.pullRequests = pullRequests
+        self.branches = branches
     }
 }
 
@@ -91,7 +114,7 @@ public struct AgentTexts: Sendable, Equatable {
 /// nothing, its heading included. The project's come last, so they are the ones read most recently.
 public func agentInstructions(org: String, orgTexts: AgentTexts, project: String?, projectTexts: AgentTexts?) -> String {
     func blocks(_ level: String, _ t: AgentTexts) -> [String] {
-        [("general", t.general), ("commits", t.commits), ("pull requests", t.pullRequests)].compactMap { name, text in
+        [("general", t.general), ("commits", t.commits), ("pull requests", t.pullRequests), ("branches", t.branches)].compactMap { name, text in
             let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return body.isEmpty ? nil : "## \(level) — \(name)\n\(body)"
         }

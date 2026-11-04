@@ -28,7 +28,11 @@ public final class WindowModel {
     /// environment is on screen at all times). Empty until
     /// `refreshContext()` has answered — `environmentLabel` is what the view
     /// draws, and it says so rather than showing a blank.
-    public private(set) var organization = ""
+    public private(set) var organization = "" {
+        // Workspaces, piece 2: an organisation becoming active — at launch, once its context is
+        // read, or by a switch — has its leftover Try workspaces swept (amendment 2026-11-01).
+        didSet { if organization != oldValue { sweepLeftoverTries() } }
+    }
     /// The home directory `~/.wakil` lives under; set by the app when it builds the window
     /// (`WindowSession.start`), so an overridden `HOME` moves it with everything else.
     public var browserHome: URL?
@@ -53,6 +57,10 @@ public final class WindowModel {
     /// The active project's registry key (`ContextStore.ActiveContext.projectKey`), which
     /// `WAKIL_PROJECT` is looked up by. Set and cleared with `project`.
     public private(set) var projectKey = ""
+    /// The active project's Jira project (`ActiveContext.pmProjectKey`). Set and cleared with `project`.
+    public private(set) var pmProjectKey = ""
+    /// Workspaces, piece 2: each Try's progress as it runs, by `runningTryKey` (the Running settings).
+    public internal(set) var runningTryProgress: [String: TryProgressState] = [:]
     public private(set) var environment = ""
 
     /// The place on screen now, which a harness is pinned to when it starts.
@@ -112,6 +120,18 @@ public final class WindowModel {
     /// still in use after every harness change, so a client for a place no session holds any
     /// more is stopped. Nil in tests that route no call; production passes the wiring's.
     private let placeClients: PlaceClients?
+    /// Workspaces, piece 1: the write rule's router (`WakilWiring.workspaces`), set by
+    /// `useWorkspaces`; nil in a window built without one (tests), whose writes are not routed.
+    @ObservationIgnored var workspaceRouter: WorkspaceRouter?
+    /// Workspaces, piece 2: the runner (`useRunner`); it cleans leftover Try workspaces.
+    @ObservationIgnored var workspaceRunner: WorkspaceRunner?
+    /// The runner's wiring (`useRunner`): no sweep starts before it finished.
+    @ObservationIgnored var runnerWiring: Task<Void, Never>?
+    /// The latest leftover-Try sweep (`sweepLeftoverTries`); tests await it.
+    @ObservationIgnored var trySweep: Task<Void, Never>?
+    /// Workspaces, piece 3: the organisation's workspaces as `workspaceListings` last read them, so
+    /// ⌘P's ticket rows, built at once as a line is typed, know which ticket has one (decision 27).
+    @ObservationIgnored var knownWorkspaces: (organization: String, workspaces: [Workspace]) = ("", [])
     /// What an agent's place's own `wakil-ctx` says about it — its roots and production
     /// flags — read through `placeClients`. Nil exactly when that is: a window that routes no
     /// call has no place but its own to answer for.
@@ -143,7 +163,17 @@ public final class WindowModel {
     /// repeat that fallback.
     /// `project` here is the registry key, since it becomes the shell's `WAKIL_PROJECT`.
     public var activeShellContext: (org: String, project: String, environment: String, rootPath: String) {
-        (org: organization, project: projectKey, environment: environment, rootPath: rootPath)
+        // Workspaces, piece 1 (decision 22): a new terminal in a workspace's view opens in its first
+        // copy, in the roots' order; in Main's view, or before any copy is made, in the first root.
+        (org: organization, project: projectKey, environment: environment, rootPath: shellRoot)
+    }
+
+    private var shellRoot: String {
+        let roots = gitRootPaths
+        if let w = currentAgent?.workspace, let copy = roots.first(where: { workspaceHolding($0, in: [w]) != nil }) {
+            return copy
+        }
+        return roots.first ?? rootPath
     }
 
     /// `activeShellContext` for a dispatch made for `caller`: what `term_open` and the api pane
@@ -167,7 +197,19 @@ public final class WindowModel {
     /// confine to. An agent session gets its own project's roots, and none when they cannot be
     /// read — never the window's, which belong to the project on screen.
     public func gitRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
-        guard let placeContexts, let away = pinnedPlace(of: caller) else { return gitRootPaths }
+        // Workspaces, piece 1 (call 13): an agent reaches Main's folders and its own workspace's
+        // copies; the operator, the view on screen's folders (`gitRootPaths`).
+        if let own = await workspaceRouter?.callerCheckouts() {
+            return await mainRootPaths(forCaller: caller) + own
+        }
+        guard pinnedPlace(of: caller) != nil else { return gitRootPaths }
+        return await mainRootPaths(forCaller: caller)
+    }
+
+    /// Main's folders for a dispatch made for `caller`: an agent session's own project's roots,
+    /// and none when they cannot be read — never the window's, which belong to the project on screen.
+    func mainRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
+        guard let placeContexts, let away = pinnedPlace(of: caller) else { return mainGitRootPaths }
         return (try? await placeContexts.context(for: away).rootPaths) ?? []
     }
 
@@ -606,8 +648,8 @@ public final class WindowModel {
     /// A landed name's journal line being written, so `settleConversationNaming` waits for it too. Not
     /// org-derived: the name has landed, and nothing an org switch does undoes it or its line.
     @ObservationIgnored var conversationNamingJournals: [UUID: Task<Void, Never>] = [:]
-    private let panes: PaneStore
-    private let layout: LayoutStore
+    let panes: PaneStore
+    let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
     /// window, shared with the agent's path the same way `panes` and
     /// `layout` are — `WakilWiring.build` registers `term_open`,
@@ -807,7 +849,14 @@ public final class WindowModel {
     /// The roots git may read (the window's status, the editor's git actions): `rootPaths` when
     /// the last context read gave this window a project root, and none otherwise — never the
     /// home directory `rootPath` falls back to.
-    public var gitRootPaths: [String] { hasProjectRoot ? rootPaths : [] }
+    public var gitRootPaths: [String] {
+        // Workspaces, piece 1 (decision 22): the view's folders — the workspace's copy of each repo
+        // it has one of, Main's folder of the rest. Files, Search, Changes and new terminals read these.
+        guard let w = currentAgent?.workspace else { return mainGitRootPaths }
+        return mainGitRootPaths.map { workspacePath($0, in: w) ?? $0 }
+    }
+    /// The project's own roots (Main's folders), whatever view is on screen.
+    var mainGitRootPaths: [String] { hasProjectRoot ? rootPaths : [] }
     /// Keeps the window's git status live (3a-i; 3b-iii: while an editor pane is open). Started
     /// when an editor pane is open and the project has a root, restarted when the roots change,
     /// stopped when the last editor pane closes or the organisation changes — all in
@@ -899,6 +948,32 @@ public final class WindowModel {
     /// Ticket noticing: the active organisation's last `ticket_in_flight` read — what the rail, the
     /// Ticket label, the Landing and ⌘P count and list. Kept on a failed read; emptied by an org switch.
     public private(set) var ticketNeeds: InFlightState?
+    /// Workspaces, piece 3 (decision 11): the PRs each open workspace's branch heads, by Main's root
+    /// and the branch, as the home last read them (`readHomeMergedBranches`).
+    public internal(set) var homeBranchPRs: [HomeBranch: [PullRequestState]] = [:]
+    /// Workspaces, piece 3 walk: where the home's next send goes — the composer's *Start in* — when
+    /// the operator chose somewhere other than the window's place; nil, the window's place. Choosing
+    /// it moves nothing (amendment "the home is the organisation's"): only a send (`enterStartIn`),
+    /// or opening a workspace or a conversation, selects a place. Spent by the send, and dropped
+    /// by any change of what the screen shows and by an organisation switch.
+    public internal(set) var homeStartIn: Place?
+    /// When each of those was read, and which are being read now (one read per branch at a time).
+    @ObservationIgnored var homeBranchReadAt: [HomeBranch: Date] = [:]
+    @ObservationIgnored var homeBranchReading: Set<HomeBranch> = []
+    /// What runs in each workspace, by id (piece 2's `runStatusLine`), as the runner last told
+    /// (`useRunner`): the home card's running line and its **Stop**.
+    public internal(set) var homeRunLines: [String: String] = [:]
+    /// Each workspace's ready repos' ports (`runAppPorts`): the card's `:<port> ↗` links.
+    public internal(set) var homeRunPorts: [String: [Int]] = [:]
+    /// Each workspace's run tone (`runTone`), beside `homeRunLines`: the colour the card reads it in.
+    public internal(set) var homeRunTones: [String: RunTone] = [:]
+    /// Each project's repos that have a recipe (`homeReposWithRecipe`), by registry key, as the home
+    /// last read them (`readHomeRecipes`): a card none of whose copies has one offers Set up running….
+    public internal(set) var homeRecipeRepos: [String: Set<String>] = [:]
+    /// The projects whose Running settings are being read now (one read per project at a time).
+    @ObservationIgnored var homeRecipeReading: Set<String> = []
+    /// The card lines' one-second readers while a run gets going (`tickRunLine`).
+    @ObservationIgnored var runLineTickers: [String: Task<Void, Never>] = [:]
     /// Whether the Mac's screen is locked (`setScreenLocked`): nothing is read for a locked screen.
     var screenLocked = false
     /// The 2-minute read while Wakil is in front and the screen unlocked (`updateTicketPoll`), its
@@ -928,6 +1003,9 @@ public final class WindowModel {
     /// that account, and it lives in `WakilApp` rather than `WakilKit`.
     /// Still writable only here — `setProvider` remains the one path.
     public private(set) var providerId: String
+    /// Workspaces, piece 2: each repo's drafting conversation and its proposal (decision 13),
+    /// drawn by the Running settings (`WindowModel+RecipeDrafts.swift`).
+    public internal(set) var recipeDraftBook = RecipeDraftBook()
     /// How many of a resumed session's transcript entries are rebuilt into
     /// `thoughts`. Passed straight through to `read_session`'s `limit`, so
     /// the app and the Go read agree on how much of a long session's
@@ -974,7 +1052,7 @@ public final class WindowModel {
     private var currentLayoutScope: LayoutScope {
         LayoutScope(
             organization: organization, project: projectKey, environment: environment,
-            lineageRoot: lineageRoot ?? landingRoot(in: place))
+            lineageRoot: currentAgent?.canvasRoot ?? landingRoot(in: place))
     }
     /// The conversation whose canvas `place`'s Landing draws over after `newConversation`: the id
     /// it reserves for its next conversation, while `landingBaselines` holds the place and it
@@ -1490,6 +1568,12 @@ public final class WindowModel {
                     await self.closeConversation(conversation)
                 case .rename(let conversation, let name):
                     await self.renameConversation(conversation, to: name)
+                case .openView(let workspace, let place):
+                    await self.openWorkspaceView(workspace, in: place)
+                case .newHere(let workspace):
+                    await self.newConversationHere(workspace)
+                case .message(let from, let to, let text):
+                    await self.deliverMessage(from: from, to: to, text: text)
                 }
             }
         }
@@ -2033,6 +2117,11 @@ public final class WindowModel {
 
     /// Puts `text` on the status line, for a test asserting something leaves it alone.
     func setStatusForTesting(_ text: String) { status = text }
+    /// The project's roots as a context read would set them.
+    func setRootPathsForTesting(_ roots: [String]) {
+        rootPaths = roots
+        hasProjectRoot = !roots.isEmpty
+    }
 
     func seedForTesting(
         providerId: String, rootPath: String, thoughts: Int,
@@ -2118,16 +2207,27 @@ public final class WindowModel {
     /// opened before any organisation kept saying it after a project with
     /// a root was open (found on the 2d-ii walk). The same defect, and the
     /// same fix, as `noActiveProviderNote` below (D3).
+    ///
+    /// **Not with no project** (workspaces, piece 3, the operator's walk of an organisation's
+    /// first-run home): there is no root to have, and the home says what to do. The sentence is for
+    /// a project that has none.
     public var noProjectRootNote: String? {
-        guard !hasProjectRoot else { return nil }
+        guard !hasProjectRoot, !project.isEmpty else { return nil }
         return "no project root available yet, so this session runs in \(rootPath) instead"
     }
 
+    ///
+    /// **Said when it stops something** (workspaces, piece 3, the operator's walk of an
+    /// organisation's first-run home): drawn standing, it put a developer's bootstrap hint above the
+    /// home's composer. It is one plain line from the operator's first send with no provider
+    /// (`startHarness`), naming where to fix it, until one is chosen.
     public var noActiveProviderNote: String? {
-        guard providerId.isEmpty else { return nil }
-        return "no active provider is set for this org yet — pick one in ⌘P, or bootstrap "
-            + "headlessly with `--dispatch ctx_set_provider`"
+        guard providerId.isEmpty, sendNeededProvider else { return nil }
+        return "No provider is set for this organisation — choose one in Settings (⌘,)."
     }
+
+    /// Whether a send in this organisation was stopped for want of a provider (`noActiveProviderNote`).
+    private var sendNeededProvider = false
 
     /// The word this codebase uses for "no provider chosen yet", shared so
     /// the one meaning stays attached to one literal rather than being
@@ -2184,7 +2284,15 @@ public final class WindowModel {
             organization = active.org
             project = active.project
             projectKey = active.projectKey
+            pmProjectKey = active.pmProjectKey
             environment = active.environment
+            // A project's first read names the environment it was left on; afterwards only the
+            // operator's own switch does (`switchEnvironment`) — a project switch carrying the last
+            // project's environment over is not one used here.
+            let usedIn = Place(organization: active.org, project: active.projectKey, environment: "")
+            if !active.environment.isEmpty, !active.projectKey.isEmpty, environmentsLastUsed[usedIn] == nil {
+                environmentsLastUsed[usedIn] = active.environment
+            }
             // **The one writer of the gate's view of production**
             // (Decision 26, #182). `get_context` carried the whole project
             // already, so the flags cost nothing extra — and they are set
@@ -2248,6 +2356,9 @@ public final class WindowModel {
             await refreshKeymap()
             // 3c-ii: launch, and an org, project or environment switch, all end here.
             await refreshBrowserSites()
+            // Workspaces, piece 2: a Try the app quit in the middle of leaves its workspace; an
+            // organisation whose record could not be read before is swept again here.
+            sweepLeftoverTries()
             // Capacity is read once the providers and the org are known,
             // so the hairlines are not empty until a turn ends or
             // Settings opens. Launch and an org switch both come here, so
@@ -2264,6 +2375,7 @@ public final class WindowModel {
             // wrong credential boundary, drawn confidently (spec §6).
             project = ""
             projectKey = ""
+            pmProjectKey = ""
             environment = ""
             // The flags belong to the project that could not be read, so
             // they go with it. Keeping them would price the new org's
@@ -2363,6 +2475,8 @@ public final class WindowModel {
     /// handler can resolve against the outgoing org's context while the
     /// new org's server is coming up.
     func invalidateForOrgChange() async {
+        // The next organisation's first send says its own provider's absence, if it has to.
+        sendNeededProvider = false
         // Invariant 4 for names: nothing of the old org resolves after this line.
         await vocabulary?.dropAll()
         // 3b-viii: nothing answers a ghost request on the outgoing org's providers, and a rebuild
@@ -2376,6 +2490,12 @@ public final class WindowModel {
         // authoritative than anything get_context will say (spec §6).
         project = ""
         projectKey = ""
+        pmProjectKey = ""
+        settingsProjectWanted = nil
+        settingsProjectWantsRunning = false
+        runningTryProgress = [:]
+        for t in runLineTickers.values { t.cancel() }
+        runLineTickers = [:]
         environment = ""
         // Org-derived, and a credential boundary rather than a display
         // detail: the declarations describe the OUTGOING org's project.
@@ -2507,6 +2627,15 @@ public final class WindowModel {
         // the incoming org and starts the read again (`ticketOrganizationReady`).
         ticketNeeds = nil
         stopTicketPoll()
+        // Workspaces, piece 3: the home's Archive offer read the outgoing org's branches, and ⌘P's
+        // ticket rows knew its workspaces.
+        homeBranchPRs = [:]
+        homeStartIn = nil
+        homeBranchReadAt = [:]
+        homeBranchReading = []
+        homeRecipeRepos = [:]
+        homeRecipeReading = []
+        knownWorkspaces = ("", [])
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
@@ -2604,7 +2733,8 @@ public final class WindowModel {
     /// project under no conversation, both stores MOVE its contents into the incoming scope and
     /// nothing is read off disk — a brand-new conversation has no file of its own, and the seed
     /// is what is already on screen, minus every draft (re-walk finding #4).
-    private func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false) async {
+    func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false,
+                        adoptingFrom adoptable: LayoutScope? = nil) async {
         // Every way the screen changes converges here — a picker, a ⌘P jump, an org switch, a new
         // conversation, a switch — so this is where the composer is told (`tellScreenChange`),
         // once, whichever return this takes.
@@ -2728,9 +2858,11 @@ public final class WindowModel {
         backgroundLayouts[scope] = nil
 
         // Re-walk finding #4: a conversation minted over the conversation-less canvas takes it.
-        let adopted = adoptingCanvas && outgoing.map {
+        // Workspaces (decision 22): a conversation the write rule moved out of Main takes the
+        // canvas it was in into its workspace's view (`workspaceViewFollows`).
+        let adopted = (adoptingCanvas && outgoing.map {
             conversationAdoptsCanvas(from: $0, to: scope)
-        } == true
+        } == true) || (adoptable != nil && adoptable == outgoing)
         if adopted, let outgoing {
             await layout.switchScope(to: scope, adoptingFrom: outgoing)
             await panes.switchScope(to: scope, adoptingFrom: outgoing)
@@ -2907,10 +3039,16 @@ public final class WindowModel {
     /// whole.
     @discardableResult
     public func setEnvironment(_ name: String) async -> Bool {
+        await setEnvironment(name, keepingView: true)
+    }
+
+    /// `setEnvironment`; `keepingView` false for a switch on the way somewhere else (`goTo`), which
+    /// decides itself what the screen ends on.
+    func setEnvironment(_ name: String, keepingView: Bool) async -> Bool {
         // W12: choosing the environment already active changes nothing, so it dispatches
         // nothing — no plane, no cleared reply, no refetch.
         guard !environmentSwitchIsNoOp(from: environment, to: name) else { return true }
-        return await asOperatorEnvironmentSwitch { [weak self] in
+        return await asOperatorEnvironmentSwitch(keepingView: keepingView) { [weak self] in
             await self?.switchEnvironment(to: name) ?? false
         }
     }
@@ -2920,14 +3058,64 @@ public final class WindowModel {
     /// `observationPump` sees that dispatch too, and waits for this to finish before judging
     /// whether anything changed, so the switch is not done twice. After the switches before it.
     /// `setEnvironment` and the fast path's `ctx_set_environment` (`runFastPath`) both run here.
-    func asOperatorEnvironmentSwitch<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
+    ///
+    /// **It stays in the view it was made in** (piece 3 walk; Rule 6) unless `keepingView` is false:
+    /// a conversation lives in one place, so the new environment is a place with none on screen, and
+    /// the home — drawn wherever no work has begun — came up in the project's view. Main's view, or
+    /// the workspace's, opens there instead (`stayInView`).
+    func asOperatorEnvironmentSwitch<T: Sendable>(
+        keepingView: Bool = true, _ body: @escaping @MainActor () async -> T
+    ) async -> T {
         let previous = operatorEnvironmentSwitch
-        let task = Task { @MainActor () -> T in
+        let task = Task { @MainActor [weak self] () -> T in
             _ = await previous?.value
-            return await body()
+            let view = keepingView ? self?.viewOnScreen : nil
+            let left = self?.place
+            // The home is not drawn between the switch and the view opening (`sessionStarted`).
+            if view != nil { self?.holdingViewThroughSwitch = true }
+            defer { if view != nil { self?.holdingViewThroughSwitch = false } }
+            let result = await body()
+            if let view, let left { await self?.stayInView(view, leaving: left) }
+            return result
         }
         operatorEnvironmentSwitch = Task { @MainActor in _ = await task.value }
         return await task.value
+    }
+
+    /// An environment switch made in a view is between its dispatch and that view opening in the
+    /// new place (`stayInView`): the screen is still a view, so the home is not drawn meanwhile.
+    var holdingViewThroughSwitch = false
+
+    /// Whose view is on screen: nil on the home (or with no project); else Main's or a workspace's.
+    enum ScreenView: Equatable { case main, workspace(String) }
+    var viewOnScreen: ScreenView? {
+        guard sessionStarted, !projectKey.isEmpty, let agent = currentAgent else { return nil }
+        return agent.workspace.map { .workspace($0.id) } ?? .main
+    }
+
+    /// After an environment switch made in `view`, the screen shows that view in the new place —
+    /// Main's as its **Open** does (`openMainView`), a workspace's on its newest live conversation
+    /// there, else a view slot moved into it. The workspace keeps its own environment (decision 28:
+    /// switching the screen's environment never moves a workspace). Nothing when the switch was
+    /// refused, or the place already shows that view.
+    private func stayInView(_ view: ScreenView, leaving left: Place) async {
+        guard place != left, place.organization == left.organization, place.project == left.project,
+              viewOnScreen != view else { return }
+        switch view {
+        case .main:
+            await openMainView()
+        case .workspace(let id):
+            guard let w = await workspaceRouter?.store.workspace(id), !w.archived else {
+                await openMainView()
+                return
+            }
+            if let latest = liveConversations(in: place).filter({ $0.workspace?.id == id })
+                .max(by: { $0.lastActivity < $1.lastActivity }) {
+                await switchToConversation(latest.id)
+                return
+            }
+            await openViewSlot(workspace: w)
+        }
     }
 
     /// The operator's environment switch in progress, if any (fix round 1, item 5).
@@ -2945,6 +3133,9 @@ public final class WindowModel {
         // describes the incoming environment now, so nothing is cleared and nothing re-run: the
         // canvas left keeps its rows and replies for the operator's return.
         await refreshContext()
+        if !environment.isEmpty, !projectKey.isEmpty {
+            environmentsLastUsed[Place(organization: organization, project: projectKey, environment: "")] = environment
+        }
         return true
     }
 
@@ -3058,6 +3249,34 @@ public final class WindowModel {
     /// The read follows the open rather than the pane asking for itself,
     /// because a pane drawn before its first read has nothing to draw and
     /// a momentarily empty settings pane reads as a broken one.
+    /// The project node Settings should show when it next draws, by registry key (the Ticket tab's
+    /// "Set it in Settings…"); the window takes it and clears it (`settingsProjectTaken`).
+    public private(set) var settingsProjectWanted: String?
+
+    /// Opens Settings at the active project's node, where its Jira project is set.
+    public func openProjectSettings() async {
+        guard !projectKey.isEmpty else { return }
+        settingsProjectWanted = projectKey
+        await openSettings()
+    }
+
+    public func settingsProjectTaken() {
+        settingsProjectWanted = nil
+        settingsProjectWantsRunning = false
+    }
+
+    /// The Running node `settingsProjectWanted` asks for, rather than the project's own (a home
+    /// card's **Set up running…**); taken with it.
+    public private(set) var settingsProjectWantsRunning = false
+
+    /// Opens Settings at `project`'s Running settings (a registry key): a home card's Set up running….
+    public func openRunningSettings(project: String) async {
+        guard !project.isEmpty else { return }
+        settingsProjectWanted = project
+        settingsProjectWantsRunning = true
+        await openSettings()
+    }
+
     public func openSettings() async {
         guard (try? await registry.dispatch(
             name: "settings_open", params: .object([:]), origin: .ui,
@@ -3253,9 +3472,11 @@ public final class WindowModel {
     /// 3a-iii-b: saves one project's agent instructions into its project.json — only the boxes
     /// passed. The re-read publishes the new text, which the agent receives in its next turn.
     public func saveProjectAgentInstructions(
-        projectPath: String, general: String? = nil, commits: String? = nil, pullRequests: String? = nil
+        projectPath: String, general: String? = nil, commits: String? = nil, pullRequests: String? = nil,
+        branches: String? = nil
     ) async -> String? {
         var params: [String: JSONValue] = ["projectPath": .string(projectPath)]
+        if let branches { params["branches"] = .string(branches) }
         if let general { params["general"] = .string(general) }
         if let commits { params["commits"] = .string(commits) }
         if let pullRequests { params["pullRequests"] = .string(pullRequests) }
@@ -3268,6 +3489,23 @@ public final class WindowModel {
         } catch {
             await refreshSettings()
             return statusDescribingFailure("ctx_set_project_agent_instructions", error)
+        }
+    }
+
+    /// Sets a project's Jira project from Settings (`ctx_set_project_pm_key`); the refusal whole, or
+    /// nil. The active project's context is read again, so its Ticket tab scopes by the new key.
+    public func saveProjectPMKey(projectPath: String, _ key: String) async -> String? {
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_project_pm_key",
+                params: .object(["projectPath": .string(projectPath), "projectKey": .string(key)]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            await refreshSettings()
+            await refreshContext()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_set_project_pm_key", error)
         }
     }
 
@@ -3305,6 +3543,8 @@ public final class WindowModel {
         case agentGeneral
         case gitCommitInstructions
         case gitPRInstructions
+        /// Workspaces (decision 10): how a workspace's branch is named.
+        case gitBranchInstructions
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -3318,7 +3558,7 @@ public final class WindowModel {
         public var savesOnLeave: Bool {
             switch self {
             case .displayName, .jiraBase, .defaultProvider,
-                 .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+                 .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions: return true
             case .speechProvider, .quickProvider, .pullStrategy: return false
             }
         }
@@ -3329,7 +3569,7 @@ public final class WindowModel {
         /// id, while the operator is still typing. Those save when left or on Return.
         public var savesWhileTyping: Bool {
             switch self {
-            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions: return true
             default: return false
             }
         }
@@ -3348,6 +3588,7 @@ public final class WindowModel {
             case .agentGeneral: return "General"
             case .gitCommitInstructions: return "Commits"
             case .gitPRInstructions: return "Pull requests"
+            case .gitBranchInstructions: return "Branches"
             }
         }
     }
@@ -4839,7 +5080,8 @@ public final class WindowModel {
         await mirrorEditorFiles()
         let reviews = await panes.editorReviews()
         if reviews != editorReviews { editorReviews = reviews }
-        let ticketView = await panes.editorTicketView()
+        var ticketView = await panes.editorTicketView()
+        ticketView.scope = ticketScope
         if ticketView != editorTicket { editorTicket = ticketView }
         // A read a write or ↻ started lands here too: the needs follow the store's last In flight.
         await mirrorTicketNeeds()
@@ -5758,6 +6000,47 @@ public final class WindowModel {
         let notes = [projects.note, sessions.note, providers.note].compactMap { $0 }
         if !notes.isEmpty { status = notes.joined(separator: "; ") }
         return PaletteItems.continueItems(sessions.items, excluding: liveSessionIds)
+    }
+
+    // MARK: Workspaces, piece 3: the home screen's controls, each one dispatch (Invariant 2)
+
+    /// A card, a project's Open, ⌘P's workspace row: `workspace_open`. `id` nil is Main's view of
+    /// `project` and `environment` (the screen's when nil).
+    public func openWorkspace(_ id: String?, project: String? = nil, environment: String? = nil) async {
+        var params: [String: JSONValue] = ["workspace": .string(id ?? "main")]
+        if let project { params["project"] = .string(project) }
+        if let environment { params["environment"] = .string(environment) }
+        await dispatchLayout("workspace_open", .object(params))
+    }
+
+    /// A card's New conversation here: `workspace_new_conversation`.
+    public func newConversation(inWorkspace id: String) async {
+        await dispatchLayout("workspace_new_conversation", .object(["workspace": .string(id)]))
+    }
+
+    /// A card's Archive (`workspace_archive`); `confirm` after the operator agreed (Rule 1). Answers
+    /// whether it ran; a refusal is in `status`, whole.
+    @discardableResult
+    public func archiveWorkspace(_ id: String, confirm: Bool) async -> Bool {
+        await dispatch("workspace_archive", .object(["workspace": .string(id), "confirm": .bool(confirm)])) != nil
+    }
+
+    /// Earlier's Restore (`workspace_restore`).
+    @discardableResult
+    public func restoreWorkspace(_ id: String) async -> Bool {
+        await dispatch("workspace_restore", .object(["workspace": .string(id)])) != nil
+    }
+
+    /// A card's Bring to Main… for one repo (`workspace_bring_home`).
+    @discardableResult
+    public func bringToMain(_ id: String, repo: String) async -> Bool {
+        await dispatch("workspace_bring_home", .object(["workspace": .string(id), "repo": .string(repo)])) != nil
+    }
+
+    /// A card's Move a conversation here… (`conversation_move`).
+    @discardableResult
+    public func moveConversation(_ conversation: String, toWorkspace id: String) async -> Bool {
+        await dispatch("conversation_move", .object(["conversation": .string(conversation), "workspace": .string(id)])) != nil
     }
 
     /// A Continue row: `session_resume` through the registry, origin `ui`, as ⌘P's session row
@@ -7113,6 +7396,8 @@ public final class WindowModel {
         paletteGeneration += 1
         let generation = paletteGeneration
         let identity = paletteIdentity
+        // Which ticket has a workspace, as the palette opens (decision 27): its row opens the view.
+        _ = await workspaceListings()
         let context = await paletteContext()
         // An older build finishing after a newer one must not leave its context behind.
         if generation == paletteGeneration {
@@ -7201,8 +7486,21 @@ public final class WindowModel {
     /// editor's own take is retried for up to a second while its web view joins the window.
     public internal(set) var composerHoldsKeyboardUntil: ContinuousClock.Instant?
     public var composerHoldsKeyboard: Bool {
-        composerHoldsKeyboardUntil.map { ContinuousClock.now < $0 } ?? false
+        if let until = composerHoldsKeyboardUntil, ContinuousClock.now < until { return true }
+        switch composerKeyboardPin {
+        case .opening: return true
+        case .on(let screen, let requests): return screen == screenKey && requests == keyboardFocusRequests
+        case nil: return false
+        }
     }
+
+    /// Rule 3, New conversation here: the screen it opened gives the composer the keyboard, and
+    /// a pane appearing there (the view's focused editor, its terminal) stands down — while the
+    /// view comes in (`opening`), then for as long as that screen is on and no pane is asked for
+    /// (a focus request moves `keyboardFocusRequests`). A state, not a timer: the e2e run found
+    /// the view's terminal drawing after the timer, and taking the keys.
+    enum ComposerKeyboardPin: Equatable { case opening, on(screen: String, focusRequests: Int) }
+    @ObservationIgnored var composerKeyboardPin: ComposerKeyboardPin?
 
     public func paletteKey(_ mode: PaletteMode) {
         paletteKeySerial += 1
@@ -7601,7 +7899,12 @@ public final class WindowModel {
         // Read now, on the main actor: the live set as the palette opens.
         let running = liveConversationRows()
         var sources: [any PaletteSource] = [
-            RunningConversationsSource(conversations: { running }),
+            // Workspaces, piece 3: grouped by workspace, Main of the screen's place a row always.
+            RunningConversationsSource(
+                conversations: { running },
+                workspaces: { [weak self] in await self?.runningWorkspaces() ?? [] },
+                main: projectKey.isEmpty ? nil : place,
+                mainIsProduction: environmentProduction.isProduction(environment)),
             OpenPanesSource(panes: { [weak self] in await self?.palettePaneSummaries() ?? [] }),
             NewPaneSource(),
         ]
@@ -7891,12 +8194,22 @@ public final class WindowModel {
     /// resumed. How many were dropped is reported rather than swallowed,
     /// for the same reason `SessionList.Skipped` exists on the Go side: an
     /// incomplete listing must say it is incomplete.
+    /// What `wakilcore.Resolve` answers a read that needs a project when none is active
+    /// (`internal/wakilcore/resolve.go`).
+    static let noActiveProjectRefusal = "no active project — run set_project first"
+
     private func sessionPaletteItems() async -> (items: [PaletteItem], note: String?) {
         // The organisation the listing is asked in, taken before it suspends: the sessions are that
         // organisation's, whatever the window has switched to by the time they arrive (Invariant 4).
         let org = organization
         let source = await paletteSource("session_list")
-        guard let structured = source.structured else { return ([], source.note) }
+        guard let structured = source.structured else {
+            // Workspaces, piece 3: with no project on the screen — an organisation's first-run home —
+            // the listing is refused for having none, which the home already explains. That refusal
+            // alone is not drawn; every other failure is, whole (Rule 8).
+            if project.isEmpty, source.note?.contains(Self.noActiveProjectRefusal) == true { return ([], nil) }
+            return ([], source.note)
+        }
         guard case .array(let rows)? = structured["sessions"] else {
             return ([], "session_list: the result carried no \"sessions\" array")
         }
@@ -7991,7 +8304,9 @@ public final class WindowModel {
             // Silent, as in `dispatch`: a palette closed while it loads cancels this.
             return (nil, nil)
         } catch {
-            return (nil, "\(action): \(error)")
+            // Once: a standard action's error already begins with its name (`session_list:
+            // session_list: …` was drawn on the home).
+            return (nil, statusDescribingFailure(action, error))
         }
     }
 
@@ -8297,7 +8612,9 @@ public final class WindowModel {
         in startPlace: Place, provider: String, sessionId: String, conversation: String
     ) async -> StartedSession? {
         guard !provider.isEmpty else {
-            status = "no agent session: no provider is active for this window yet"
+            // Said by `noActiveProviderNote`, once: the line under the composer, not here too.
+            sendNeededProvider = true
+            status = ""
             return nil
         }
         guard let credentials = await resolveCredentials(
@@ -8488,6 +8805,8 @@ public final class WindowModel {
         // its parent was first launched with (the 3a-iii-b probe), which may predate the current
         // text — so its first turn carries the text as an update.
         if !keepsInstructions { agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil }
+        // A new or resumed session is sent its map again on its first turn.
+        agent.sentWorkspaceMap = nil
         agent.launchedConnectionsRevision = started.connectionsRevision
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
@@ -8691,7 +9010,8 @@ public final class WindowModel {
             // on an unexpected `stop()`) without also clearing
             // `sessionId`: without this, `send` would silently become a
             // no-op instead of saying why.
-            if status.isEmpty {
+            // A send stopped for want of a provider is said by `noActiveProviderNote`, alone.
+            if status.isEmpty, noActiveProviderNote == nil {
                 status = "no agent session: nothing to send to"
             }
             return false
@@ -8745,7 +9065,18 @@ public final class WindowModel {
                 outgoing = update + "\n\n" + outgoing
                 agent.appendRow(label: "instructions", detail: "Instructions updated — the agent has the new ones from this turn.")
             }
+            // Workspaces, piece 1: where it works — its workspace's map, Main's with the project's
+            // workspaces — on its first turn and whenever it changed. After the words, as the
+            // identifier note is: the operator's words stay what a session is listed by.
+            if let map = await workspaceMapUpdate(for: agent) { outgoing += "\n\n" + map }
+            // Workspaces piece 4: the operator's message resets its workspace's wake budget and
+            // carries the conversation's queued messages at the head of its input.
+            let riding = await messagesRidingWithOperatorTurn(to: agent)
+            // Workspaces piece 5: the operator's message is new work; "nothing to do" was the last.
+            agent.nothingToDo = nil
+            if !riding.block.isEmpty { outgoing = riding.block + "\n\n" + outgoing }
             try await harness.send(outgoing)
+            messagesDelivered(riding.count, withOperatorTurnTo: agent)
             // After the send succeeded: a turn that never went leaves no
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
@@ -9580,19 +9911,28 @@ public final class WindowModel {
         updateTicketPoll()
     }
 
+    /// The chips the window draws (workspaces, piece 3): only another organisation's agents. The
+    /// screen's own organisation's are on its home, by workspace; a chip is how an agent elsewhere
+    /// still reaches the operator. Empty when none works there, so the resting state is unchanged.
+    public var chips: [AgentChip] {
+        let own = organization
+        return chipCandidates.filter { $0.place.organization != own }
+    }
+
     /// One chip per conversation not on screen that has something to show — in another place,
     /// or backgrounded in this one — ordered by organisation, project and environment, then by
     /// creation within a place (background agents 4 of 4; conversations 2 of 3). Each names its
-    /// conversation (`title`) and its rank among its place's live ones (`ordinal`, ruling 2).
-    /// Empty when no agent works elsewhere, so the window's resting state is unchanged.
-    public var chips: [AgentChip] {
+    /// conversation (`title`), its workspace (by its ticket key, else its name) and its rank among
+    /// its place's live ones (`ordinal`, ruling 2). `chips` keeps another organisation's.
+    var chipCandidates: [AgentChip] {
         let waiting = waitingConversations
         let shown = currentAgent
         var ordinals: [Place: Int] = [:]
         return liveConversations()
             .compactMap { agent -> AgentChip? in
                 ordinals[agent.place, default: 0] += 1
-                let waits = waiting.contains(agent.id)
+                // Workspaces piece 4: messages the budget did not let wake it wait for the operator.
+                let waits = waiting.contains(agent.id) || agent.messagesWaitingForYou > 0
                 guard agent !== shown, let state = AgentChip.state(
                     waiting: waits, failed: agent.unseenFailure,
                     working: agent.turnInFlight, done: agent.unseenResult)
@@ -9600,7 +9940,9 @@ public final class WindowModel {
                 return AgentChip(
                     place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
                     conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1],
-                    handoffNote: agent.handoffFailure)
+                    handoffNote: agent.handoffFailure,
+                    workspace: agent.workspace.map { $0.tickets.first ?? $0.name },
+                    messagesWaiting: agent.messagesWaitingForYou)
             }
             .sorted {
                 ($0.place.organization, $0.place.project, $0.place.environment, $0.ordinal)
@@ -9611,7 +9953,7 @@ public final class WindowModel {
     /// The conversations an agent's own proposal waits on. A conversation waits only on its own
     /// proposal; the operator's, parked in the same place, is not the agent asking for anything
     /// (final review, minor 1), nor is another conversation's.
-    private var waitingConversations: Set<String> {
+    var waitingConversations: Set<String> {
         Set(parkedSlots.filter { $0.value.origin == .agent }.keys.compactMap(\.conversation))
     }
 
@@ -9627,10 +9969,19 @@ public final class WindowModel {
                 LiveConversation(
                     id: agent.id, session: agent.sessionId, place: agent.place, title: agent.title,
                     titleSource: agent.titleSource, fallbackTitle: agent.fallbackTitle, state: .of(
-                        waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
-                        working: agent.turnInFlight, done: agent.unseenResult),
+                        waiting: waiting.contains(agent.id) || agent.messagesWaitingForYou > 0,
+                        failed: agent.unseenFailure, working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
-                    isProduction: agent.productionEnvironment, handoff: agent.handoff)
+                    isProduction: agent.productionEnvironment, handoff: agent.handoff,
+                    messagesWaiting: agent.messagesWaitingForYou)
+            }
+            .map { row in
+                // Workspaces piece 5: its proposals, and nothing to do (`session_list`).
+                var row = row
+                if let w = conversations[row.id]?.workspace { row.workspace = (w.id, w.name) }
+                row.proposals = teammateProposals.pending(from: row.id)
+                row.nothingToDo = conversations[row.id]?.nothingToDo
+                return row
             }
     }
 
@@ -9655,6 +10006,162 @@ public final class WindowModel {
         let target = conversation.map { self.conversation(id: $0) } ?? currentAgent
         guard let target, screenConversations[target.place] == target.id else { return }
         await showLanding(in: target.place)
+    }
+
+    /// Workspaces, piece 1 (decision 28): workspace `w`'s environment changed from `old`, so its
+    /// view's data panes — database and api — leave the view in `old` for the view in the new one,
+    /// frame and subject as they were, and their rows and replies, which describe `old`, are let go.
+    /// Each subject re-runs in the new environment when that view is shown (now, if it is on
+    /// screen). The running conversations keep `old` and the view's other panes (Decision 41's pin).
+    func workspaceDataPanesFollow(_ w: Workspace, from old: String) async {
+        guard old != w.environment, !organization.isEmpty else { return }
+        let root = workspaceCanvasRoot(w)
+        let from = LayoutScope(organization: organization, project: w.project, environment: old, lineageRoot: root)
+        let to = LayoutScope(organization: organization, project: w.project, environment: w.environment, lineageRoot: root)
+        await loadOffScreen(from)
+        await loadOffScreen(to)
+        loadedLayoutScopes.formUnion([from, to])
+        let data = await ScopeRouting.$home.withValue(from) { await layout.snapshot() }.panes.filter {
+            PaneKinds.is($0.kind, DataSurfacePaneKind.self) || PaneKinds.is($0.kind, ApiPaneKind.self)
+        }
+        guard !data.isEmpty else { return }
+        for pane in data {
+            await ScopeRouting.$home.withValue(from) {
+                try? await layout.close(id: pane.id)
+                await panes.drop(paneId: pane.id)
+            }
+            _ = await ScopeRouting.$home.withValue(to) { await layout.carry(pane) }
+        }
+        for scope in [from, to] where scope != layoutScope {
+            await persistLayout(await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }, for: scope)
+        }
+        if to == layoutScope {
+            await readLayoutSnapshot()
+            await restorePaneContents()
+        } else {
+            scopesAwaitingRestore.insert(to)
+        }
+        await refreshLayout()
+        await refreshPanes()
+    }
+
+    /// Workspaces, piece 1 (decision 22, call 9): the terminals step 0 carried into workspace `w`'s
+    /// view `view` stay in Main's view (`mainViewScope`) — each shell, history and frame as it was; a
+    /// new terminal in the copy takes each one's place in the view, at its path in the copy (else the
+    /// view's first copy).
+    func leaveTerminalsInMain(_ ids: [String], of place: Place, view: LayoutScope, into w: Workspace) async {
+        guard !ids.isEmpty else { return }
+        let main = mainViewScope(of: place)
+        // Its saved arrangement first, so a later read off disk does not put the terminals away.
+        await loadOffScreen(main)
+        loadedLayoutScopes.insert(main)
+        let shown = await ScopeRouting.$home.withValue(view) { await layout.snapshot() }
+        for id in ids {
+            let was = shown.panes.first { $0.id == id }?.terminalPath
+            let path = was.flatMap { workspacePath($0, in: w) } ?? activeShellContext.rootPath
+            let left = await ScopeRouting.$home.withValue(view) {
+                await layout.leave(id: id, for: main, replacedWith: path, title: terminalPaneTitle(forPath: path))
+            }
+            guard let fresh = left else { continue }
+            await panes.moveContents(paneId: id, from: view, to: main)
+            await terminals.rehome(from: view, to: main, only: [id])
+            _ = await dispatchLayout("term_open", .object(["pane": .string(fresh.id), "path": .string(path)]))
+        }
+        await refreshLayout()
+    }
+
+    // MARK: - Workspaces, piece 3: views and the home screen's doors
+
+    /// Opens a workspace's view (decision 22, `workspace_open`). `workspace` nil is Main's view of
+    /// `place` (nil, the screen's): the place's conversation slot with no turn when one is live, else
+    /// a fresh one over the project's canvas — panes, and no agent until the operator types. A
+    /// workspace opens on its most recent live conversation, else its view with none.
+    public func openWorkspaceView(_ workspace: String?, in place: Place? = nil) async {
+        guard let workspace else {
+            let target = place ?? self.place
+            await goTo(target)
+            guard self.place.project == target.project else { return }
+            await openMainView()
+            return
+        }
+        guard let w = await workspaceRouter?.store.workspace(workspace) else {
+            status = "workspace_open: there is no workspace \(workspace)"
+            return
+        }
+        if let latest = liveConversations().filter({ $0.workspace?.id == w.id }).max(by: { $0.lastActivity < $1.lastActivity }) {
+            await switchToConversation(latest.id)
+            return
+        }
+        await goTo(Place(organization: organization, project: w.project, environment: w.environment))
+        guard self.place.project == w.project else { return }
+        await openViewSlot(workspace: w)
+    }
+
+    /// Main's view of the screen's place: its newest view slot — a pane opened on the home makes
+    /// another over the home's canvas, and the door goes back to the panes as the operator left them
+    /// (decision 23) — else a fresh one over the place's canvas.
+    private func openMainView() async {
+        if let slot = liveConversations(in: place).last(where: { $0.workspace == nil && $0.isViewSlot }) {
+            await switchToConversation(slot.id)
+            return
+        }
+        await openViewSlot(workspace: nil)
+    }
+
+    /// Main's view of `place` (piece 3): the canvas of its live view slot — what the project's
+    /// **Open** goes back to — else the canvas the home reserves for `place`'s next conversation,
+    /// which Open adopts when it opens the view (`openViewSlot`).
+    func mainViewScope(of place: Place) -> LayoutScope {
+        if let slot = liveConversations(in: place).last(where: { $0.workspace == nil && $0.isViewSlot }),
+           let scope = slot.layoutScope {
+            return scope
+        }
+        let reserved = reservedConversations[place] ?? UUID().uuidString
+        reservedConversations[place] = reserved
+        return LayoutScope(organization: place.organization, project: place.project,
+                           environment: place.environment, lineageRoot: reserved)
+    }
+
+    /// New conversation here (`workspace_new_conversation`): a fresh conversation in `workspace`'s
+    /// view, the composer focused (Rule 3).
+    public func newConversationHere(_ workspace: String) async {
+        guard let w = await workspaceRouter?.store.workspace(workspace) else {
+            status = "workspace_new_conversation: there is no workspace \(workspace)"
+            return
+        }
+        await goTo(Place(organization: organization, project: w.project, environment: w.environment))
+        guard self.place.project == w.project else { return }
+        await openViewSlot(workspace: w)
+    }
+
+    /// A conversation with no turn, on screen, in Main's view (`w` nil: the project's canvas, as the
+    /// Landing draws over) or moved into `w`'s view. What is on screen goes to the background first,
+    /// untouched; the composer takes the keyboard.
+    private func openViewSlot(workspace w: Workspace?) async {
+        // **Main's canvas stays Main's** (decision 22, call 9). The id the home reserves for Main's
+        // next conversation files the canvas step 0 left Main's terminals on (`mainViewScope`); a
+        // conversation created under it was rooted there and, moved into `w`'s view, took that
+        // canvas out of Main's reach — Open came back without the shells (e2e, 2026-10-31). One
+        // started in a workspace is minted under an id of its own, over a canvas of its own, and
+        // Main's reservation is put back once it is in the view.
+        let mainsNext = w == nil ? nil : reservedConversations[place]
+        if w != nil {
+            reservedConversations[place] = UUID().uuidString
+            if screenConversations[place] == nil, landingBaselines[place] == nil { landingBaselines[place] = [] }
+        }
+        defer { if let mainsNext { reservedConversations[place] = mainsNext } }
+        if screenConversations[place] != nil { await showLanding(in: place) }
+        composerFocusForced = true
+        defer { composerFocusForced = false }
+        // Rule 3: the composer keeps the keyboard while the view comes in and after — a pane there
+        // (its focused editor, its terminal) stands down until one is asked for.
+        composerKeyboardPin = .opening
+        defer { composerKeyboardPin = .on(screen: screenKey, focusRequests: keyboardFocusRequests) }
+        await enterConversation()
+        guard let w, let agent = currentAgent, let router = workspaceRouter else { return }
+        await router.store.move(agent.id, root: agent.lineageRoot, to: w.id)
+        try? await router.store.save()
+        await workspaceViewFollows(agent.id, from: w, to: w)
     }
 
     /// The Landing path (`newConversation`, and a close that leaves its place none live): `place`
@@ -9717,7 +10224,9 @@ public final class WindowModel {
         // back if `goTo` stops short and nothing has replaced it meanwhile.
         screenConversations[target.place] = target.id
         if target.place != self.place {
-            await goTo(target.place)
+            // Its place exactly: a conversation started with no environment chosen lives there, and
+            // only an exact switch reaches it from one with an environment (piece 3 walk).
+            await goTo(target.place, exactEnvironment: true)
             guard self.place == target.place else {
                 if screenConversations[target.place] == target.id { screenConversations[target.place] = previous }
                 return
@@ -9737,7 +10246,14 @@ public final class WindowModel {
     public private(set) var closeQuestion: CloseConversationQuestion?
     /// The conversations `endConversation` is ending now: a second close of one is ignored
     /// (Rule 5), as is a second close while one is asked about.
-    @ObservationIgnored private var closing: Set<String> = []
+    @ObservationIgnored var closing: Set<String> = []
+    /// Workspaces piece 4: the wake budgets and each organisation's Agents woken by messages
+    /// (`WindowModel+Messages.swift`).
+    @ObservationIgnored let messageState = ConversationMessageState()
+    /// Workspaces piece 5: the teammates agents proposed, waiting for the operator's Start or
+    /// Dismiss, and the dismissals (`WindowModel+Crews.swift`). Kept across an org switch, as the
+    /// conversations that made them are.
+    public internal(set) var teammateProposals = TeammateProposals()
 
     /// Ends `conversation` — nil, the one on screen — as Close Conversation does: its agent stops,
     /// its panes close as on quit, and it moves to Continue; its place then shows its next live
@@ -9829,6 +10345,10 @@ public final class WindowModel {
         }
         conversations[agent.id] = nil
         conversationOrder.removeAll { $0 == agent.id }
+        // Workspaces, piece 1: a closed conversation holds nothing; its record keeps it as last holder.
+        await workspaceRouter?.store.release(agent.id)
+        // Workspaces piece 5: its proposals go with it — there is no one left to start beside.
+        teammateProposals.drop(from: agent.id)
         // 3c-ii: the sites it allowed die with it, and no other conversation's.
         await panes.browserForget(conversation: agent.id)
         if shown, placeRemoved {
@@ -9849,6 +10369,8 @@ public final class WindowModel {
         retainAgentPlace()
         // Ticket noticing: its hand-off ends with it.
         if agent.handoff != nil { await endHandOff(of: agent) }
+        // Workspaces, piece 2: a drafting conversation closed drafts nothing more.
+        if let key = recipeDraftBook.key(ofConversation: agent.id) { recipeDraftBook.end(key) }
         onConversationClosed?(agent.id)
     }
 
@@ -9951,6 +10473,10 @@ public final class WindowModel {
         let now = screenKey
         guard let told = toldScreenKey, told != now else { return }
         toldScreenKey = now
+        // New conversation here's hold is its screen's: another screen's panes are not held.
+        if case .on(let screen, _) = composerKeyboardPin, screen != now { composerKeyboardPin = nil }
+        // *Start in* is the home's, for the send typed there: another screen pre-sets it again.
+        homeStartIn = nil
         if isSameScreenRenamed(from: told, to: now) {
             onScreenChange?(told, now, false)
             return
@@ -9982,7 +10508,7 @@ public final class WindowModel {
     /// Each switch lands somewhere first — an org switch on that org's remembered place, a
     /// project switch on its first environment — and none of those has been seen: only the place
     /// the screen ends on, the target or wherever a refusal stopped it, loses its unseen marks.
-    public func goTo(_ target: Place) async {
+    public func goTo(_ target: Place, exactEnvironment: Bool = false) async {
         goTosInFlight += 1
         defer {
             goTosInFlight -= 1
@@ -9995,10 +10521,36 @@ public final class WindowModel {
         if !target.project.isEmpty, target.project != projectKey {
             guard await setProject(target.project) else { return }
         }
-        if !target.environment.isEmpty, target.environment != environment {
-            _ = await setEnvironment(target.environment)
+        if !target.environment.isEmpty || exactEnvironment, target.environment != environment {
+            _ = await setEnvironment(target.environment, keepingView: false)
+        } else if !exactEnvironment, organization == target.organization,
+                  target.project.isEmpty || target.project == projectKey {
+            await chooseEnvironmentOnEntry()
         }
     }
+
+    /// Entering a project never leaves it with no environment chosen while it declares any (piece 3
+    /// walk; Invariant 8): the one last used there, else the first declared that is not production
+    /// (`environmentOnEntry`). Read only when there is something to decide — none chosen, or another
+    /// remembered — and a listing that cannot be read changes nothing, `status` included.
+    private func chooseEnvironmentOnEntry() async {
+        guard !projectKey.isEmpty else { return }
+        let remembered = environmentsLastUsed[Place(organization: organization, project: projectKey, environment: "")]
+        guard environment.isEmpty || (remembered != nil && remembered != environment) else { return }
+        let before = status
+        let declared = await listEnvironments()
+        guard !declared.isEmpty else {
+            status = before
+            return
+        }
+        if let chosen = environmentOnEntry(declared: declared, current: environment, remembered: remembered) {
+            _ = await setEnvironment(chosen, keepingView: false)
+        }
+    }
+
+    /// The environment last used in each project (`Place` with no environment), this launch: what a
+    /// door into the project lands on (`chooseEnvironmentOnEntry`).
+    @ObservationIgnored private var environmentsLastUsed: [Place: String] = [:]
 
     /// The `goTo`s still between switches — a count, as a second click can start one before the
     /// first ends — so a place one lands on may be one it is only passing through.
@@ -10052,7 +10604,9 @@ public final class WindowModel {
     ///
     /// Per place (`PlaceAgent.sessionStarted`): a place where no work has begun draws its
     /// Landing, whatever has begun elsewhere.
-    public var sessionStarted: Bool { currentAgent?.sessionStarted ?? false }
+    /// An environment switch made in a view holds it (`holdingViewThroughSwitch`): the home is
+    /// never drawn on its way to that view in the new environment.
+    public var sessionStarted: Bool { holdingViewThroughSwitch || (currentAgent?.sessionStarted ?? false) }
 
     /// The id Wakil has assigned to this window's session, whether or not the
     /// agent has been started with it yet.
@@ -10881,6 +11435,15 @@ public final class WindowModel {
             markUnseen(failed: isError, for: agent)
             // A handed agent's turn ending may have pushed or drafted: its ticket is read again.
             if agent.handoff != nil { Task { [weak self] in await self?.handOffTurnEnded(agent) } }
+            // Workspaces, piece 2: a drafting conversation that answered without a proposal says so.
+            recipeDraftBook.turnEnded(conversation: agent.id)
+            // Item 8: the operator's message queued while it worked goes now, with any messages held;
+            // else (piece 4) messages that came while it worked wake it, within the budget.
+            if !agent.queuedTurns.isEmpty {
+                Task { [weak self] in await self?.deliverQueuedTurn(agent) }
+            } else if !agent.pendingMessages.isEmpty {
+                Task { [weak self] in await self?.wakeForMessages(agent) }
+            }
         }
         // Names: the first clean exchange — its reply's start, then the one ask.
         switch event {

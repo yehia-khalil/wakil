@@ -28,6 +28,8 @@ public enum SettingsNode: Hashable, Sendable {
     case browser
     case keyboard
     case projectEditor(String)
+    /// Workspaces, piece 2: a project's Running settings.
+    case projectRunning(String)
     case project(String)
     case environment(project: String, environment: String)
     case databases(project: String, environment: String)
@@ -54,6 +56,7 @@ public enum SettingsNode: Hashable, Sendable {
         case .editor, .projectEditor: return "Editor"
         case .browser: return "Browser"
         case .keyboard: return "Keyboard"
+        case .projectRunning: return "Running"
         case .project(let name): return name
         case .environment(_, let environment): return environment
         case .databases: return "Databases"
@@ -79,6 +82,7 @@ public enum SettingsNode: Hashable, Sendable {
         case .browser: return "browser"
         case .keyboard: return "keyboard"
         case .projectEditor(let name): return "projectEditor.\(name)"
+        case .projectRunning(let name): return "projectRunning.\(name)"
         case .project(let name): return "project.\(name)"
         case .environment(let project, let environment):
             return "environment.\(project).\(environment)"
@@ -95,6 +99,7 @@ public enum SettingsNode: Hashable, Sendable {
         switch self {
         case .project(old): return .project(new)
         case .projectEditor(old): return .projectEditor(new)
+        case .projectRunning(old): return .projectRunning(new)
         case .environment(old, let e): return .environment(project: new, environment: e)
         case .databases(old, let e): return .databases(project: new, environment: e)
         case .api(old, let e): return .api(project: new, environment: e)
@@ -123,6 +128,8 @@ public enum SettingsNode: Hashable, Sendable {
             return ["Wakil", label]
         case .projectEditor(let name):
             return [organisation, "Projects", name, "Editor"]
+        case .projectRunning(let name):
+            return [organisation, "Projects", name, "Running"]
         case .project(let name):
             return [organisation, "Projects", name]
         case .environment(let project, let environment):

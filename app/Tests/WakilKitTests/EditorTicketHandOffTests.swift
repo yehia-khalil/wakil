@@ -26,11 +26,63 @@ private actor FakeHandOff {
         return "c9"
     }
 
+    var crews: [[TicketHandOffRequest]] = []
+    /// A crew start holds at this member (after it was admitted) until Cancel or `release`.
+    var crewPark: Int?
+    func setCrewPark(_ i: Int?) { crewPark = i }
+    /// One per repo: each member is admitted (reserved) before it starts, as the window's is; a
+    /// member not admitted, or one Cancel ended, stops the crew.
+    func crew(_ rs: [TicketHandOffRequest], admit: (@Sendable (String) async -> Bool)?) async throws -> [String] {
+        crews.append(rs)
+        var ids: [String] = []
+        for i in rs.indices {
+            let id = "crew-\(i)"
+            if let admit, !(await admit(id)) { throw TicketHandOffError(description: "the hand-off was cancelled before it started") }
+            if crewPark == i { await withCheckedContinuation { parked = $0 } }
+            if wasCancelled { throw TicketHandOffError(description: "the hand-off was cancelled before it started") }
+            ids.append(id)
+        }
+        return ids
+    }
+
     func cancel(_ id: String) {
         cancelled.append(id)
         wasCancelled = true
         release()
     }
+
+    // Item 8: Send to, and a queued send's Cancel.
+    var sends: [(conversation: String, text: String)] = []
+    var sendReply: TicketHandOffSent = .sent
+    var sendFails: String?
+    var unqueued: [(String, String)] = []
+    func setSendReply(_ r: TicketHandOffSent) { sendReply = r }
+    func setSendFails(_ text: String?) { sendFails = text }
+    func send(_ conversation: String, _ text: String) throws -> TicketHandOffSent {
+        if let sendFails { throw TicketHandOffError(description: sendFails) }
+        sends.append((conversation, text))
+        return sendReply
+    }
+    func unqueue(_ conversation: String, _ id: String) -> Bool {
+        unqueued.append((conversation, id))
+        return true
+    }
+}
+
+/// The window's live handed conversations, as `TicketHandOffContext.carriers` lists them (item 8).
+private final class CarrierBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: [TicketHandOffCarrier] = []
+    var carriers: [TicketHandOffCarrier] {
+        get { lock.withLock { list } }
+        set { lock.withLock { list = newValue } }
+    }
+}
+
+private func carrier(_ id: String, _ title: String, key: String? = "INI-142", pr: Int? = nil, root: String = "/p/api",
+                     ago: TimeInterval = 0, working: Bool = false) -> TicketHandOffCarrier {
+    TicketHandOffCarrier(conversation: id, title: title, key: key, pr: pr, root: root,
+                         lastActive: Date(timeIntervalSince1970: 1_000_000 - ago), working: working)
 }
 
 private let screen = Place(organization: "initech", project: "api", environment: "local")
@@ -40,6 +92,7 @@ private struct HandOffFixture {
     let ticket: FakeTicket
     let store: EditorTicketStore
     let handOff: FakeHandOff
+    let carriers: CarrierBox
 
     @discardableResult
     func dispatch(_ name: String, _ params: [String: JSONValue] = [:], origin: ActionOrigin = .ui) async throws -> JSONValue {
@@ -90,13 +143,17 @@ private func handOffFixture(defaults: JSONValue? = nil) async throws -> HandOffF
     let store = EditorTicketStore(ticket: ticket)
     let fake = FakeHandOff()
     let lookup = TicketHandOffLookup()
+    let box = CarrierBox()
     lookup.use(start: { r, reserved in try await fake.start(r, reserved: reserved) }, cancel: { await fake.cancel($0) })
+    lookup.use(crew: { rs, admit in try await fake.crew(rs, admit: admit) })
+    lookup.use(send: { c, text in try await fake.send(c, text) }, unqueue: { c, id in await fake.unqueue(c, id) })
     lookup.use(context: {
         TicketHandOffContext(screen: screen, provider: "initech-work",
                              providers: [TicketHandOffProvider(id: "initech-work"), TicketHandOffProvider(id: "initech-spare")],
                              environments: ["api": [TicketHandOffEnvironment(name: "local", production: false)],
                                             "umbrella": [TicketHandOffEnvironment(name: "production", production: true),
-                                                         TicketHandOffEnvironment(name: "staging", production: false)]])
+                                                         TicketHandOffEnvironment(name: "staging", production: false)]],
+                             carriers: box.carriers)
     })
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
                                 gitStatus: status, roots: { roots }, ticket: store, organization: { "initech" },
@@ -104,7 +161,7 @@ private func handOffFixture(defaults: JSONValue? = nil) async throws -> HandOffF
     _ = try await store.read(root: "/p/api")
     _ = try await store.inFlight()
     let editor = EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane, git: git, status: status)
-    return HandOffFixture(editor: editor, ticket: ticket, store: store, handOff: fake)
+    return HandOffFixture(editor: editor, ticket: ticket, store: store, handOff: fake, carriers: box)
 }
 
 private func comment(_ author: String, _ body: String) -> ReviewCommentState {
@@ -1019,5 +1076,242 @@ private func quotedBlock(_ brief: String) -> [String] {
         let one = ticketHandOffFold([e("6", "2026-10-29T10:00:00Z")], live: ["c-6": .failed])
         #expect(one.shown.map(\.id) == ["6"])
         #expect(one.earlierLine == nil)
+    }
+
+    // MARK: Agents: one / one per repo (workspaces piece 5)
+
+    @Test func crewReposListTheProjectsReposThoseTheTicketTouchesTicked() {
+        #expect(handOffCrewRepos(roots: ["/p/api"], subject: "/p/api", touched: []).isEmpty, "one repo: no choice")
+        let repos = handOffCrewRepos(roots: ["/p/api", "/p/web", "/p/core"], subject: "/p/api", touched: ["/p/core"])
+        #expect(repos.map(\.ticked) == [true, false, true])
+        #expect(repos.map(\.name) == ["api", "web", "core"])
+    }
+
+    /// Decision 7 and piece 1's amendment: a folder that is not a git repository stays read-only for
+    /// agents, so one per repo never offers it; with one repository left there is no choice at all.
+    @Test func crewReposLeaveOutARootThatIsNotAGitRepository() {
+        let repos = handOffCrewRepos(roots: ["/p", "/p/api", "/p/portal"], subject: "/p/api", touched: [],
+                                     notRepositories: ["/p"])
+        #expect(repos.map(\.name) == ["api", "portal"])
+        #expect(repos.map(\.ticked) == [true, false])
+        #expect(handOffCrewRepos(roots: ["/p", "/p/api"], subject: "/p/api", touched: [], notRepositories: ["/p"]).isEmpty,
+                "one repository left: one per repo is one")
+    }
+
+    @Test func thePopoverOffersOneAgentByDefaultAndTheTicketsReposTicked() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        let s = try await f.state()
+        #expect(s.agents == .one, "one by default (Rule 9)")
+        #expect(s.crewRepos == [TicketHandOffCrewRepo(root: "/p/api", ticked: true),
+                                TicketHandOffCrewRepo(root: "/p/web", ticked: false)])
+        #expect(s.startParams["agents"] == nil, "one agent starts as before")
+    }
+
+    @Test func onlyTheOperatorChoosesAgentsAndRepos() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        let before = try await f.state()
+        for (field, value) in [("agents", JSONValue.string("perRepo")), ("repos", .array([.string("/p/web")]))] {
+            await #expect {
+                try await f.dispatch("ticket_hand_off_brief", [field: value], origin: .agent)
+            } throws: { "\($0)".contains("only the operator sets \(field)") }
+            #expect(try await f.state() == before)
+        }
+        await #expect { try await f.dispatch("ticket_hand_off_brief", ["agents": .string("many")]) } throws: {
+            "\($0)".contains("agents is one or perRepo")
+        }
+    }
+
+    @Test func onePerRepoStartsOneHandedAgentPerTickedRepo() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"),
+                                                       "repos": .array([.string("/p/api"), .string("/p/web")])])
+        let s = try await f.state()
+        #expect(s.crewRoots == ["/p/api", "/p/web"])
+        #expect(s.startParams["agents"] == .string("perRepo"))
+        let r = try await f.start()
+        #expect(r == .object(["conversations": .array([.string("crew-0"), .string("crew-1")])]))
+        let crews = await f.handOff.crews
+        let crew = try #require(crews.first)
+        #expect(crew.map(\.root) == ["/p/api", "/p/web"])
+        #expect(crew.allSatisfy { $0.key == "INI-142" })
+        #expect(crew[0].branch == "ini-142-login" && crew[0].pr == 212)
+        #expect(crew[1].pr == nil, "the PR is the subject repo's")
+        #expect(crew.allSatisfy { $0.brief.contains(handOffAddedByWakil) })
+        #expect(await f.handOff.requests.isEmpty, "no single start")
+        #expect(await f.store.handOff() == nil, "the popover closes after a Start")
+    }
+
+    /// Rule 4: Cancel while one per repo starts withdraws the whole start — every member it started
+    /// so far ends, none after starts — and the popover stays, its brief and repos kept.
+    @Test(.timeLimit(.minutes(1))) func cancelEndsAOnePerRepoStartAndStartsNoMore() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"),
+                                                       "repos": .array([.string("/p/api"), .string("/p/web")])])
+        let before = try await f.state()
+        await f.handOff.setCrewPark(1)
+        let params = before.startParams
+        let start = Task { try await f.dispatch("ticket_hand_off", params) }
+        while await f.store.handOff()?.conversation != "crew-1" { await Task.yield() }
+        #expect(try await f.state().starting)
+        try await f.dispatch("ticket_hand_off_cancel")
+        #expect(await f.handOff.cancelled == ["crew-0", "crew-1"], "both members it started end")
+        let reply = try await start.value
+        #expect(reply == .object(["cancelled": .bool(true)]))
+        let s = try await f.state()
+        #expect(!s.starting && s.error == nil && s.conversation == nil)
+        #expect(s.brief == before.brief && s.agents == .perRepo && s.crewRoots == ["/p/api", "/p/web"])
+    }
+
+    /// A Cancel that lands before a member is reserved: that member is not admitted, so it never
+    /// starts, and the ones before it end.
+    @Test(.timeLimit(.minutes(1))) func aMemberAfterCancelIsNotAdmitted() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"),
+                                                       "repos": .array([.string("/p/api"), .string("/p/web")])])
+        let token = await f.store.beginHandOffStart()
+        #expect(await f.store.reserveHandOff("crew-0", token: token))
+        #expect(await f.store.cancelHandOffStart() == ["crew-0"])
+        #expect(!(await f.store.reserveHandOff("crew-1", token: token)), "a member after Cancel is refused")
+        #expect(await f.store.finishHandOffStart(token, error: "cancelled") == .cancelled)
+    }
+
+    @Test func onePerRepoWithNoRepoTickedStartsNothing() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo"), "repos": .array([])])
+        await #expect { _ = try await f.start() } throws: { "\($0)".contains("no repo ticked") }
+        #expect(await f.handOff.crews.isEmpty)
+    }
+
+    // MARK: Send to, and Start another (item 8, 2026-10-30)
+
+    @Test func carriersAreTheSubjectsLiveConversationsMostRecentFirst() {
+        let all = [carrier("c1", "INI-142 · Work toward Next.", ago: 60), carrier("c2", "INI-142 · Fix it", ago: 5),
+                   carrier("c3", "INI-150 · Other", key: "INI-150"),
+                   carrier("c4", "#212 · api", key: nil, pr: 212), carrier("c5", "#212 · web", key: nil, pr: 212, root: "/p/web")]
+        #expect(handOffCarriers(all, key: "INI-142", pr: 212, root: "/p/api").map(\.conversation) == ["c2", "c1"])
+        #expect(handOffCarriers(all, key: nil, pr: 212, root: "/p/api").map(\.conversation) == ["c4"],
+                "a keyless PR's, at its root")
+        #expect(handOffCarriers(all, key: "INI-999", pr: nil, root: "/p/api").isEmpty)
+    }
+
+    @Test func startAnotherIsNumberedPastEveryCarrier() {
+        #expect(handOffAnotherNumber([carrier("c1", "INI-142 · Work")]) == 2)
+        #expect(handOffAnotherNumber([carrier("c1", "INI-142 · Work"), carrier("c2", "INI-142 · Work #2")]) == 3)
+        #expect(handOffAnotherNumber([carrier("c1", "INI-142 · Other #5")]) == 6)
+        #expect(handOffNumberedTitle("INI-142 · Work toward Next.", number: 2) == "INI-142 · Work toward Next. #2")
+        #expect(handOffNumberedTitle("INI-142 · Work", number: nil) == "INI-142 · Work")
+    }
+
+    @Test func aCarriedTicketOffersSendToItsMostRecentConversationAndStartAnother() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work toward Next.", ago: 60), carrier("c2", "INI-142 · Fix it", ago: 5)]
+        try await f.openFromThread()
+        let s = try await f.state()
+        #expect(s.offersSend)
+        #expect(s.sendTarget?.conversation == "c2", "the most recently active is named")
+        #expect(s.sendLabel == "Send to “INI-142 · Fix it”")
+        #expect(s.startLabel == "Start another")
+        #expect(s.carriers.map(\.conversation) == ["c2", "c1"], "the ▾ lists them all")
+        guard case .object(let j) = s.json else { Issue.record("no json"); return }
+        #expect(j["sendTo"] == .string("c2"))
+        #expect(j["carriers"] == .array([.object(["conversation": .string("c2"), "title": .string("INI-142 · Fix it")]),
+                                         .object(["conversation": .string("c1"), "title": .string("INI-142 · Work toward Next.")])]))
+        // With none carrying it, Start as before.
+        f.carriers.carriers = []
+        try await f.dispatch("ticket_hand_off_close")
+        try await f.openFromThread()
+        let none = try await f.state()
+        #expect(!none.offersSend && none.startLabel == "Start" && none.sendTarget == nil)
+    }
+
+    @Test func onePerRepoOffersOnlyStart() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work")]
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["agents": .string("perRepo")])
+        let s = try await f.state()
+        #expect(!s.offersSend && s.sendTarget == nil && s.startLabel == "Start")
+    }
+
+    @Test func pickingAnotherConversationIsTheOperators() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work", ago: 60), carrier("c2", "INI-142 · Fix it", ago: 5)]
+        try await f.openFromThread()
+        await #expect { try await f.dispatch("ticket_hand_off_brief", ["sendTo": .string("c1")], origin: .agent) } throws: {
+            "\($0)".contains("only the operator sets sendTo")
+        }
+        try await f.dispatch("ticket_hand_off_brief", ["sendTo": .string("c1")])
+        #expect(try await f.state().sendTarget?.conversation == "c1")
+        await #expect { try await f.dispatch("ticket_hand_off_brief", ["sendTo": .string("c7")]) } throws: {
+            "\($0)".contains("no live conversation carries")
+        }
+    }
+
+    /// Send to: the popover's brief, edited, goes as the operator's own message to that
+    /// conversation — no record appended, no conversation_message — and the popover closes, the
+    /// brief kept (Rule 2). The screen is the window's to keep (Rule 6).
+    @Test func sendToSendsTheBriefAsTheOperatorsMessageAndCloses() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work")]
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["brief": .string("Also answer the second thread.")])
+        let s = try await f.state()
+        let reply = try await f.dispatch("ticket_hand_off_send", s.sendParams)
+        #expect(reply == .object(["conversation": .string("c1"), "queued": .bool(false)]))
+        let sent = try #require(await f.handOff.sends.first)
+        #expect(sent.conversation == "c1" && sent.text == "Also answer the second thread.")
+        #expect(await f.handOff.requests.isEmpty, "nothing new started")
+        #expect(await f.store.handOff() == nil)
+        try await f.openFromThread()
+        #expect(try await f.state().brief == "Also answer the second thread.")
+    }
+
+    @Test func sendToAWorkingConversationSaysItIsQueued() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work", working: true)]
+        await f.handOff.setSendReply(.queued(id: "q1"))
+        try await f.openFromThread()
+        let reply = try await f.dispatch("ticket_hand_off_send", try await f.state().sendParams)
+        #expect(reply == .object(["conversation": .string("c1"), "queued": .bool(true), "queuedId": .string("q1")]))
+        // Its Cancel takes it back (Rule 4): the operator's only.
+        await #expect {
+            try await f.dispatch("conversation_queued_cancel", ["conversation": .string("c1"), "id": .string("q1")], origin: .agent)
+        } throws: { _ in true }
+        _ = try await f.dispatch("conversation_queued_cancel", ["conversation": .string("c1"), "id": .string("q1")])
+        #expect(await f.handOff.unqueued.map(\.1) == ["q1"])
+    }
+
+    @Test func sendToIsTheOperatorsAndAFailureStaysInThePopover() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work")]
+        try await f.openFromThread()
+        let params = try await f.state().sendParams
+        await #expect { try await f.dispatch("ticket_hand_off_send", params, origin: .agent) } throws: { _ in true }
+        #expect(await f.handOff.sends.isEmpty)
+        await f.handOff.setSendFails("‘INI-142 · Work’ is no longer live; nothing was sent")
+        await #expect { try await f.dispatch("ticket_hand_off_send", params) } throws: { "\($0)".contains("no longer live") }
+        let s = try await f.state()
+        #expect(s.error == "‘INI-142 · Work’ is no longer live; nothing was sent" && !s.sending)
+    }
+
+    /// Start another: a new conversation numbered past every one carrying the ticket, marked to
+    /// branch off in the most recently active one's workspace — read at the press, so a second
+    /// popover never starts a second "#2".
+    @Test func startAnotherIsNumberedAndBranchesOffTheMostRecentCarrier() async throws {
+        let f = try await handOffFixture()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work toward Next.", ago: 60)]
+        try await f.openFromThread()
+        f.carriers.carriers = [carrier("c1", "INI-142 · Work toward Next.", ago: 60), carrier("c2", "INI-142 · Work toward Next. #2")]
+        _ = try await f.start()
+        let r = try #require(await f.handOff.requests.first)
+        #expect(r.number == 3)
+        #expect(r.branchOffFrom == "c2")
+        #expect(r.numberedTitle == r.title + " #3")
     }
 }

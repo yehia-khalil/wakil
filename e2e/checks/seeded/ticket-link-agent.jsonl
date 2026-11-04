@@ -6,7 +6,10 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.project:e2e-git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"git -C ../e2e-api checkout -q feature-login && git -C ../e2e-api branch --show-current"}}
 {"do":{"press":"Return"}}

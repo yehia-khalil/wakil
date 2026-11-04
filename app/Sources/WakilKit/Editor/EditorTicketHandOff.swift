@@ -41,11 +41,14 @@ public struct TicketHandOffContext: Sendable, Equatable {
     public var providers: [TicketHandOffProvider]
     public var environments: [String: [TicketHandOffEnvironment]]
     public var remembered: [String: String]
+    /// Item 8: the window's live handed conversations; the popover keeps those carrying its subject.
+    public var carriers: [TicketHandOffCarrier]
 
     public init(screen: Place, provider: String, providers: [TicketHandOffProvider] = [],
-                environments: [String: [TicketHandOffEnvironment]] = [:], remembered: [String: String] = [:]) {
+                environments: [String: [TicketHandOffEnvironment]] = [:], remembered: [String: String] = [:],
+                carriers: [TicketHandOffCarrier] = []) {
         self.screen = screen; self.provider = provider; self.providers = providers
-        self.environments = environments; self.remembered = remembered
+        self.environments = environments; self.remembered = remembered; self.carriers = carriers
     }
 }
 
@@ -79,6 +82,18 @@ public struct TicketHandOffState: Sendable, Equatable {
     public var titleLine: String
     /// Which open of a subject this is: a field typed for one never starts another (`startParams`).
     public var opened: Int
+    /// Workspaces piece 5: one agent, or one per ticked repo of `crewRepos` (empty for a project with
+    /// one repo, when the choice is not drawn).
+    public var agents: TicketHandOffAgents = .one
+    public var crewRepos: [TicketHandOffCrewRepo] = []
+    /// Item 8: the live conversations carrying the subject, most recently active first, and the one
+    /// **Send to** names (nil: the first). `sending` while a Send is in flight (Rule 5).
+    public var carriers: [TicketHandOffCarrier] = []
+    public var sendTo: String?
+    public var sending = false
+
+    /// The repos one per repo starts in: the ticked ones, in order.
+    public var crewRoots: [String] { crewRepos.filter(\.ticked).map(\.root) }
 
     public init(key: String?, pr: Int? = nil, repo: String? = nil, source: TicketHandOffSource, brief: String,
                 harness: String, provider: String, mayPush: Bool, place: Place, production: Bool = false,
@@ -127,8 +142,35 @@ public struct TicketHandOffState: Sendable, Equatable {
         ("\(place.organization) · \(place.project)", place.environment)
     }
 
-    /// Start's label: `Starting…` while a start runs (Rule 5).
-    public var startLabel: String { starting ? "Starting…" : "Start" }
+    /// Start's label: `Starting…` while a start runs (Rule 5); **Start another** beside Send to.
+    public var startLabel: String { starting ? "Starting…" : offersSend ? "Start another" : "Start" }
+
+    /// Item 8: a live conversation carries the subject, so **Send to** is the primary choice and
+    /// **Start another** the second — not with one per repo, which offers Start alone.
+    public var offersSend: Bool { agents != .perRepo && !carriers.isEmpty }
+
+    /// The conversation Send to sends to: the one picked, else the most recently active.
+    public var sendTarget: TicketHandOffCarrier? {
+        guard offersSend else { return nil }
+        return carriers.first { $0.conversation == sendTo } ?? carriers.first
+    }
+
+    /// `Send to “INI-142 · Work toward Next.”`, its title whole; `Sending…` while it goes (Rule 5).
+    public var sendLabel: String {
+        if sending { return "Sending…" }
+        return sendTarget.map { "Send to “\($0.title)”" } ?? ""
+    }
+
+    /// The params Send to dispatches (`ticket_hand_off_send`): the popover's subject and open, the
+    /// conversation, and the brief as shown.
+    public var sendParams: [String: JSONValue] {
+        var p: [String: JSONValue] = ["brief": .string(brief), "key": key.map { .string($0) } ?? .null,
+                                      "opened": .integer(Int64(opened))]
+        if let c = sendTarget?.conversation { p["conversation"] = .string(c) }
+        if let pr { p["pr"] = .integer(Int64(pr)) }
+        if let thread { p["thread"] = .string(thread) }
+        return p
+    }
 
     /// The params Start dispatches: exactly what the popover shows (F11, F2) — never re-read.
     public var startParams: [String: JSONValue] {
@@ -143,6 +185,10 @@ public struct TicketHandOffState: Sendable, Equatable {
         if let repo { p["repo"] = .string(repo) }
         if let thread { p["thread"] = .string(thread) }
         p["opened"] = .integer(Int64(opened))
+        if agents == .perRepo {
+            p["agents"] = .string(agents.rawValue)
+            p["repos"] = .array(crewRoots.map { .string($0) })
+        }
         return p
     }
 
@@ -163,13 +209,72 @@ public struct TicketHandOffState: Sendable, Equatable {
         var o: [String: JSONValue] = [
             "open": .bool(true), "source": .string(thread == nil ? "header" : "thread"),
             "key": key.map { .string($0) } ?? .null, "harness": .string(harness), "provider": .string(provider),
-            "mayPush": .bool(mayPush), "starting": .bool(starting),
+            "mayPush": .bool(mayPush), "starting": .bool(starting), "agents": .string(agents.rawValue),
         ]
+        if !crewRepos.isEmpty {
+            o["repos"] = .array(crewRepos.map { .object(["root": .string($0.root), "ticked": .bool($0.ticked)]) })
+        }
         if let thread { o["thread"] = .string(thread) }
         if let pr { o["pr"] = .integer(Int64(pr)) }
         if let error { o["error"] = .string(error) }
+        if !carriers.isEmpty {
+            o["carriers"] = .array(carriers.map { .object(["conversation": .string($0.conversation), "title": .string($0.title)]) })
+        }
+        if let c = sendTarget?.conversation { o["sendTo"] = .string(c) }
+        if sending { o["sending"] = .bool(true) }
         return .object(o)
     }
+}
+
+// MARK: - Send to and Start another (item 8, 2026-10-30)
+
+/// A live handed conversation, as the popover offers it for **Send to**: its id and title, what it
+/// was handed (key, else a keyless PR at its root), when it was last active, and whether it works.
+public struct TicketHandOffCarrier: Sendable, Equatable, Hashable {
+    public let conversation, title: String
+    public let key: String?
+    public let pr: Int?
+    public let root: String
+    public let lastActive: Date
+    public let working: Bool
+
+    public init(conversation: String, title: String, key: String?, pr: Int?, root: String, lastActive: Date, working: Bool) {
+        self.conversation = conversation; self.title = title; self.key = key; self.pr = pr; self.root = root
+        self.lastActive = lastActive; self.working = working
+    }
+}
+
+/// The conversations carrying a subject: the ticket `key`'s, else a keyless PR's at `root`; most
+/// recently active first.
+public func handOffCarriers(_ all: [TicketHandOffCarrier], key: String?, pr: Int?, root: String) -> [TicketHandOffCarrier] {
+    all.filter { c in
+        if let key { return c.key == key }
+        return c.key == nil && pr != nil && c.pr == pr && (c.root.isEmpty || c.root == root)
+    }.sorted { $0.lastActive > $1.lastActive }
+}
+
+/// Start another's number: one past every carrier's (a title with no ` #n` is the first).
+public func handOffAnotherNumber(_ carriers: [TicketHandOffCarrier]) -> Int {
+    carriers.map { handOffTitleNumber($0.title) ?? 1 }.max().map { $0 + 1 } ?? 2
+}
+
+/// A title's trailing ` #n`, when it has one.
+func handOffTitleNumber(_ title: String) -> Int? {
+    guard let hash = title.range(of: " #", options: .backwards),
+          let n = Int(title[hash.upperBound...]), n > 1 else { return nil }
+    return n
+}
+
+/// `INI-142 · Work toward Next. #2`; the title as it is with no number.
+public func handOffNumberedTitle(_ title: String, number: Int?) -> String {
+    number.map { "\(title) #\($0)" } ?? title
+}
+
+/// How a Send to went: sent now (an idle conversation's turn began), or queued until the turn it is
+/// in ends — `id` names it for its Cancel.
+public enum TicketHandOffSent: Sendable, Equatable {
+    case sent
+    case queued(id: String)
 }
 
 /// Where a brief is kept for the window's life (Rule 2): by the key or PR, and the thread or header.
@@ -588,9 +693,19 @@ public struct TicketHandOffRequest: Sendable, Equatable {
     /// The conversation's title and the hand-off's: `INI-142 · <the operator's first line>`
     /// (`handOffChipTitle`); the brief's first line when none is given.
     public let title: String
+    /// Item 8, Start another: its number (`<title> #2`), and the conversation carrying the subject
+    /// whose workspace it starts in, marked to branch off at its first write.
+    public var number: Int?
+    public var branchOffFrom: String?
+
+    /// The title with its number: what the conversation and the hand-off are named.
+    public var numberedTitle: String { handOffNumberedTitle(title, number: number) }
 
     public init(key: String?, pr: Int?, thread: String?, brief: String, harness: String, provider: String,
-                place: Place, root: String, branch: String, mayPush: Bool, repo: String? = nil, title: String? = nil) {
+                place: Place, root: String, branch: String, mayPush: Bool, repo: String? = nil, title: String? = nil,
+                number: Int? = nil, branchOffFrom: String? = nil) {
+        self.number = number
+        self.branchOffFrom = branchOffFrom
         self.title = title ?? String(brief.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
         self.key = key
         self.pr = pr
@@ -674,6 +789,84 @@ public final class TicketHandOffLookup: @unchecked Sendable {
         defer { lock.unlock() }
         return (startSource, cancelSource)
     }
+
+    /// Workspaces piece 5: one per repo — the window starts one handed conversation per request in
+    /// the ticket's workspace (`WindowModel.startCrew`), and returns their ids. `admit` hears each
+    /// member's id before its first message goes: false (Cancel landed) ends it and stops the crew.
+    public typealias Crew = @Sendable ([TicketHandOffRequest], (@Sendable (String) async -> Bool)?) async throws -> [String]
+    private var crewSource: Crew?
+
+    public func use(crew: @escaping Crew) {
+        lock.lock()
+        crewSource = crew
+        lock.unlock()
+    }
+
+    private func installedCrew() -> Crew? {
+        lock.lock()
+        defer { lock.unlock() }
+        return crewSource
+    }
+
+    /// Item 8: Send to — the operator's own message to a live handed conversation — and a queued
+    /// one's Cancel.
+    public typealias Send = @Sendable (_ conversation: String, _ text: String) async throws -> TicketHandOffSent
+    public typealias Unqueue = @Sendable (_ conversation: String, _ id: String) async -> Bool
+    private var sendSource: Send?
+    private var unqueueSource: Unqueue?
+
+    public func use(send: @escaping Send, unqueue: @escaping Unqueue) {
+        lock.lock()
+        sendSource = send
+        unqueueSource = unqueue
+        lock.unlock()
+    }
+
+    private func installedSend() -> (Send?, Unqueue?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (sendSource, unqueueSource)
+    }
+
+    public func send(_ conversation: String, text: String) async throws -> TicketHandOffSent {
+        guard let send = installedSend().0 else { throw TicketHandOffError(description: "no window to send in") }
+        return try await send(conversation, text)
+    }
+
+    /// Takes back a queued Send to; false when it already went or is gone.
+    public func unqueue(_ conversation: String, id: String) async -> Bool {
+        await installedSend().1?(conversation, id) ?? false
+    }
+
+    public func startCrew(_ requests: [TicketHandOffRequest],
+                          admit: (@Sendable (String) async -> Bool)? = nil) async throws -> [String] {
+        guard let crew = installedCrew() else { throw TicketHandOffError(description: "no window to start the crew in") }
+        return try await crew(requests, admit)
+    }
+}
+
+// MARK: - Agents: one / one per repo (workspaces piece 5)
+
+/// How many agents a Start starts (decision 17): one — the default (Rule 9) — or one per ticked repo.
+public enum TicketHandOffAgents: String, Sendable, Equatable { case one, perRepo }
+
+/// One repo the popover offers for one per repo: Main's folder, its name, and whether it is ticked.
+public struct TicketHandOffCrewRepo: Sendable, Equatable, Hashable {
+    public let root: String
+    public var ticked: Bool
+    public init(root: String, ticked: Bool) { self.root = root; self.ticked = ticked }
+    public var name: String { (root as NSString).lastPathComponent }
+}
+
+/// The repos one per repo offers: every root of the project that is a git repository, in order; the
+/// subject's repo and each repo the ticket's branches and PRs touch (`touched`) pre-ticked. A root in
+/// `notRepositories` is left out: an agent never writes there (decision 7; piece 1's amendment). None
+/// when the project has one repository: one per repo is then one.
+public func handOffCrewRepos(roots: [String], subject: String, touched: Set<String>,
+                             notRepositories: Set<String> = []) -> [TicketHandOffCrewRepo] {
+    let repos = roots.filter { !notRepositories.contains($0) }
+    guard repos.count > 1 else { return [] }
+    return repos.map { TicketHandOffCrewRepo(root: $0, ticked: $0 == subject || touched.contains($0)) }
 }
 
 // MARK: - The hand-off at work (walk 2026-10-28)

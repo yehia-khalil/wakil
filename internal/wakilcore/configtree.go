@@ -34,6 +34,9 @@ type ConfigTreeOrg struct {
 	AgentGeneral          string `json:"agentGeneral"`
 	GitCommitInstructions string `json:"gitCommitInstructions"`
 	GitPRInstructions     string `json:"gitPRInstructions"`
+	GitBranchInstructions string `json:"gitBranchInstructions"`
+	// MessageWakes is Agents woken by messages, the default (8) filled in (workspaces piece 4).
+	MessageWakes int `json:"messageWakes"`
 	// Connections: the organisation's own MCP servers (no secrets), and whether the Jira token
 	// (jira:<org>) is in the Keychain — presence only.
 	Connections     []ConfigTreeConnection `json:"connections"`
@@ -354,6 +357,8 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	tree.Org.AgentGeneral = record.AgentGeneral
 	tree.Org.GitCommitInstructions = record.GitCommitInstructions
 	tree.Org.GitPRInstructions = record.GitPRInstructions
+	tree.Org.GitBranchInstructions = record.GitBranchInstructions
+	tree.Org.MessageWakes = resolvedMessageWakes(record.MessageWakes)
 	tree.Org.Connections = configTreeConnections(org, record.Connections)
 	if p, err := SecretPresenceFor(org, jiraTokenRef(org)); err == nil {
 		tree.Org.JiraTokenStored = p.Present

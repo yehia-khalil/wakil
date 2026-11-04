@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/workspaces-run-refusals.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "3f14005aefcc46aa81b03df35f56324075f37678"
+}

@@ -32,11 +32,20 @@ public final class PlaceAgent {
     /// Why the hand-off could not be recorded, carried or read, whole (Rule 8): on its chip and in
     /// its thread. Nil when nothing went wrong.
     public internal(set) var handoffFailure: String?
+    /// Workspaces piece 5: the repo (Main's folder) it was started for as a crew member or a
+    /// proposed teammate; nil for any other.
+    public internal(set) var crewRepo: String?
+    /// Workspaces piece 5: its words after `conversation_nothing_to_do` ("done · nothing to do in
+    /// web"), until the operator's next message.
+    public internal(set) var nothingToDo: String?
     /// The live session's harness, or nil before the first turn.
     var harness: AgentHarness?
     /// 3a-iii-b: the composed instructions this session last received — at launch, or in a turn
     /// since. nil until the session's first turn records it.
     var launchedInstructions: String?
+    /// Workspaces, piece 1: the map (`workspaceMapText`) this session last received; nil before its
+    /// first turn, so that turn carries it.
+    var sentWorkspaceMap: String?
     /// The organisation's connections revision (`AgentConnectionsBox.revision`) the live session
     /// launched at; nil before one. Behind the box's means a connection changed since: the next
     /// message restarts the agent (spec amendment 2026-10-26, `WindowModel.send`).
@@ -138,8 +147,21 @@ public final class PlaceAgent {
     public internal(set) var sessionEnded = false
     /// Bumped before a harness is stopped, so the pump drops what the old stream still buffers.
     var eventPumpGeneration = 0
-    /// The conversation this place is in: what its arrangement is filed under.
+    /// The conversation this place is in: what its arrangement is filed under — unless it works in
+    /// a workspace (`workspace`), whose view is filed under the workspace instead.
     public internal(set) var lineageRoot: String?
+    /// Workspaces, piece 1: the workspace this conversation is in, as the write rule last moved it
+    /// (nil: Main). Its canvas is the workspace's view, shared by every conversation in it, so
+    /// switching between them swaps only the thread (decision 22).
+    public internal(set) var workspace: Workspace?
+    /// What its canvas is filed under: the workspace's view key, else its own lineage root.
+    public var canvasRoot: String? { workspace.map { workspaceCanvasRoot($0) } ?? lineageRoot }
+    /// A view with no agent (workspaces, piece 3): opened for its panes, nothing typed yet, no session.
+    public var isViewSlot: Bool { harness == nil && sessionId == nil && firstMessage == nil }
+    /// Whether it has had a turn — a message of the operator's or a hand-off's, or a thread it
+    /// resumed. The home lists only these (piece 3 walk: a session started with no turn drew an
+    /// idle "New conversation" in Main).
+    public var hasTurn: Bool { firstMessage != nil || !thoughts.isEmpty }
     /// The conversation id minted for this place's work, before or with its first session.
     public internal(set) var assignedSessionId: String? {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
@@ -206,7 +228,7 @@ public final class PlaceAgent {
         guard !place.project.isEmpty else { return nil }
         return LayoutScope(
             organization: place.organization, project: place.project,
-            environment: place.environment, lineageRoot: lineageRoot)
+            environment: place.environment, lineageRoot: canvasRoot)
     }
 
     /// A `send`: the first one names the conversation from the typed text.
@@ -231,6 +253,26 @@ public final class PlaceAgent {
         let waiters = startWaiters ?? []
         startWaiters = nil
         for waiter in waiters { waiter.resume() }
+    }
+
+    /// Workspaces piece 4: messages from other conversations not yet in its agent's input, oldest
+    /// first. Delivered together at its next input: an operator message, or a message-woken turn.
+    public internal(set) var pendingMessages: [ConversationMessage] = []
+    /// The messages it holds for the operator: those queued while it is not working — the wake
+    /// budget is spent, or its session cannot take a turn now. 0 while it works (they ride its next
+    /// input) or holds none.
+    public var messagesWaitingForYou: Int { turnInFlight ? 0 : pendingMessages.count }
+
+    /// Item 8: the operator's own messages (a Send to) that came while it was in a turn, oldest
+    /// first: each goes as its own turn when the one before ends; each can be taken back until then.
+    public internal(set) var queuedTurns: [QueuedTurn] = []
+
+    /// A message row (workspaces piece 4): `header` ("To ‘…’" / "From ‘…’ · …") over the text.
+    func appendMessageRow(_ direction: ThoughtRow.MessageDirection, header: String, text: String) {
+        thoughts.append(ThoughtRow(
+            id: nextThoughtId, label: "message", detail: header + "\n" + text, isError: false, message: direction))
+        nextThoughtId += 1
+        lastActivity = Date()
     }
 
     /// Appends one row under the next id.

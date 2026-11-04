@@ -113,6 +113,10 @@ public struct LayoutPersistence: Sendable {
         // `activateLayout` makes when it refuses to resurrect an emptied
         // canvas on the way back in.
         guard !snapshot.panes.isEmpty else { return }
+        // **The seed is Main's** (workspaces, decision 22). A workspace's view holds terminals whose
+        // shells run in its copy and editor tabs on its copy's files: as Main's next canvas it drew
+        // a terminal with no shell and refused to restore those files (e2e, 2026-10-31).
+        guard !scope.isWorkspaceView else { return }
         try write(snapshot, to: fileURL(for: scope.projectSeed))
     }
 

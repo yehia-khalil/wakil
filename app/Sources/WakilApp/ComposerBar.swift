@@ -9,6 +9,12 @@ struct ComposerBar: View {
     let composer: ComposerModel
     /// Esc that listening did not consume goes here (the thread's fold).
     let onEscapeUnconsumed: () -> Bool
+    /// What the empty field says; on the home screen, where a send goes (decision 19).
+    var placeholder: String = "Ask, or name what to open"
+    /// On the home screen: the *Start in* picker, before the hints (workspaces, piece 3).
+    var startIn: AnyView? = nil
+    /// On the home screen (amendment 2026-10-30): the keys hint keeps only ⌥ to speak.
+    var onHome: Bool = false
 
     @State private var host: NSWindow?
 
@@ -17,10 +23,13 @@ struct ComposerBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 12) {
+            // The field shrinks first; *Start in* and the hint keep their whole words, beside it
+            // while they fit and on a line of their own under it when not (piece 3 walk: the hint
+            // was cut at the window's edge). Nothing is cut.
+            ComposerRow(spacing: 12, fieldMinWidth: 160) {
                 RoundedRectangle(cornerRadius: 1).fill(violet).frame(width: 1.5, height: 18)
                 content
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let startIn { startIn }
                 hint
             }
             receiptRow
@@ -53,7 +62,7 @@ struct ComposerBar: View {
                 .allowsHitTesting(!listening)
                 .accessibilityHidden(listening)
             if !listening && composer.draft.isEmpty {
-                Text("Ask, or name what to open")
+                Text(placeholder)
                     .font(.system(size: 14))
                     .foregroundStyle(coolWhite.opacity(0.32))
                     .allowsHitTesting(false)
@@ -107,18 +116,17 @@ struct ComposerBar: View {
     private var hint: some View {
         let text: String
         switch composer.bar {
-        case .draft(let h), .hearing(_, _, _, _, let h), .notice(_, _, let h): text = h
+        case .draft(let h), .hearing(_, _, _, _, let h), .notice(_, _, let h): text = onHome ? ComposerBarContent.onHome(h) : h
         }
         let landed = text == ComposerBarContent.landedHint
         return Text(text.uppercased())
             .font(.system(size: 9, weight: .medium))
             .tracking(1.7)
             .foregroundStyle(landed ? violet.opacity(0.85) : coolWhite.opacity(0.50))
-            // Whole, never cut: one line when it fits (the usual case), else it wraps at word
-            // breaks and the field gives way — a rebound chord can be long.
+            // Whole, never cut: a rebound chord can be long, so it wraps at word breaks; the
+            // field gives way first and ComposerRow puts the hint under it when it must.
             .multilineTextAlignment(.trailing)
             .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(1)
             .accessibilityIdentifier("window.composer.hint")
     }
 
@@ -230,6 +238,89 @@ struct ComposerBar: View {
         hold.flags = []
         hold.spoiled = false
         composer.resigned()
+    }
+}
+
+/// The composer's row: the accent, the field, then the trailing items (*Start in*, the hint). The
+/// trailing items take their ideal widths and the field the rest, down to `fieldMinWidth`; narrower
+/// than that, the trailing items go on a second line under the field, right-aligned, each given the
+/// whole width so its words wrap whole rather than be cut.
+struct ComposerRow: Layout {
+    var spacing: CGFloat
+    var fieldMinWidth: CGFloat
+
+    private struct Plan {
+        var oneLine: Bool
+        var fieldWidth: CGFloat
+        var trailing: [CGSize]
+        var size: CGSize
+    }
+
+    private func plan(_ width: CGFloat?, _ subviews: Subviews) -> Plan {
+        guard subviews.count >= 2 else { return Plan(oneLine: true, fieldWidth: 0, trailing: [], size: .zero) }
+        let accent = subviews[0].sizeThatFits(.unspecified)
+        let rest = subviews.dropFirst(2)
+        let ideal = rest.map { $0.sizeThatFits(.unspecified) }
+        let trailingWidth = ideal.reduce(0) { $0 + $1.width } + spacing * CGFloat(ideal.count)
+        let total = width ?? (accent.width + spacing + 400 + trailingWidth)
+        let fieldRoom = total - accent.width - spacing - trailingWidth
+        if fieldRoom >= fieldMinWidth || ideal.isEmpty {
+            let fieldWidth = max(fieldRoom, 0)
+            let field = subviews[1].sizeThatFits(ProposedViewSize(width: fieldWidth, height: nil))
+            let height = ([accent.height, field.height] + ideal.map(\.height)).max() ?? 0
+            return Plan(oneLine: true, fieldWidth: fieldWidth, trailing: ideal, size: CGSize(width: total, height: height))
+        }
+        let fieldWidth = max(total - accent.width - spacing, 0)
+        let field = subviews[1].sizeThatFits(ProposedViewSize(width: fieldWidth, height: nil))
+        let fitted = rest.map { $0.sizeThatFits(ProposedViewSize(width: total, height: nil)) }
+        // The trailing items share the second line while they fit, else each takes a line.
+        let line = fitted.reduce(0) { $0 + $1.width } + spacing * CGFloat(max(fitted.count - 1, 0))
+        let below = line <= total
+            ? (fitted.map(\.height).max() ?? 0)
+            : fitted.reduce(0) { $0 + $1.height } + 4 * CGFloat(max(fitted.count - 1, 0))
+        let height = max(accent.height, field.height) + 4 + below
+        return Plan(oneLine: false, fieldWidth: fieldWidth, trailing: fitted, size: CGSize(width: total, height: height))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        plan(proposal.width, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count >= 2 else { return }
+        let p = plan(bounds.width, subviews)
+        let accent = subviews[0].sizeThatFits(.unspecified)
+        let field = subviews[1].sizeThatFits(ProposedViewSize(width: p.fieldWidth, height: nil))
+        let rest = Array(subviews.dropFirst(2))
+        let firstLine = p.oneLine ? p.size.height : max(accent.height, field.height)
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY + firstLine / 2), anchor: .leading,
+                          proposal: ProposedViewSize(accent))
+        let fieldX = bounds.minX + accent.width + spacing
+        subviews[1].place(at: CGPoint(x: fieldX, y: bounds.minY + firstLine / 2), anchor: .leading,
+                          proposal: ProposedViewSize(width: p.fieldWidth, height: field.height))
+        if p.oneLine {
+            var x = fieldX + p.fieldWidth + spacing
+            for (view, size) in zip(rest, p.trailing) {
+                view.place(at: CGPoint(x: x, y: bounds.minY + firstLine / 2), anchor: .leading, proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            return
+        }
+        let line = p.trailing.reduce(0) { $0 + $1.width } + spacing * CGFloat(max(p.trailing.count - 1, 0))
+        var y = bounds.minY + firstLine + 4
+        if line <= bounds.width {
+            var x = bounds.maxX - line
+            let h = p.trailing.map(\.height).max() ?? 0
+            for (view, size) in zip(rest, p.trailing) {
+                view.place(at: CGPoint(x: x, y: y + h / 2), anchor: .leading, proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+        } else {
+            for (view, size) in zip(rest, p.trailing) {
+                view.place(at: CGPoint(x: bounds.maxX, y: y), anchor: .topTrailing, proposal: ProposedViewSize(size))
+                y += size.height + 4
+            }
+        }
     }
 }
 

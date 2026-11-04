@@ -238,8 +238,8 @@ struct ConversationKeyTests {
         let proposal = agentProposal(in: placeA, conversation: idA)
         let parked = Task { await w.confirmations.request(proposal) }
 
-        #expect(await waitUntil { model.chips.first?.state == .waiting })
-        #expect(model.chips.first?.conversation == idA)
+        #expect(await waitUntil { model.chipCandidates.first?.state == .waiting })
+        #expect(model.chipCandidates.first?.conversation == idA)
         #expect(model.parkedSlots[ProposalSlot(place: placeA, conversation: idA)]?.id == proposal.id)
         #expect(model.pending == nil, "B's plane shows nothing of A's")
         await w.confirmations.cancel(id: proposal.id)

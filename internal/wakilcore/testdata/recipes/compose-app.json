@@ -1,0 +1,57 @@
+{
+  "repo": "compose-app",
+  "kind": "compose",
+  "recipe": {
+    "ports": {
+      "WEB_PORT": "$WAKIL_PORT"
+    },
+    "services": [
+      "docker compose up -d redis"
+    ],
+    "setup": [
+      "docker compose build web"
+    ],
+    "processes": [
+      {
+        "name": "web",
+        "command": "docker compose up web"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "teardown": [
+      "docker compose down"
+    ],
+    "notes": {
+      "ports.WEB_PORT": "docker-compose.yml publishes web's port from $WEB_PORT, so nothing in it is rewritten",
+      "processes.web": "docker-compose.yml: service web builds the app",
+      "ready": "the app's published port",
+      "services": "docker-compose.yml: services with an image and no build",
+      "setup": "docker-compose.yml: the app's images are built in setup, not under the ready timeout",
+      "teardown": "docker-compose.yml"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "compose": {
+    "file": "docker-compose.yml",
+    "services": [
+      "redis"
+    ],
+    "appServices": [
+      "web"
+    ],
+    "variables": [
+      {
+        "service": "web",
+        "variable": "WEB_PORT"
+      }
+    ],
+    "fixedPorts": [],
+    "containerNames": []
+  },
+  "questions": []
+}

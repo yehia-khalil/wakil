@@ -1,0 +1,40 @@
+{
+  "repo": "monorepo-pnpm-turbo",
+  "kind": "node-pnpm",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "pnpm install"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "pnpm dev"
+      }
+    ],
+    "build": "pnpm build",
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "build": "package.json script build",
+      "clone": "package.json",
+      "ports.PORT": "most Node servers read PORT",
+      "processes.dev": "package.json script dev",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "pnpm-lock.yaml"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": [
+    "monorepo-pnpm-turbo is a workspace of 2 apps (apps/api, apps/web) run together by pnpm dev; each needs its own port. Give each app its own process on $WAKIL_PORT, $WAKIL_PORT_1 … (its dev script with the port), or say which one serves."
+  ]
+}

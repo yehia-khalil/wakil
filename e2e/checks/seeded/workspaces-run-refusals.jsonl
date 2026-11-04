@@ -1,0 +1,13 @@
+{"dispatch":{"action":"workspace_run","params":{"repo":"e2e-project"},"refuses":"you are in Main, where nothing runs"}}
+{"dispatch":{"action":"workspace_stop","params":{},"refuses":"you are in Main, where nothing runs"}}
+{"dispatch":{"action":"workspace_build","params":{"repo":"e2e-project"},"refuses":"you are in Main, where nothing runs"}}
+{"dispatch":{"action":"workspace_running","params":{},"refuses":"you are in Main, where nothing runs"}}
+{"dispatch":{"action":"running_save","params":{"repos":{}},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"running_try","params":{"repo":"e2e-project","root":"/x","project":"e2e-project"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"running_try_end","params":{"workspace":"nope"},"refuses":"nope is not a Try workspace"}}
+{"dispatch":{"action":"running_read","params":{}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_read\""}}}
+{"dispatch":{"action":"running_detect","params":{"repo":"e2e-project"}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_detect\""}}}
+{"dispatch":{"action":"running_draft_all","params":{"repos":["e2e-project"]}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_draft_all\""}}}

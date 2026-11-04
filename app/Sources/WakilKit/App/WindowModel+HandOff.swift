@@ -12,15 +12,53 @@ extension WindowModel {
     /// conversation and throws the window's status, whole. Then the hand-off is recorded
     /// (`ticket_handoff_write` `add`); a record that fails leaves the conversation running, handed
     /// with May push off, and says why on its chip and in its thread. Returns its id.
-    public func startHandOff(_ r: TicketHandOffRequest, reserved: ((String) -> Void)? = nil) async throws -> String {
+    ///
+    /// Workspaces piece 5: `workspace` puts it in a crew's workspace before its first message, so
+    /// its first write makes a copy there; `crewRepo` is the repo it was started for; `admit` (one
+    /// per repo) hears its id before its first message — false (a Cancel landed) ends it unsent.
+    public func startHandOff(_ r: TicketHandOffRequest, reserved: ((String) -> Void)? = nil,
+                             admit: (@Sendable (String) async -> Bool)? = nil,
+                             workspace: String? = nil, crewRepo: String? = nil) async throws -> String {
         let agent = backgroundAgent(in: r.place, providerId: r.provider)
         agent.handoff = PlaceAgentHandoff(key: r.key, pr: r.pr, thread: r.thread, root: r.root, branch: r.branch, mayPush: r.mayPush)
+        agent.crewRepo = crewRepo
+        if let workspace { await workspaceRouter?.join(agent.id, workspace: workspace) }
         // The chip reads well: `INI-142 · <the operator's first line>`, not the whole brief
         // (conversations call 6; walk 2026-10-28) — the first message's slot. The model never names
         // a handed conversation: its ticket names it. The operator's own name still wins (names).
-        agent.messageTitle = conversationTitle(r.title)
+        // Item 8, Start another: `<title> #2`, its number never cut by the title's length.
+        agent.messageTitle = conversationTitle(r.title) + (r.number.map { " #\($0)" } ?? "")
         agent.namingAsked = true
+        // …in the workspace of the conversation carrying the ticket, holding no copy, marked to
+        // branch off at its first write (never taking that one's copy over). In Main, it is as any.
+        var branchOffIn: String?
+        if workspace == nil, let from = r.branchOffFrom, let carrier = conversation(id: from),
+           let id = await workspaceRouter?.store.workspaceId(ofConversation: from, root: carrier.lineageRoot) {
+            branchOffIn = id
+            await workspaceRouter?.join(agent.id, workspace: id, branchOff: true)
+        }
+        // Start on a ticket (the umbrella, decisions 8 and 17): in that ticket's workspace, made if
+        // missing — a record only, each copy coming at its first write — not in Main. A hand-off
+        // with no ticket key (a PR's) stays in Main, as any conversation there.
+        var workspace = workspace
+        if workspace == nil, branchOffIn == nil, let key = r.key, !key.isEmpty, let router = workspaceRouter {
+            // Named by the brief's first line, the key kept apart: the card draws the key before it.
+            var name = r.title
+            if name.hasPrefix(key) {
+                name = String(name.dropFirst(key.count)).trimmingCharacters(in: .whitespaces)
+                if name.hasPrefix("·") { name = String(name.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            }
+            let w = await router.crewWorkspace(
+                ticket: key, name: name.isEmpty ? key : name, organization: r.place.organization,
+                project: r.place.project, environment: r.place.environment, branch: r.branch)
+            workspace = w.id
+            await router.join(agent.id, workspace: w.id)
+        }
         reserved?(agent.id)
+        if let admit, !(await admit(agent.id)) {
+            if conversation(id: agent.id) === agent { await endConversation(agent) }
+            throw TicketHandOffError(description: "the hand-off was cancelled before it started")
+        }
         let scope = TurnScope(place: r.place, rootPath: r.root, providerId: r.provider, conversation: agent.id)
         guard await send(r.brief, scope: scope) else {
             let why = status.isEmpty ? "the agent did not start" : status
@@ -30,12 +68,16 @@ extension WindowModel {
         guard conversation(id: agent.id) === agent else {
             throw TicketHandOffError(description: "the hand-off was cancelled before it started")
         }
+        // Its lineage root, minted by the send, is recorded in the crew's workspace (and a Start
+        // another's mark with it, so a resume keeps it).
+        if let workspace { await workspaceRouter?.join(agent.id, workspace: workspace) }
+        if let branchOffIn { await workspaceRouter?.join(agent.id, workspace: branchOffIn, branchOff: true) }
         guard let ticket else {
             noteHandOffFailure("The hand-off was not recorded (no ticket client), so this conversation's push and sync ask you.", in: agent)
             return agent.id
         }
         var handoff: [String: JSONValue] = [
-            "conversation": .string(agent.id), "title": .string(r.title), "harness": .string(r.harness),
+            "conversation": .string(agent.id), "title": .string(r.numberedTitle), "harness": .string(r.harness),
             "provider": .string(r.provider),
             "place": .object(["organization": .string(r.place.organization), "project": .string(r.place.project),
                               "environment": .string(r.place.environment)]),
@@ -71,7 +113,70 @@ extension WindowModel {
                 TicketHandOffEnvironment(name: e.name, production: e.production ?? true)
             }
         }
-        return TicketHandOffContext(screen: place, provider: providerId, providers: providers, environments: environments)
+        return TicketHandOffContext(screen: place, provider: providerId, providers: providers, environments: environments,
+                                    carriers: handOffCarriers())
+    }
+
+    // MARK: Send to (item 8, 2026-10-30)
+
+    /// The live handed conversations, for the popover's **Send to** and Start another's number.
+    func handOffCarriers() -> [TicketHandOffCarrier] {
+        liveConversations().compactMap { a in
+            guard let h = a.handoff, !closing.contains(a.id) else { return nil }
+            return TicketHandOffCarrier(conversation: a.id, title: a.title, key: h.key, pr: h.pr, root: h.root,
+                                        lastActive: a.lastActivity, working: a.turnInFlight || a.startsSession)
+        }
+    }
+
+    /// **Send to**: `text` as the operator's own message to the live conversation `id` (a user turn,
+    /// not `conversation_message`). Idle, its turn starts now, off screen — the screen stays where it
+    /// is (Rule 6). In a turn (or with messages already queued), it is queued and goes when that turn
+    /// ends, shown pending in its thread and cancellable (Rule 4). A send that fails says why, whole.
+    public func sendToHandOff(_ id: String, text: String) async throws -> TicketHandOffSent {
+        guard let agent = conversations[id], !closing.contains(id) else {
+            throw TicketHandOffError(description: "that conversation is no longer live; nothing was sent")
+        }
+        if agent.turnInFlight || agent.startsSession || agent.unansweredSends > 0 || !agent.queuedTurns.isEmpty {
+            let q = QueuedTurn(id: UUID().uuidString.lowercased(), text: text)
+            agent.queuedTurns.append(q)
+            agent.lastActivity = Date()
+            return .queued(id: q.id)
+        }
+        guard await send(text, scope: handOffScope(agent)) else {
+            throw TicketHandOffError(description: status.isEmpty ? "the message was not sent" : status)
+        }
+        return .sent
+    }
+
+    /// Takes back a queued Send to (Rule 4); false when it already went or is gone.
+    @discardableResult
+    public func unqueueTurn(_ conversation: String, id: String) -> Bool {
+        guard let agent = conversations[conversation], let i = agent.queuedTurns.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        agent.queuedTurns.remove(at: i)
+        return true
+    }
+
+    /// Its turn ended: the oldest queued message goes, as the operator's own turn. One that cannot go
+    /// is put back and said whole in its thread (Rule 8); the next turn's end tries again.
+    func deliverQueuedTurn(_ agent: PlaceAgent) async {
+        guard conversations[agent.id] === agent, !closing.contains(agent.id), !agent.turnInFlight,
+              agent.unansweredSends == 0, !agent.startsSession, let next = agent.queuedTurns.first else { return }
+        agent.queuedTurns.removeFirst()
+        guard await send(next.text, scope: handOffScope(agent)) else {
+            if conversations[agent.id] === agent { agent.queuedTurns.insert(next, at: 0) }
+            agent.appendRow(label: "queued",
+                            detail: "Wakil could not send your queued message (\(status.isEmpty ? "no agent session" : status)); "
+                                + "it waits for this conversation's next turn to end.", isError: true)
+            return
+        }
+    }
+
+    /// The turn a Send to goes in: the conversation's own place, root and provider, pinned to it.
+    private func handOffScope(_ agent: PlaceAgent) -> TurnScope {
+        TurnScope(place: agent.place, rootPath: agent.handoff?.root.isEmpty == false ? agent.handoff!.root : rootPath,
+                  providerId: agent.providerId, conversation: agent.id)
     }
 
     /// Cancel: ends the conversation a Start reserved, whatever its start has reached (Rule 4) —

@@ -1,0 +1,15 @@
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"absent","text":"Wakil works in projects."}}
+{"expect":{"tree":"absent","text":"you are here"}}
+{"expect":{"tree":"absent","text":"Open a pane:"}}
+{"expect":{"tree":"absent","text":"NEEDS YOU"}}
+{"expect":{"tree":"contains","text":"quiet projects —"}}
+{"expect":{"frame":"landing.quiet","minWidth":40}}
+{"expect":{"frame":"landing.project.e2e-project","minWidth":20}}
+{"expect":{"frame":"window.composer.startIn","minWidth":20}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"landing.quiet","inside":"window"}}
+{"expect":{"frame":"landing.project.e2e-project","inside":"window"}}
+{"expect":{"frame":"landing.project.e2e-git","inside":"window"}}
+{"expect":{"frame":"landing.project.e2e-project","clear":"landing.project.e2e-git"}}
+{"expect":{"frame":"landing.quiet","maxHeight":80}}

@@ -797,6 +797,11 @@ public struct EditorTicketViewState: Sendable, Equatable {
     /// The live handed conversations with what they were handed (`WindowModel.ticketLiveHandOffs`),
     /// set where the view is drawn: the header's **With agent** reads them.
     public var liveHandOffs: [TicketLiveHandOff]
+    /// The project the window shows (`WindowModel.ticketScope`), set where the view is drawn: the
+    /// lists hold only its tickets (`scopedInFlight`). Nil on the home.
+    public var scope: TicketScope?
+    /// `inFlight` held to `scope`: what the lists draw.
+    public var scopedInFlight: InFlightState? { ticketScoped(inFlight, to: scope) }
 
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
                 failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],

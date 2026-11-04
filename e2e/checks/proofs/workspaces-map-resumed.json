@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-map-resumed.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "074b608e94d8882a05323eb19046093255a90bdd"
+}

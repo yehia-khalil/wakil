@@ -28,6 +28,11 @@ func TestGitHubStubAnswersTheProductionClient(t *testing.T) {
 	if pr.Number != 212 || pr.HeadSHA != "abc123" || len(pr.Threads) != 2 || len(pr.Checks) != 2 || pr.Checks[0].State != "failure" {
 		t.Fatalf("PR #212 decoded as %+v", pr)
 	}
+	// Workspaces, piece 3: the merged-PRs check's workspace branch heads one PR, merged.
+	if merged, _, err := gh.BranchPRs(ctx, "initech", "api", TicketBranchMerged); err != nil || len(merged) != 1 ||
+		merged[0].State != "merged" || merged[0].Number != 216 || merged[0].Head != TicketBranchMerged {
+		t.Fatalf("merged branch: %v, %+v", err, merged)
+	}
 	if _, bases, _ := gh.BranchPRs(ctx, "initech", "api", "main"); len(bases) != 1 {
 		t.Fatalf("main's bases: %d", len(bases))
 	}

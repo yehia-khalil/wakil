@@ -122,6 +122,9 @@ struct WakilWindow: View {
     /// away from the thread the first time anybody changed this window's
     /// padding, and the drift would be invisible in a still.
     @State private var threadAnchorX: Double = 0.5
+    /// The height of the status line and notes over the composer, as last drawn: on the home the
+    /// page ends above them, so neither is drawn over the other (piece 3 walk).
+    @State private var statusReserve: CGFloat = 0
     /// When the thread last gained a row. Drives `ThreadLift`'s decay, so
     /// the glow fades with the thread rather than snapping off with it.
     @State private var lastRowAt: Date?
@@ -319,6 +322,9 @@ struct WakilWindow: View {
                     // other. A fixed reserve, not the thread's height, so nothing moves as rows arrive
                     // or open; an opened row still rises over the canvas, at full opacity (§9).
                     .padding(.bottom, session.model.thoughts.isEmpty ? 0 : ThoughtThread.restingReserve)
+                    // Piece 3 walk: on the home the status line and notes have their own space,
+                    // above the bar — the page ends over them, not under them.
+                    .padding(.bottom, !session.model.sessionStarted && statusReserve > 0 ? statusReserve + 10 : 0)
 
                     // 2d-ii: ONE bottom-anchored flow, so nothing on the bottom edge
                     // can overprint anything else however tall the bar grows (rule 8:
@@ -330,6 +336,18 @@ struct WakilWindow: View {
                     // indicator on its row. Panes end 48pt above the window's bottom
                     // (the canvas padding above), a bar's height plus its gap.
                     VStack(alignment: .leading, spacing: 6) {
+                        // Workspaces piece 5: teammates proposed in the workspace on screen.
+                        if !session.model.teammateProposalsOnScreen.isEmpty {
+                            TeammateProposalsStrip(
+                                proposals: session.model.teammateProposalsOnScreen,
+                                dispatch: { name, params in await session.model.dispatchFromSurfaceReply(name, params) })
+                        }
+                        // Item 8: Send to's messages queued for the conversation on screen.
+                        if let agent = session.model.currentAgent, !agent.queuedTurns.isEmpty {
+                            QueuedTurnsStrip(
+                                conversation: agent.id, queued: agent.queuedTurns,
+                                dispatch: { name, params in await session.model.dispatchFromSurfaceReply(name, params) })
+                        }
                         ThoughtThread(
                             rows: session.model.thoughts,
                             parallax: CGSize(width: nearOffset.x, height: nearOffset.y),
@@ -385,11 +403,22 @@ struct WakilWindow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .allowsHitTesting(false)
+                        // Its height, for the home's reserve above (a preference: `onGeometryChange`
+                        // is macOS 15).
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: StatusReserveKey.self, value: geometry.size.height)
+                        })
+                        .onPreferenceChange(StatusReserveKey.self) { statusReserve = $0 }
+                        .padding(.bottom, statusReserve > 0 ? 4 : 0)
 
                         HStack(alignment: .bottom, spacing: 20) {
                             ComposerBar(
                                 composer: session.composer,
-                                onEscapeUnconsumed: { threadDisclosure.escape() })
+                                onEscapeUnconsumed: { threadDisclosure.escape() },
+                                placeholder: homeComposerPlaceholder,
+                                startIn: session.model.sessionStarted || session.model.project.isEmpty
+                                    ? nil : AnyView(ComposerStartIn(model: session.model, refocus: { session.composer.requestFocus() })),
+                                onHome: !session.model.sessionStarted)
                             // Task 10: the running account, always on screen — the same
                             // standing Invariant 8 already gives the environment, for the
                             // reason this task exists at all: "work account against a
@@ -515,6 +544,17 @@ struct WakilWindow: View {
                 model.changesMessageEdited(root: landed.root, text: landed.replaced)
             }
             undoManager?.setActionName("Draft Message")
+        }
+        .onChange(of: session?.model.settingsProjectWanted) { _, wanted in
+            guard let wanted, let model = session?.model else { return }
+            if model.settingsProjectWantsRunning {
+                // A home card's Set up running…: the project's Running node, its project open in the tree.
+                settingsExpansion.setOpen(true, project: wanted)
+                settingsSelection = .projectRunning(wanted)
+            } else {
+                settingsSelection = .project(wanted)
+            }
+            model.settingsProjectTaken()
         }
         .onChange(of: session?.model.organization ?? "") { _, _ in
             settingsSelection = .organisation
@@ -676,11 +716,7 @@ struct WakilWindow: View {
         // put a surface on top would be the org plane's treatment borrowed
         // for a case that does not need it.
         if !model.sessionStarted {
-            Landing(model: model, openTicketsPalette: {
-                // ⌘P in open mode with `#` typed: every ticket in flight.
-                openPalette(.open)
-                palette?.type("#")
-            })
+            Home(model: model)
                 .padding(.top, 34)
                 .transition(.opacity)
                 // **The settings pane draws OVER the Landing**, because
@@ -862,4 +898,10 @@ private struct UnsavedPromptWatch: ViewModifier {
             .onChange(of: model?.quitApproved ?? 0) { _, _ in finishQuit(true) }
             .onChange(of: model?.quitCancelled ?? 0) { _, _ in finishQuit(false) }
     }
+}
+
+/// The status line's height over the composer (`WakilWindow.statusReserve`).
+private struct StatusReserveKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

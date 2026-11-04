@@ -268,6 +268,14 @@ private func focusedBrowserWindow(keys: KeysContext = KeysContext()) async throw
         await model.shutdown()
     }
 
+    /// Amendment 2026-10-30: ⇧⌘H is Home — the organisation's home, through `session_new` as ⌘N.
+    @Test @MainActor func testHomeIsAKeyCommandAndItsChordIsFree() async throws {
+        let (model, _, _) = try await focusedBrowserWindow()
+        #expect(await model.runKeyCommand("window.home"))
+        #expect(Keymap(overrides: [:]).resolve(try #require(KeyChord("⇧⌘H")), paneKind: "browser") == ["window.home"])
+        await model.shutdown()
+    }
+
     @Test @MainActor func testUnboundChordPassesOn() async throws {
         let (model, _, _) = try await focusedBrowserWindow()
         #expect(await !model.keyPressed(try #require(KeyChord("⌃⌘J"))))

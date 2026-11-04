@@ -1,0 +1,13 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: umbrella_mysql
+    ports:
+      - "${DB_PORT:-3306}:3306"
+  mongo:
+    image: mongo:7
+    ports:
+      - target: 27017
+        published: 27017
+  redis:
+    image: redis:7

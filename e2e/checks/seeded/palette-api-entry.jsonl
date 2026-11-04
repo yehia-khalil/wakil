@@ -1,4 +1,4 @@
-{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"expect":{"frame":"landing","minWidth":40}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
 {"do":{"keys":"catalog api"}}

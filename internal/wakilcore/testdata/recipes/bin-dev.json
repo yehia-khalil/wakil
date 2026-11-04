@@ -1,0 +1,32 @@
+{
+  "repo": "bin-dev",
+  "kind": "rails",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "setup": [
+      "bundle install"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "bin/dev"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "ports.PORT": "bin/dev reads PORT",
+      "processes.dev": "bin/dev — the repo's own entry point",
+      "ready": "the app answering on $WAKIL_PORT",
+      "setup": "Gemfile"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

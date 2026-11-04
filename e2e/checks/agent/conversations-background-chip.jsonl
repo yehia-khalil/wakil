@@ -3,17 +3,20 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"hold a turn open here"}}
 {"do":{"hotkey":"cmd+n"}}
-{"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
+{"expect":{"frame":"landing.main","minWidth":40}}
 {"expect":{"tree":"contains","text":"Value: working"}}
-{"expect":{"tree":"contains","text":"RUNNING"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"tree":"absent","text":"e2e-fixture · e2e-project · staging — hold a turn open here"}}
+{"expect":{"frame":"landing.row.running:0","inside":"window"}}
+{"do":{"click":"landing.row.running:0"}}
+{"expect":{"tree":"absent","text":"IN MAIN"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-1"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
-{"expect":{"tree":"contains","text":"Value: done"}}
-{"expect":{"tree":"absent","text":"Value: working"}}
-{"expect":{"tree":"absent","text":"a held turn was released"}}
-{"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
 {"expect":{"tree":"contains","text":"a held turn was released"}}
-{"expect":{"tree":"absent","text":"Value: done"}}

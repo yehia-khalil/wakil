@@ -291,10 +291,18 @@ public func registerEditorActions(
     gitWrites: GitWriteFlights = GitWriteFlights(),
     ticket: EditorTicketStore? = nil,
     organization: @escaping @Sendable () async -> String? = { nil },
-    handOff: TicketHandOffLookup? = nil
+    handOff: TicketHandOffLookup? = nil,
+    workspaces: (any WorkspaceWriteRouting)? = nil
 ) async {
     await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites,
-                                      ticket: ticket)
+                                      ticket: ticket, workspaces: workspaces)
+    /// Workspaces, piece 1: where an agent's file write lands — the path in its checkout (made or
+    /// taken first by the write rule); a path in another workspace's checkout is refused there. The
+    /// operator's write keeps its path (call 12).
+    @Sendable func routedPath(_ path: String, action: String) async throws -> String {
+        guard let workspaces else { return path }
+        return try await workspaces.routePath(path, action: action)
+    }
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
         guard let files else { throw StandardActionError.missingClient(action: action, role: "files") }
         return files
@@ -1154,11 +1162,10 @@ public func registerEditorActions(
             let outcome: FilesOutcome
             do {
                 switch subject {
-                case .file(let p, let r): target = (p, r)
-                case .scratch: target = saveAs!
+                case .file(let p, _): target = try await confine(try await routedPath(p, action: "editor_save"), action: "editor_save")
+                case .scratch: target = try await confine(try await routedPath(saveAs!.path, action: "editor_save"), action: "editor_save")
                 case .diff: throw EditorActionError.noTab(action: "editor_save")   // read-only: claimed never
                 }
-                _ = try await confine(target.path, action: "editor_save")
                 // Rule 1: a save-as never writes over an existing file unasked.
                 if case .scratch = subject, !replace {
                     switch try await filesTool(files, "files_read", ["path": .string(target.path)]) {
@@ -1184,6 +1191,10 @@ public func registerEditorActions(
                     s.tabs[i].mtime = Int64(o["mtime"]?.intValue ?? 0)
                     s.tabs[i].diskState = .inSync
                     s.tabs[i].notice = nil
+                    // An agent's save that the write rule moved into its checkout: the tab follows the file.
+                    if case .file(let p, _) = subject, p != target.path {
+                        s.tabs[i].subject = .file(path: target.path, root: target.root)
+                    }
                     if case .scratch = subject {
                         if let j = s.tabs.firstIndex(where: { $0.path == target.path }) {
                             // Opened while the write ran: the scratch stays a scratch, so no two tabs
@@ -1229,12 +1240,14 @@ public func registerEditorActions(
                         "kind": .object(["type": .string("string"), "enum": .array([.string("file"), .string("dir")])])],
                        required: ["path", "kind"]),
         handler: { params in
-            let pane = try await editorPane(params, action: "editor_create")
             guard let raw = optionalString(params, "path") else {
                 throw StandardActionError.missingParam(action: "editor_create", param: "path")
             }
             let kind = optionalString(params, "kind") ?? "file"
-            let c = try await confine(raw, action: "editor_create")
+            // Routed before the pane: the route can start a workspace and carry the canvas into its view,
+            // and an editor opened first stood on the canvas the write left — Main's (decision 22).
+            let c = try await confine(try await routedPath(raw, action: "editor_create"), action: "editor_create")
+            let pane = try await editorPane(params, action: "editor_create")
             switch try await filesTool(try requireFiles("editor_create"), "files_create",
                                        ["path": .string(c.path), "kind": .string(kind)]) {
             case .failed(let text): throw EditorFilesError(description: text)
@@ -1270,15 +1283,15 @@ public func registerEditorActions(
         schema: schema(["path": .object(["type": .string("string")]), "to": .object(["type": .string("string")])],
                        required: ["path", "to"]),
         handler: { params in
-            let pane = try await editorPane(params, action: "editor_rename")
             guard let rawFrom = optionalString(params, "path") else {
                 throw StandardActionError.missingParam(action: "editor_rename", param: "path")
             }
             guard let rawTo = optionalString(params, "to") else {
                 throw StandardActionError.missingParam(action: "editor_rename", param: "to")
             }
-            let from = try await confine(rawFrom, action: "editor_rename")
-            let to = try await confine(rawTo, action: "editor_rename")
+            let from = try await confine(try await routedPath(rawFrom, action: "editor_rename"), action: "editor_rename")
+            let to = try await confine(try await routedPath(rawTo, action: "editor_rename"), action: "editor_rename")
+            let pane = try await editorPane(params, action: "editor_rename")
             // Ruling R4: the same name changes nothing — no move, no tab re-pointed, no diff tab closed.
             @Sendable func answer() async -> JSONValue {
                 guard case .object(var o) = await reply(pane) else { return .null }
@@ -1315,11 +1328,13 @@ public func registerEditorActions(
         kind: .mutate, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")])], required: ["path"]),
         handler: { params in
-            let pane = try await editorPane(params, action: "editor_trash")
             guard let raw = optionalString(params, "path") else {
                 throw StandardActionError.missingParam(action: "editor_trash", param: "path")
             }
-            let c = try await confine(raw, action: "editor_trash")
+            // Routed before the pane: the route can start a workspace and carry the canvas into its view,
+            // and an editor opened first stood on the canvas the write left — Main's (decision 22).
+            let c = try await confine(try await routedPath(raw, action: "editor_trash"), action: "editor_trash")
+            let pane = try await editorPane(params, action: "editor_trash")
             switch try await filesTool(try requireFiles("editor_trash"), "files_trash", ["path": .string(c.path)]) {
             case .failed(let text): throw EditorFilesError(description: text)
             case .ok: break
@@ -2172,7 +2187,7 @@ public func registerEditorActions(
                 throw StandardActionError.missingParam(action: "editor_replace", param: "replacement")
             }
             let only = try await optionalString(params, "file").flatMap { $0.isEmpty ? nil : $0 }
-                .asyncMap { try await confine($0, action: "editor_replace").path }
+                .asyncMap { try await confine(try await routedPath($0, action: "editor_replace"), action: "editor_replace").path }
             let files = try requireFiles("editor_replace")
             // Claimed in one turn (Rule 5): one replace per pane. An empty query replaces nothing (ruling 9).
             // Claimed in its scope, which every later read and write names: a project or conversation
@@ -2189,7 +2204,18 @@ public func registerEditorActions(
             // Final review C1: the roots the run claimed, sent on every batch. Go resolves the active
             // project on each call, so after a project switch an unnamed call would walk the new
             // project's roots with this run's cursor; named, it is refused and the run stops there.
-            let claimed = await roots()
+            var claimed = await roots()
+            // Workspaces (decision 7): an agent's replace across files writes only its own copies;
+            // with none yet, it names a file, whose write starts its workspace.
+            if let workspaces, only == nil, let mine = await workspaces.callerCheckouts() {
+                guard !mine.isEmpty else {
+                    await panes.updateEditor(in: home, paneId: pane) { s in s.search.replace.inFlight = false }
+                    throw EditorFilesError(description: "editor_replace: an agent replaces across files only in its workspace's "
+                        + "copies, and this conversation has none yet (decision 7: no agent writes in Main); "
+                        + "name a file to replace in, and its workspace is made")
+                }
+                claimed = mine
+            }
             // Pre-flight F2: every editor pane the store holds, hidden scopes too, so no open tab's
             // file is written (spec, Open tabs; Decision 39).
             let targets = await panes.editorPanesInEveryScope()
@@ -2387,7 +2413,12 @@ public func registerEditorActions(
                         s.tabs[i].diffState?.error = reviewHeadMissing(sha: t.headSHA, line: line, git: e)
                     }
                 }),
-            roots: roots, organization: organization, handOff: handOff)
+            roots: roots, organization: organization, handOff: handOff,
+            // Workspaces piece 5: one per repo never offers a root git says is no repository (decision 7).
+            notRepositories: {
+                let states = await gitStatus?.roots ?? []
+                return Set(states.filter { $0.error?.contains("not a git repository") == true }.map(\.root))
+            })
     }
 }
 

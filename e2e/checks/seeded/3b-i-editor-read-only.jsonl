@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"printf 'a\\000b' > ~/../e2e-project/ro.bin && echo ro-written"}}
 {"do":{"press":"Return"}}

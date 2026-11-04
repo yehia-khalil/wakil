@@ -1,0 +1,29 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"workspace_start","params":{"repo":"e2e-api","base":"main"},"refuses":"only an agent's conversation starts its own copy"}}
+{"do":{"type":{"into":"window.composer","text":"start the copy from main"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"started the copy from main"}}
+{"expect":{"tree":"contains","text":"Started workspace ‘start the copy from main’"}}
+{"expect":{"tree":"contains","text":"— a copy of e2e-api from"}}
+{"expect":{"tree":"contains","text":"e2e-from-main-start"}}
+{"do":{"type":{"into":"window.composer","text":"write the started note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"wrote the started note"}}
+{"expect":{"tree":"contains","text":"workspace copy"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-2","field":"cwd","contains":"/workspaces/e2e-git/e2e-from-main-start/e2e-api"}}
+{"do":{"keys":"git branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"e2e-from-main-start"}}
+{"do":{"keys":"test -e started-note.txt && git merge-base --is-ancestor main HEAD && echo FROM-MAIN-IN-THE-COPY"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"FROM-MAIN-IN-THE-COPY"}}

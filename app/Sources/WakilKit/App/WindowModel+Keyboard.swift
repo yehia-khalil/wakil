@@ -104,6 +104,9 @@ extension WindowModel {
         case "editor.showChanges": await toggleEditorColumn(.changes)
         case "editor.save":
             if layoutSnapshot.focusedId != nil { await saveFocusedEditor() }
+        // The organisation's home (amendment 2026-10-30): ⌘N's path, `session_new`, which shows the
+        // home and leaves every conversation running where it was.
+        case "window.home": await dispatchSessionNew()
         case "window.organisation": showOrgPlane = true
         case "window.open": paletteKey(.open)
         case "window.commands": paletteKey(.commands)

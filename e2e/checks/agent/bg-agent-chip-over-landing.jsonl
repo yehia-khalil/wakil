@@ -2,22 +2,20 @@
 {"do":{"type":{"into":"window.composer","text":"hold a turn open here"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"hold a turn open here"}}
-{"do":{"hotkey":"cmd+k"}}
-{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
-{"do":{"type":{"into":"palette.query","text":"environment"}}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
-{"do":{"press":"Return"}}
-{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
-{"do":{"type":{"into":"palette.query","text":"qa"}}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
-{"do":{"click":"palette.row.qa"}}
-{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"e2e-project-two"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
 {"do":{"resize":{"width":1000,"height":888}}}
-{"expect":{"tree":"contains","text":"Nothing to continue"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"absent","text":"STAGING"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","clear":"window.contextLine"}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"touch ~/wakil-e2e-release-held"}}
 {"do":{"press":"Return"}}

@@ -1,0 +1,24 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"window.composer","text":"INI-142 write the ticket note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"wrote the ticket note"}}
+{"expect":{"tree":"contains","text":"Started workspace ‘INI-142 write the ticket note’"}}
+{"expect":{"tree":"contains","text":"write-the-ticket-note"}}
+{"expect":{"tree":"absent","text":"INI-142-ini-142"}}
+{"expect":{"tree":"absent","text":"ini-142-ini-142"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"#"}}}
+{"expect":{"frame":"palette.row.ticket:INI-142","inside":"window"}}
+{"do":{"click":"palette.row.ticket:INI-142"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"journal":{"contains":"\"action\":\"workspace_open\""}}}
+{"expect":{"tree":"contains","text":"wrote the ticket note"}}
+{"expect":{"tree":"contains","text":"STAGING"}}

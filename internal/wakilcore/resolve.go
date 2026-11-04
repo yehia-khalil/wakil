@@ -179,6 +179,40 @@ func Resolve() (*Resolved, error) {
 	return &out, nil
 }
 
+// ResolveProject is Resolve for the project a caller names by its registry key — Settings edits
+// any project of the organisation, and its Running → Try copies that project's repo while another
+// is on screen (Workspaces, piece 2). The key is looked up in the active organisation's registry
+// only, and a project.json that declares another organisation is refused (Invariant 4). An empty
+// key is the active project. Environment and the provider report are the active context's; a
+// named project's are not resolved.
+func ResolveProject(key string) (*Resolved, error) {
+	if key == "" {
+		return Resolve()
+	}
+	org, err := CurrentOrg()
+	if err != nil {
+		return nil, err
+	}
+	reg, err := LoadRegistryFor(org)
+	if err != nil {
+		return nil, err
+	}
+	entry, ok := reg[key]
+	if !ok {
+		return nil, UserError("unknown project: " + key)
+	}
+	proj, err := LoadProject(entry.Path)
+	if err != nil {
+		return nil, UserError("project config unreadable: " + err.Error())
+	}
+	if proj.Org != org {
+		return nil, UserError(fmt.Sprintf("project %q belongs to org %q but the active org is %q", key, proj.Org, org))
+	}
+	out := Resolved{Org: org, Project: proj, ProjectKey: key, ProjectPath: entry.Path}
+	out.RootPaths = ProjectRootPaths(out)
+	return &out, nil
+}
+
 // PartialResolved is what get_context reports when Resolve() fails.
 //
 // Resolve() needs an active project and a readable project.json; the ORG

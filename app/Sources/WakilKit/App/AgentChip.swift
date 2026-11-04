@@ -1,9 +1,10 @@
 import Foundation
 
 /// One live conversation not on screen, as the chips in the window's top right draw it
-/// (background agents 4 of 4; conversations 2 of 3). `WindowModel.chips` derives one per
+/// (background agents 4 of 4; conversations 2 of 3). `WindowModel.chipCandidates` derives one per
 /// conversation that is not the screen's — in another place or backgrounded in this one; one
-/// that is idle and seen has none. A click switches to it (`session_switch`).
+/// that is idle and seen has none — and `WindowModel.chips` keeps another organisation's
+/// (workspaces, piece 3: the home lists the screen's own). A click switches to it (`session_switch`).
 public struct AgentChip: Identifiable, Equatable, Sendable {
     /// What the agent is doing. When more than one is true, `waiting` beats `failed`, which
     /// beats `working`, which beats `done`.
@@ -45,7 +46,12 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
     public let title: String
     /// 1-based, the conversation's place among its place's live ones by creation (ruling 2).
     public let ordinal: Int
-    /// `<org> · <project> · <environment> — <title>`, empty members left out (ruling 9).
+    /// The workspace it works in, by its ticket key or else its name; nil in Main (workspaces,
+    /// piece 3: a chip names the workspace).
+    public let workspace: String?
+    /// What the chip says after the place: `<workspace> · <title>`, or the title in Main.
+    public var subject: String { workspace.map { "\($0) · \(title)" } ?? title }
+    /// `<org> · <project> · <environment> — <subject>`, empty members left out (ruling 9).
     public let label: String
     /// Whether the place's environment is production, so its segment is drawn in production red
     /// (Invariant 8) whatever the state's hue.
@@ -55,6 +61,13 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
     /// Why a handed conversation's hand-off could not be recorded or carried, whole (Rule 8):
     /// in the chip's tooltip and its accessibility hint. Nil for any other.
     public let handoffNote: String?
+    /// Workspaces piece 4: messages it holds that the wake budget did not let wake it; 0 for none.
+    public let messagesWaiting: Int
+    /// What the chip's text ends with: the state's suffix, or " — waiting for you · N messages"
+    /// while it holds messages for the operator.
+    public var stateText: String {
+        messagesWaiting > 0 && state == .waiting ? " — " + messagesWaitingLabel(messagesWaiting) : state.suffix
+    }
     /// The conversation: several chips can stand for one place.
     public var id: String { conversation }
 
@@ -68,8 +81,11 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
 
     init(
         place: Place, state: State, productionEnvironment: Bool, conversation: String,
-        title: String = newConversationTitle, ordinal: Int = 1, handoffNote: String? = nil
+        title: String = newConversationTitle, ordinal: Int = 1, handoffNote: String? = nil, workspace: String? = nil,
+        messagesWaiting: Int = 0
     ) {
+        self.workspace = workspace
+        self.messagesWaiting = messagesWaiting
         self.place = place
         self.conversation = conversation
         self.handoffNote = handoffNote
@@ -77,7 +93,7 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
         self.title = title
         self.ordinal = ordinal
         self.label = [place.organization, place.project, place.environment]
-            .filter { !$0.isEmpty }.joined(separator: " · ") + " — " + title
+            .filter { !$0.isEmpty }.joined(separator: " · ") + " — " + (workspace.map { "\($0) · \(title)" } ?? title)
         self.productionEnvironment = productionEnvironment
     }
 

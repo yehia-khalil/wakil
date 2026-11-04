@@ -9,6 +9,8 @@ import SwiftUI
 struct EditorColumn: View {
     /// Where a link in the Ticket view opens (`WakilLinks.open`).
     var openLink: (String, Bool) -> Void = { _, _ in }
+    /// The project's Ticket tab with no Jira project set: open Settings at the project to set it.
+    var openProjectSettings: () -> Void = {}
     let column: EditorColumnState
     /// The tree's rows, built once by `EditorPane` (`treeRows`), which also reads them for save-as.
     let rows: [EditorTreeRow]
@@ -159,7 +161,7 @@ struct EditorColumn: View {
                 case .search: searchView
                 case .changes: changesView
                 case .ticket:
-                    EditorTicketView(openLink: openLink, state: ticket, column: column, tab: timelineTab, reviews: reviews,
+                    EditorTicketView(openLink: openLink, openProjectSettings: openProjectSettings, state: ticket, column: column, tab: timelineTab, reviews: reviews,
                                      dispatch: dispatch, dispatchReply: dispatchReply, focused: $ticketFocused,
                                      fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed,
                                      handOffAnchored: handOffAnchored)
@@ -225,6 +227,14 @@ struct EditorColumn: View {
             viewTabs(.system(size: 11, weight: .medium, design: .monospaced), spacing: 12)
             viewTabs(.system(size: 11, weight: .medium), spacing: 9)
             viewTabs(.system(size: 10, weight: .medium).width(.condensed), spacing: 5)
+            // Narrower still (a count on Ticket at the column's minimum): two rows of two, never
+            // pushed past the column's edges (piece 3 walk: "hanges" lost its first letter).
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) { viewTab(.files, "Files", "files"); viewTab(.search, "Search", "search") }
+                HStack(spacing: 5) { viewTab(.changes, "Changes", "changes"); viewTab(.ticket, "Ticket", "ticket") }
+            }
+            .font(.system(size: 10, weight: .medium).width(.condensed))
+            .fixedSize()
         }
         .foregroundStyle(EditorPaneStyle.text)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -250,6 +260,9 @@ struct EditorColumn: View {
     private func viewTab(_ view: EditorColumnView, _ name: String, _ id: String) -> some View {
         let count = view == .ticket ? RailTreatment.countSuffix(ticketCount) : nil
         let said = count.flatMap { _ in ticketCountLabel.map { "\(name), \($0)" } } ?? name
+        // What the count is made of is also the tab's value, so a reader of the tree (the e2e
+        // harness, which prints a value and not a description) sees it: `4 waiting on you: …`.
+        let value = count.flatMap { _ in ticketCountLabel } ?? ""
         return Button {
             focusWanted = view
             Task { await dispatch("editor_tree", ["view": .string(id), "shown": .bool(true)]) }
@@ -259,6 +272,7 @@ struct EditorColumn: View {
             .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
             .help(said)
             .accessibilityLabel(said)
+            .accessibilityValue(value)
             .accessibilityIdentifier("editor.column.\(id)")
     }
 

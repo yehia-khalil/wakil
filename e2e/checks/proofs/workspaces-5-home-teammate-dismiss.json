@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-5-home-teammate-dismiss.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "ddf041dd982eaa0a8757bc5490a9880a43452adc"
+}

@@ -266,8 +266,17 @@ func blockEntries(recordType string, content json.RawMessage) []ThreadEntry {
 	if len(content) == 0 {
 		return nil
 	}
+	// An operator's row is what the operator typed: the blocks the window appends after the
+	// words (the workspace map) are left out, as firstPrompt leaves them out of the label.
+	words := func(text string) string {
+		if recordType == "user" {
+			return withoutWakilBlocks(text)
+		}
+		return text
+	}
 	var plain string
 	if json.Unmarshal(content, &plain) == nil {
+		plain = words(plain)
 		if strings.TrimSpace(plain) == "" {
 			return nil
 		}
@@ -288,10 +297,11 @@ func blockEntries(recordType string, content json.RawMessage) []ThreadEntry {
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
-			if strings.TrimSpace(b.Text) == "" {
+			text := words(b.Text)
+			if strings.TrimSpace(text) == "" {
 				continue
 			}
-			out = append(out, ThreadEntry{Kind: recordType, Text: b.Text})
+			out = append(out, ThreadEntry{Kind: recordType, Text: text})
 		case "tool_use":
 			out = append(out, ThreadEntry{
 				Kind: "tool", ToolName: b.Name, Text: compactJSON(b.Input)})

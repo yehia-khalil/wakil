@@ -15,7 +15,7 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Provider (account) records | `~/.wakil/orgs/<org>/providers/<id>.json` | Go: `provider.go`, `adopt.go`, `unlink.go` |
 | Session lineage (which session was forked from which) | `~/.wakil/orgs/<org>/sessions.json` | Go: `sessions_lineage.go` (`record_session_parent`) |
 | Conversation names, by lineage root (`{"<lineageRoot>": {"operator": …, "ai": …}}`; an entry with neither name is removed; an unreadable file is never written over) | `~/.wakil/orgs/<org>/conversation-names.json` | Swift: `ConversationNameFile` |
-| A project's configuration (roots, scopes, environments, databases, API entries, editor tabs) | the project's `project.json`, by convention `.wakil/project.json` inside the project | the operator; Go `projectwrite.go` (`set_database_dsn`, `remove_database`) and `editorsettings.go` (`set_project_editor_settings`, the `editor` key) |
+| A project's configuration (roots, scopes, environments, databases, API entries, editor tabs) | the project's `project.json`, by convention `.wakil/project.json` inside the project | the operator; Go `projectwrite.go` (`set_database_dsn`, `remove_database`) and `editorsettings.go` (`set_project_editor_settings`, the `editor` key); `recipe.go` (`recipe_save`: the `recipes` key, and each root's `recipe`, `overrides`, `doesntRun`; a secret env value is `{"secret": "<ref>"}`, its value in the Keychain) |
 | Sites never to offer saving a password for (`passwords-never.json`, a sorted array of site keys, no credential; clearing browsing data keeps it; an unreadable file is never written over) | `~/.wakil/orgs/<org>/browser/` | Swift: `BrowserOrgFiles` (`neverSave`), the `browser_password_never` action |
 | Browser profile id (`profile.json`: `{"identifier":"<UUID>"}`, the organisation's WebKit data-store id), zoom per host (`zoom.json`: `{"<host>": <factor>}`), per-tab state (`tabs/<place-digest>.<pane>.<tab>.state`, WebKit's binary `interactionState`, so ‹ › survive a relaunch) | `~/.wakil/orgs/<org>/browser/`. The store itself (cookies, logins, site storage) is WebKit's, under `~/Library/WebKit/`, outside Wakil's reach; Settings → Browser → Clear removes it through the id and keeps `profile.json` | Swift: `BrowserOrgFiles`; zoom by `browser_zoom`, tab state by `BrowserTabHost` |
 | A project's browser pins (3d-i): tabs, groups and the pull-request group, each with an id the pane's tab or group names; a tab pin and each tab of a pinned group carry the tab's `name` when it has one (names), a pinned tab's written at once when it is renamed | `~/.wakil/orgs/<org>/browser/pins/<project>.json` (`{"items":[…]}`, the project key percent-encoded), written whole and atomically; a file that will not parse is never written over | Swift: `BrowserPins` |
@@ -23,7 +23,10 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Pane arrangement per project (a browser pane's `browserTabs` — id, URL, title, group, pin and name per tab — `browserGroups`, `browserColumnHidden` and `browserActiveTab` are saved with it; only the active tab loads on restore) | `~/.wakil/layouts/<org>/<project>.json` | Swift: `LayoutPersistence` |
 | The organisation's open pull requests, behind the pull-request group (3d-i) | **memory only**: `PaneStore`'s browser kind, refreshed from `wakil-ctx`'s `github_pull_requests` every five minutes and by ⌘R; never written | Swift: `browserSetPullRequests` |
 | The vertical tab column's width (3d-i) | the user defaults key `browser.tabColumn.width`, one width for every pane | Swift: `BrowserTabColumn` |
-| Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
+| Pane arrangement per conversation in Main, or per workspace (its view, shared by its conversations; the folder is `workspace-<view key>`) | `~/.wakil/layouts/<org>/conversations/<lineageRoot or workspace-<key>>/<project>.json` | Swift: `LayoutPersistence` |
+| Workspaces (each: id, name, slug, project, environment, tickets, parent, branch, checkouts — repo, path, branch, base, ports, last holder, in Main, snapshot — conversations by lineage root, view, archived); a checkout's `ports` is its block (piece 2, `ensurePorts`) and `setUp` says its copy, clone and setup ran; an unreadable file is never written over | `~/.wakil/orgs/<org>/workspaces.json` | Go: `workspaces.go` (`wakil-git` `workspaces_write`, the window only) |
+| A workspace's checkouts (git worktrees of the project's roots; only recorded ones are touched) | `~/.wakil/orgs/<org>/workspaces/<project>/<slug>/<repo folder>` | Go: `worktree.go` (`git_worktree_add` / `_remove`, `git_take_from_main`) |
+| A removed checkout's uncommitted work (a stash-shaped commit, never on the shared stash list); a branch carried out of Main while it moves | `refs/wakil/snapshots/<slug>/<repo>`, `refs/wakil/carry/<slug>/<repo>` in the repository | Go: `SnapshotCreate`, `TakeFromMain` |
 | The window's own memory (`railCollapsed`: the rail put away to its spine; absent means shown) | `~/.wakil/layouts/window.json` | Swift: `LayoutPersistence.saveWindowState`, from `WindowModel` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |
 | A ticket's record (next, decisions, not done, waiting on, verified, rulings; empty lists as `[]`) and its log (append-only, the old line written before each change) | `~/.wakil/orgs/<org>/tickets/<KEY>.json`, `<KEY>.log.jsonl` (`<KEY>.json.lock` beside each, taken per key) | Go: `ticketrecord.go` (`wakil-ticket` `ticket_record_write`, `ticket_branch`'s seen/branch/PR fields) |
@@ -42,6 +45,7 @@ The full org and provider model is in `docs/wakil/org-and-provider-model.md`.
 | Service name | Holds | Read by |
 |---|---|---|
 | `wakil:<org>:<ref>` | a database DSN, an API credential, or Jira (`ref` is `jira:<org>`) named by a `project.json` ref | Go `SecretGet` (`internal/wakilcore/secrets.go`, `keychainService`) |
+| `wakil:<org>:run:<project>:<owner>:<VAR>` | a Running settings secret env value (workspaces piece 2), named in `project.json` as `{"secret": "run:…"}` | Go `ReadPlanSecrets` (`reciperun.go`) at run time; written by `recipe_secret_set` |
 | `wakil:<org>:provider:<id>` | an account's minted OAuth token (`ProviderTokenRef`) | Go; the app asks `wakil provider credentials` (`WakilCLICredentialsLookup`) |
 | `wakil:<org>:browser-login:<identity>` (`default` today; account `<site> <username>`) | one saved browser password, trusting Wakil.app only | Swift, in-process: `BrowserPasswordStore` (Security.framework). Go only checks the service exists (`BrowserLoginsPresent`, attributes only, for `wakil org rm`) |
 
@@ -56,6 +60,8 @@ never written to `project.json`, only the ref.
   result set is not persisted; the pane's page and sort (`PaneFetch`) are, with the layout.
 - **Recent api sends**, capped at `PaneStore.recentCap` (200) per list, gone with the session.
 - **Live PTYs** (`TerminalStore`).
+- **Who holds each checkout, and which workspace each live conversation is in** (`WorkspaceStore`):
+  holds are live, so a relaunch holds nothing; the record keeps each checkout's last holder.
 - **Pending confirmations** (`ConfirmationBroker`, one per conversation), resume and provider-switch requests (`ResumeBroker`,
   `ProviderSwitchBroker`).
 - **The window's own state** (`WindowModel`): context, snapshots, thought thread, status, palette.

@@ -1,0 +1,30 @@
+{"expect":{"frame":"window.composer","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"hold then fail"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"hold then fail"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"touch ~/wakil-e2e-release-fail"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":" — failed"}}
+{"expect":{"frame":"landing.needs","inside":"window"}}
+{"do":{"click":"landing.needs:0.act"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"CONVERSATIONS IN MAIN"}}
+{"expect":{"tree":"absent","text":" — failed"}}
+{"expect":{"tree":"absent","text":"NEEDS YOU"}}

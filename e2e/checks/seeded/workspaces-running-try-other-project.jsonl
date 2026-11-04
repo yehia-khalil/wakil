@@ -1,0 +1,11 @@
+{"dispatch":{"action":"running_save","params":{"projectPath":"{fixtureRoot}/e2e-git/.wakil/project.json","recipes":{"e2e-static":{"processes":[{"name":"web","command":"python3 -u -m http.server $WAKIL_PORT"}],"ready":{"output":"Serving HTTP"}}},"repos":{"e2e-api":{"recipe":"e2e-static"}}}}}
+{"expect":{"journal":{"contains":"\"action\":\"running_save\""}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.projectRunning.e2e-git"}}
+{"do":{"click":"settings.running.repo.e2e-api"}}
+{"expect":{"tree":"contains","text":"Recipe e2e-static"}}
+{"do":{"click":"settings.running.try"}}
+{"expect":{"journal":{"contains":"\"action\":\"running_try\""}}}
+{"expect":{"tree":"contains","text":"Last Try"}}
+{"expect":{"tree":"absent","text":"own roots"}}
+{"expect":{"tree":"absent","text":"is not one of"}}

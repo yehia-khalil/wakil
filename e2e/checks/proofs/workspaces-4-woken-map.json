@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-4-woken-map.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "b17cbb9ae81a7b1ec4470c3f48624729f4cae02b"
+}

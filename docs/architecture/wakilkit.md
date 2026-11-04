@@ -87,6 +87,12 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   `siteQuestionWantsTyping` (true unless the proposing conversation's last turn, `PlaceAgent.lastTurnSource`,
   was typed) and `allowPendingSite` (a click answers only a `.site` ask that does not want typing).
 - `WindowModelSupport.swift` — `apiSurfaceCallDetaches`.
+- `ConversationMessages.swift`, `WindowModel+Messages.swift` — messages between conversations
+  (workspaces piece 4): `ConversationMessage`, `conversationMessageBlock` (what the recipient's agent
+  reads, information only), `MessageWakeBudgets` (per workspace; an operator message resets it, a
+  woken turn takes one); the window's `deliverMessage`, `wakeForMessages`, the two `send` hooks and
+  `messageWorkspace(of:)` — piece 1's record (`WorkspaceStore`, by the conversation or its lineage
+  root): a workspace's id keys its budget and its name heads the message; Main is keyed by the place.
 - `QuickTasks.swift` — `QuickTasks` (3b-viii, Decision 42): the one entry point for quick tasks.
   `infill` and `respond` route to the org's `quickProvider`, else the active provider, fall back once
   when a local endpoint will not connect, keep the endpoint's error whole, and refuse after shutdown.
@@ -415,6 +421,10 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
 - `EditorTicketNeeds.swift` — what needs the operator, pure: `ticketNeedsRows` over the last In flight read,
   the live handed conversations (`TicketHandOffLive`) and the drafts, each row's most urgent state in
   words by tier (`TicketUrgent`), the count and its wording (`4 waiting on you: …`).
+  `TicketScope` and `ticketScoped` hold a read to the project on screen (its Jira project's tickets and
+  those on its repos; `WindowModel.ticketScope`): the Ticket tab, its count and ⌘P's `#` rows; the
+  organisation's whole read stays for NEEDS YOU. `ticketScopeEmptyLine` is the tab's line when a project
+  has none and no Jira project set (Settings' Jira project field, `ctx_set_project_pm_key`).
 - `EditorTicketHandOff.swift` — Hand to agent, pure: `TicketHandOffState` (the popover), the prefilled briefs
   (`handOffThreadBrief`, `handOffHeaderBrief`, reviewer text quoted `> ` line by line), the place and the
   defaults, `TicketHandOffEntryState` (a record's hand-off line) and `TicketHandOffRequest`. Its actions
@@ -664,7 +674,9 @@ Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTes
   `proposal(name:params:caller:)` describes a parked call the same way; `setScreenScope` (every other
   dispatch is bound to the scope on screen when it began, so writes after an await land there); `ActionError` (`unknown`, `needsConfirmation`, `blockedInProduction`).
 - `StandardActions.swift` — `registerStandardActions` (the `ctx_*`, `db_*` and `session_*`
-  actions, and `pane_sort`), `StandardActionError`, `readConfigTree`. `db_cancel` ends the pane's
+  actions, and `pane_sort`), `StandardActionError`, `readConfigTree`. `ConversationMessageAction.swift` —
+  `conversation_message` and `checkConversationMessage` (its refusals), registered beside
+  `conversation_rename`. `db_cancel` ends the pane's
   read; every pane-bound db read runs as a flight through `dbReadInFlight`.
 - `Journal.swift` — `JournalEntry`, one line of the append-only journal.
 - `DebugDispatch.swift` — `runDebugScript`, behind `--dispatch`.
@@ -716,6 +728,68 @@ Tests: `ListeningMachineTests`, `ScriptedSpeechProviderTests`, `SpeechRegistryTe
 Uses: `Harness`, `Identifiers`, `Layout`, `Panes`, `Registry`, `Visual`.
 Tests: `Terminal*Tests.swift` (for example `TerminalStoreTests`, `TerminalActionsTests`,
 `TerminalLineEditTests`).
+
+### Workspace/ — workspaces, checkouts and the write rule
+
+Workspaces, piece 1 (decision 110): where a piece of work happens, and how
+an agent's write finds its checkout.
+
+- `WorkspaceModel.swift` — `Workspace`, `WorkspaceCheckout`, `PortBlock`, `WorkspacesFile`: the record
+  Go keeps in `workspaces.json` (`internal/wakilcore/workspaces.go`), read and written through
+  wakil-git's `workspaces_read` / `workspaces_write`.
+- `WriteRule.swift` — `decideWrite` (steps 0–2 and a switch to a held branch) → `WriteDecision`;
+  `WorkspaceHold`, `HeldBranch`, `holderIsWorking`.
+- `WorkspacePaths.swift` — `workspacePath` / `mainPath` (Main ↔ checkout), `confinementRefusal` (call 13).
+- `BranchNames.swift` — `branchSlug`, `fallbackBranchName`, `childBranchName`, `uniqueSlug`.
+- `WorkspaceLines.swift` — `WorkspaceLine`: the thread's sentences.
+- `WorkspaceStore.swift` — `WorkspaceStore` (actor): the record in memory, live holds, which workspace each
+  conversation is in; `reload` keeps an unreadable record's failure whole and `save` refuses over it.
+- `WorkspaceRouter.swift` — `WorkspaceRouter` (actor), the one `WorkspaceWriteRouting` (`Core/`): every
+  agent write action asks it at its head; it carries out `decideWrite` through wakil-git, moves the
+  conversation, and tells the thread through `WorkspaceRouterHooks` (installed by `WindowModel`).
+- `WorkspaceOperations.swift` — `WorkspaceListing`, and the router's `listing`, `archive`, `restore`,
+  `bringHome`, `move`.
+- `BranchDraft.swift` — `BranchDraft`: the ✨ quick task that names a workspace's branch from the Branches
+  instructions (decision 10), within `patience`, else `fallbackBranchName`.
+- `WorkspaceActions.swift` — `registerWorkspaceActions`: `workspace_list` (agent and operator),
+  `workspace_start` (the agent's copy from a base it chose),
+  `workspace_archive`, `workspace_restore`, `workspace_bring_home`, `conversation_move` (operator-only);
+  piece 3's `workspace_open` and `workspace_new_conversation` (operator-only), parked on the
+  `ConversationBroker` (`.openView`, `.newHere`) for `WindowModel.openWorkspaceView` / `newConversationHere`.
+- `HomeScreen.swift` — piece 3: `homeScreen(HomeInput) → HomeScreen`, the home screen decided — sections per
+  project (the current first), Main, cards (`HomeCard`: repos, PRs, needs, conversation lines, children,
+  ⋯'s facts), pills, tickets not started here, Earlier, the help line's form, first run.
+- `HomeComposer.swift` — piece 3: `homeStartChoices` (the composer's *Start in* rows) and
+  `homeComposerPlaceholder` (it names no place: the home is the organisation's).
+- Piece 2, running the app: `RunPlan.swift` (`RunPlan`, `RunStepResult`, `RunTryResult`,
+  `readyOutputMatches`), `WorkspacePorts.swift` (the router's `ensurePorts`: blocks from wakil-ctx's
+  `ports_allocate`, recorded in `workspaces.json`; `markSetUp`), `WorkspaceRunner.swift`
+  (`WorkspaceRunner` actor: run — needs and services once per workspace, copy, clone and setup once
+  per checkout, each process in a terminal through the `RunTerminals` seam, ready —, stop, build,
+  Try, followed as a Go job step by step; `RepoRunState` — with the step a run is on, its command and
+  time so far —, `runStatusLine`; Archive's hook), `TryProgress.swift` (Try's step list: `TryProgressState`,
+  `TryStepState` with its mark, title and time; `RunStepNow`), `RunTone.swift` (a run state's tone — working,
+  waiting, ready, failed — and a card's, its most urgent repo's; its §5 colour is `App/RunToneColour.swift`), `RunActions.swift` (`workspace_run`,
+  `workspace_stop`, `workspace_build`, `workspace_running`: agent-reachable, its own workspace only),
+  `RunningActions.swift` (`running_*`, operator-only), `RunningSettings.swift` (the Running settings'
+  decisions: groups, a field's source, an edit as an override, Draft all and Detect proposals).
+  `App/WorkspaceRunTerminals.swift` is the window's `RunTerminals` (panes in the workspace's view).
+  `RecipeDrafting.swift` (decision 13's drafting conversation and Try's fix: `RecipeDraftBook`, the
+  briefs, `savingDraft`, and `running_draft_propose` — agent-reachable, `.control`, only the
+  conversation Wakil started for that repo — through `RecipeDraftLookup`);
+  `App/WindowModel+RecipeDrafts.swift` starts that conversation off screen in Main and asks it for a fix.
+- `Crews.swift` (piece 5) — `TeammateProposals` (pending proposals, replace, dismissals per workspace and
+  repo), `checkTeammateProposal`, `crewBriefLines` (who holds what), `teammateProposalLine`,
+  `nothingToDoWords`. `TeammateProposal` itself is in `Core/` so `LiveConversation` can carry it.
+- `CrewWorkspace.swift` — the router's `crewWorkspace` (the ticket's, else a record with no copies) and `join`.
+- `CrewActions.swift` — `CrewLookup` (the window's side, `WindowModel.useCrew`) and `registerCrewActions`:
+  `conversation_propose_teammate`, `conversation_nothing_to_do` (agent), `conversation_teammate_start`,
+  `conversation_teammate_dismiss`, `conversation_teammate_brief` (operator-only).
+
+Uses: `Editor` (the tickets in flight), `Harness`, `MCP`, `Registry`.
+Tests: `WorkspaceModelTests`, `WorkspaceRouterTests`, `HomeScreenTests`, `WorkspacePaletteTests` (⌘P's Running
+grouped by workspace, `Command/PaletteSources.swift`), `WindowModelWorkspacesTests` (the window's side, in
+`App/WindowModel+Workspaces.swift`, and the view doors, `WindowModelWorkspaceViewsTests`), `RecipeDraftingTests`, `CrewsTests`, `CrewWindowTests` (the window's side, in `App/WindowModel+Crews.swift`).
 
 ### Visual/ — design-language values
 

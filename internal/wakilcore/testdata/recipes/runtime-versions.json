@@ -1,0 +1,63 @@
+{
+  "repo": "runtime-versions",
+  "kind": "node-npm",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "clone": [
+      "node_modules"
+    ],
+    "setup": [
+      "mise install",
+      "npm install"
+    ],
+    "processes": [
+      {
+        "name": "dev",
+        "command": "npm run dev"
+      }
+    ],
+    "ready": {
+      "url": "http://localhost:$WAKIL_PORT/"
+    },
+    "notes": {
+      "clone": "package.json",
+      "ports.PORT": "most Node servers read PORT",
+      "processes.dev": "package.json script dev",
+      "ready": "the dev server answering on $WAKIL_PORT",
+      "setup": "mise is installed and reads the repo's version files; package.json (no lockfile: npm)"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [
+    {
+      "tool": "node",
+      "version": "20.11.0",
+      "file": ".nvmrc"
+    },
+    {
+      "tool": "nodejs",
+      "version": "20.11.0",
+      "file": ".tool-versions"
+    },
+    {
+      "tool": "python",
+      "version": "3.12.1",
+      "file": ".tool-versions"
+    },
+    {
+      "tool": "go",
+      "version": "1.23",
+      "file": "mise.toml"
+    },
+    {
+      "tool": "node",
+      "version": "20",
+      "file": "mise.toml"
+    }
+  ],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

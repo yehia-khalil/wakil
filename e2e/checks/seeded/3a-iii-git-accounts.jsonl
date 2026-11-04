@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N e2epass -C e2e-key -f ~/.ssh/e2ekey && echo made"}}
 {"do":{"press":"Return"}}

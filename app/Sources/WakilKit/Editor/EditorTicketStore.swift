@@ -67,7 +67,9 @@ public actor EditorTicketStore {
     private var shownWhere: [String: (root: String, branch: String)] = [:]
     /// The Hand to agent popover while it is open, and each brief as edited, by subject and source
     /// (`handOffBriefKey`), for the window's life (Rule 2). `handOffStart` is the Start in flight;
-    /// `handOffCancelled` the one its Cancel stopped. An org switch drops all four (Invariant 4).
+    /// `handOffCancelled` the one its Cancel stopped; `handOffReserved` every conversation the Start
+    /// in flight reserved (one, or each member of one per repo). An org switch drops them all
+    /// (Invariant 4).
     private var handOffShown: TicketHandOffState?
     /// A kept brief: its text, whether an agent wrote it last, and the operator's first line.
     struct KeptBrief: Equatable { let text: String; let byAgent: Bool; let title: String }
@@ -78,6 +80,7 @@ public actor EditorTicketStore {
     private var handOffOpens = 0
     private var handOffStart: UUID?
     private var handOffCancelled: UUID?
+    private var handOffReserved: [String] = []
     private var generation = 0
     private var onChange: (@Sendable () async -> Void)?
 
@@ -479,6 +482,15 @@ public actor EditorTicketStore {
         await changed()
     }
 
+    /// `ticket_branch` for `branch` on `root`, as the window's own read, kept nowhere here: the home's
+    /// Archive offer reads each workspace branch's PRs through it (workspaces, piece 3; decision 11).
+    public func readBranchPRs(root: String, branch: String) async throws -> TicketBranchState {
+        let (ticket, limit) = (self.ticket, self.readLimit)
+        return try await ActionRegistry.$dispatchCaller.withValue(nil) {
+            try await Self.readBranch(ticket, root: root, branch: branch, limit: limit)
+        }
+    }
+
     /// A shown ticket's other branches, by key, in `<root>:<branch>` order.
     public func ticketBranchReads() -> [String: [TicketBranchState]] {
         alsoReads.mapValues { m in m.keys.sorted().compactMap { m[$0] } }
@@ -612,6 +624,7 @@ public actor EditorTicketStore {
     func beginHandOffStart() async -> UUID {
         let token = UUID()
         handOffStart = token
+        handOffReserved = []
         handOffShown?.starting = true
         handOffShown?.error = nil
         handOffShown?.conversation = nil
@@ -619,11 +632,15 @@ public actor EditorTicketStore {
         return token
     }
 
-    /// The start reserved its conversation: kept so Cancel can name it. False when that start was
-    /// cancelled meanwhile — its conversation is then ended by the caller.
+    /// The start reserved its conversation (one per repo: each member's, in turn): kept so Cancel
+    /// can name them all. False when that start was cancelled meanwhile — that conversation is then
+    /// ended by the caller, and a crew starts no more.
     func reserveHandOff(_ conversation: String, token: UUID) async -> Bool {
         guard handOffCancelled != token else { return false }
-        if handOffStart == token { handOffShown?.conversation = conversation }
+        if handOffStart == token {
+            handOffReserved.append(conversation)
+            handOffShown?.conversation = conversation
+        }
         await changed()
         return true
     }
@@ -639,6 +656,7 @@ public actor EditorTicketStore {
         if handOffCancelled == token { handOffCancelled = nil; return .cancelled }
         guard handOffStart == token else { return .gone }
         handOffStart = nil
+        handOffReserved = []
         if let error {
             handOffShown?.starting = false
             handOffShown?.conversation = nil
@@ -650,13 +668,15 @@ public actor EditorTicketStore {
         return .current
     }
 
-    /// Cancel while starting (Rule 4): the popover stays open, no longer starting; answers the
-    /// conversation the start reserved, if it reserved one yet, for the caller to end.
-    func cancelHandOffStart() async -> String? {
-        guard let token = handOffStart else { return nil }
+    /// Cancel while starting (Rule 4): the popover stays open, no longer starting; answers every
+    /// conversation the start reserved so far — one, or each member of one per repo — for the
+    /// caller to end.
+    func cancelHandOffStart() async -> [String] {
+        guard let token = handOffStart else { return [] }
         handOffCancelled = token
         handOffStart = nil
-        let reserved = handOffShown?.conversation
+        let reserved = handOffReserved
+        handOffReserved = []
         handOffShown?.starting = false
         handOffShown?.conversation = nil
         await changed()
@@ -807,6 +827,7 @@ public actor EditorTicketStore {
         handOffChoices = nil
         handOffStart = nil
         handOffCancelled = nil
+        handOffReserved = []
     }
 }
 

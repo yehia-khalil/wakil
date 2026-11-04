@@ -354,7 +354,7 @@ private func lifecycleWindow(
 
         #expect(await window.removeEnvironment(project: "p", projectPath: "/p", "dev").error == nil)
 
-        #expect(window.liveConversationRows(in: dev).isEmpty && window.chips.isEmpty)
+        #expect(window.liveConversationRows(in: dev).isEmpty && window.chipCandidates.isEmpty)
         #expect(window.conversation(id: id) == nil)
         #expect(kill(pid, 0) == -1, "its shell was reaped")
         #expect(window.environment == "stage")

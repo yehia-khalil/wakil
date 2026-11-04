@@ -1,0 +1,28 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"type":{"into":"window.composer","text":"write the workspace note"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Started workspace ‘write the workspace note’"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"null"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-2","field":"cwd","contains":"/workspaces/e2e-git/write-the-workspace-note/e2e-api"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"click":"landing.project.e2e-git"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-1","field":"grid[0]","contains":" e2e-git %"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"case \"$PWD\" in */e2e-git) echo IN-MAIN;; *) echo ELSEWHERE;; esac"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"IN-MAIN"}}

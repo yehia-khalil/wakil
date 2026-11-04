@@ -1,4 +1,7 @@
-{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
 {"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
 {"do":{"keys":"mkdir -p ~/.wakil/layouts/e2e-fixture && printf '%s' '{\"panes\":[{\"id\":\"git-1\",\"kind\":\"git\",\"title\":\"Git\",\"frame\":{\"x\":40,\"y\":40,\"width\":900,\"height\":560}}],\"focusedId\":\"git-1\",\"graph\":{\"links\":[]}}' > ~/.wakil/layouts/e2e-fixture/e2e-git.json && echo git-layout-seeded"}}
 {"do":{"press":"Return"}}

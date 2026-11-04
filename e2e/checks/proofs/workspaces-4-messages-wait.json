@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-4-messages-wait.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "69d74e37f3222e9012c3aa3efeed506f7be05f3b"
+}

@@ -1,6 +1,69 @@
 {
   "rules": [
     {
+      "match": "message from another conversation (‘ask the first where it works’",
+      "reply": "woken, map says: {map}"
+    },
+    {
+      "match": "ask the first where it works",
+      "call": { "action": "conversation_message", "echo": true, "params": { "to": "thread turn one", "text": "where are you working?" } },
+      "reply": "asked the first where it works"
+    },
+    {
+      "match": "crew check: one agent per repo",
+      "reply": "crew member on its repo"
+    },
+    {
+      "match": "send-to check, second word",
+      "reply": "the second word arrived"
+    },
+    {
+      "match": "send-to check, another agent",
+      "reply": "another send-to agent started"
+    },
+    {
+      "match": "send-to check, first agent",
+      "hold": "wakil-e2e-release-sendto",
+      "reply": "the first send-to agent finished"
+    },
+    {
+      "match": "build the portal login form against post /login",
+      "reply": "portal teammate started on the form"
+    },
+    {
+      "match": "propose a portal teammate",
+      "call": { "action": "conversation_propose_teammate", "echo": true, "params": { "repo": "e2e-portal", "brief": "Build the portal login form against POST /login." } },
+      "reply": "proposed a portal teammate"
+    },
+    {
+      "match": "nothing for this crew member",
+      "call": { "action": "conversation_nothing_to_do", "echo": true, "params": { "why": "the portal needs nothing" } },
+      "reply": "said there is nothing to do"
+    },
+    {
+      "match": "message from another conversation (‘send word to the first conversation’",
+      "reply": "read the word from the other conversation"
+    },
+    {
+      "match": "message from another conversation (‘thread turn one’",
+      "reply": "read the thanks from the first conversation"
+    },
+    {
+      "match": "send word to the first conversation",
+      "call": { "action": "conversation_message", "echo": true, "params": { "to": "thread turn one", "text": "the login endpoint answers 201 now" } },
+      "reply": "sent word to the first conversation"
+    },
+    {
+      "match": "Draft how e2e-api runs",
+      "call": { "action": "running_draft_propose", "echo": true, "params": { "repo": "e2e-api", "recipeName": "e2e-drafted", "recipe": { "setup": ["false"], "processes": [{ "name": "web", "command": "python3 -m http.server $WAKIL_PORT" }], "ready": { "output": "Serving HTTP" }, "notes": { "setup": "README" } } } },
+      "reply": "drafted how e2e-api runs"
+    },
+    {
+      "match": "Try of e2e-api's recipe failed",
+      "call": { "action": "running_draft_propose", "echo": true, "params": { "repo": "e2e-api", "recipeName": "e2e-drafted", "recipe": { "setup": [], "processes": [{ "name": "web", "command": "python3 -m http.server $WAKIL_PORT" }], "ready": { "output": "Serving HTTP" } } } },
+      "reply": "proposed a fix for e2e-api"
+    },
+    {
       "match": "read this page",
       "call": { "action": "browser_read_page", "echo": true, "params": { "pane": "browser-1" } },
       "reply": "read the release notes"
@@ -160,6 +223,70 @@
     {
       "match": "say the instructions marker",
       "reply": "the instructions marker turn answered"
+    },
+    {
+      "match": "write the workspace note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/ws-note.txt", "kind": "file" } },
+      "reply": "wrote the workspace note"
+    },
+    {
+      "match": "start the copy from main",
+      "call": { "action": "workspace_start", "echo": true, "params": { "repo": "e2e-api", "base": "main", "branch": "e2e-from-main-start" } },
+      "reply": "started the copy from main"
+    },
+    {
+      "match": "write the started note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/started-note.txt", "kind": "file" } },
+      "reply": "wrote the started note"
+    },
+    {
+      "match": "where do you work",
+      "reply": "map says: {map}"
+    },
+    {
+      "match": "write the merged note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/merged-note.txt", "kind": "file" } },
+      "reply": "wrote the merged note"
+    },
+    {
+      "match": "write the ticket note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/ticket-note.txt", "kind": "file" } },
+      "reply": "wrote the ticket note"
+    },
+    {
+      "match": "needs check: hand off",
+      "reply": "the needs-check agent started"
+    },
+    {
+      "match": "hold then fail",
+      "hold": "wakil-e2e-release-fail",
+      "call": { "action": "conversation_message", "params": { "to": "c-nowhere", "text": "this turn fails" } },
+      "reply": "a failing turn was not refused"
+    },
+    {
+      "match": "read the api readme",
+      "call": { "action": "editor_open", "echo": true, "params": { "path": "{cwd}/../e2e-api/README.md" } },
+      "reply": "read the readme without a copy"
+    },
+    {
+      "match": "write the second note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-api/second-note.txt", "kind": "file" } },
+      "reply": "wrote the second note"
+    },
+    {
+      "match": "write the portal note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../e2e-portal/portal-note.txt", "kind": "file" } },
+      "reply": "wrote the portal note"
+    },
+    {
+      "match": "write the plain note",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/plain-note.txt", "kind": "file" } },
+      "reply": "wrote the plain note"
+    },
+    {
+      "match": "write into the other copy",
+      "call": { "action": "editor_create", "echo": true, "params": { "path": "{cwd}/../home/.wakil/orgs/e2e-fixture/workspaces/e2e-git/write-the-workspace-note/e2e-api/intruder.txt", "kind": "file" } },
+      "reply": "wrote into the other copy"
     }
   ]
 }

@@ -1,0 +1,14 @@
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"in e2e-project · staging"}}
+{"do":{"click":"window.composer.startIn"}}
+{"expect":{"tree":"contains","text":"START IN · MAIN OF"}}
+{"do":{"click":"window.composer.startIn.e2e-git/staging"}}
+{"expect":{"tree":"absent","text":"START IN · MAIN OF"}}
+{"expect":{"tree":"contains","text":"in e2e-git"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"where do you work"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"map says: You are in Main of project e2e-git"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"Started workspace"}}

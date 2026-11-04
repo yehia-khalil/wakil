@@ -73,6 +73,27 @@ SSH account, no token) rather than failing. The browser's pull-request group rea
 
 The editor settings: `editor_settings` answers both tiers; `set_editor_settings` takes `showIgnored`
 (app-wide); `set_project_editor_settings` takes `heavyFolders`, the whole list (per project).
+`set_project_pm_key` sets a project's Jira project (`scopes.pm.projectKey`, upper-cased; empty clears it),
+which a project's Ticket tab and its ⌘P tickets are scoped by.
+
+How a repo runs (workspaces piece 2, `cmd/wakil-ctx/recipes.go`): `recipe_detect` and `recipe_draft_all`
+(drafts from a repo's files, no model; `recipedetect.go`, `recipedraftall.go`), `recipe_effective` and
+`recipe_save` (the `recipes` in `project.json`, merged with a repo's overrides, validated whole;
+`recipe.go`), `recipe_plan` (the ordered steps, env and files the window runs; `recipeplan.go`),
+`recipe_ready_wait` (a loopback URL polled, or an output line matched), `ports_allocate` (blocks of
+ten from 41200; `ports.go`) and `compose_override` (fixed compose ports moved into the block with
+`!override`; `compose.go`). Only `recipe_save` writes. Folders read are confined to the project's
+repos and the organisation's `workspaces/` (`ConfineRunDir`). Compose files are read with
+`go.yaml.in/yaml/v3`. Running a plan (`cmd/wakil-ctx/reciperun.go`, `reciperun.go`): `recipe_list`
+(the Running settings as stored, each repo's effective recipe), `recipe_prepare` (the plan's files,
+copy and clone on a first run, the `.env` lines, and the secrets read for the processes' terminals),
+`recipe_run_steps` (the saved one-shot steps by phase, in the operator's login shell, output whole,
+cancellable), `recipe_try` (Try headless: services, setup, processes, ready, stop, teardown; `recipe_try_start`,
+`recipe_try_status` and `recipe_try_cancel` run it as a job the window follows step by step,
+`wakilcore.TryTracker` listing every step before it runs) and
+`recipe_secret_set` (a Running secret under `run:<project>:<owner>:<variable>`). A process with
+`afterReady` starts once the ready check passed (Run and Try). None runs a command
+the caller names: only the saved recipe's.
 
 ### wakil-db
 
@@ -92,6 +113,13 @@ Tools: `git_status`, `git_diff`, `git_show`. 3c-i adds `git_origin` (the root's 
 credentials taken out; `ReadOrigin`) and `git_blame`'s `pushed`, which marks the lines whose commit one
 of origin's remote-tracking branches holds with one `rev-list <ids> --not --remotes=origin`
 (`MarkPushed`, its own 1 s `PushedDeadline`; a failure or timeout marks nothing and never fails the blame).
+
+Workspaces, piece 1 (`cmd/wakil-git/workspaces.go`, the window's copy only): `workspaces_read` /
+`workspaces_write` (the record, `workspaces.go`), `git_worktree_add` / `_remove` / `_list` / `_prune`,
+`git_snapshot_apply`, `git_take_from_main` and `git_release_branch` (`worktree.go`). A worktree is added
+and removed from one of the project's own roots; a removal with `snapshot` keeps the work first.
+Confinement (`AllowedRootPaths`) admits the project's recorded checkouts beside its roots, here and in
+`wakil-files` (whose search covers Main's roots unless roots are named).
 
 ### wakil-files
 
@@ -206,6 +234,12 @@ meant for a human are `UserError` (`mcperr.go`). By area:
   (what `config_tree` returns; each environment carries `production`, from
   `EnvironmentIsProduction`, which the browser reads to price a site), `production.go` (`EnvironmentIsProduction`,
   `EnvironmentIsReadOnly`), `pickname.go`. See [state.md](state.md) for the files.
+- **Running a repo** (workspaces piece 2) — `recipe.go` (`Recipe`, `RepoRun`, `EffectiveRecipe`,
+  `ValidateRecipes`, `SaveRecipes`), `recipedetect.go` (`DetectRecipe`; fixtures under
+  `testdata/recipes/`, one per Detect row, `-update` rewrites the expected drafts),
+  `recipedraftall.go` (`DraftAllRecipes`), `ports.go` (`AllocatePortBlocks`, `WakilEnv`,
+  `ExpandWakil`), `compose.go` (`ParseCompose`, `ComposeOverride`), `recipeplan.go` (`BuildRunPlan`,
+  `MergeDotEnv`, `WaitReadyURL`), `recipedirs.go` (`RepoDirs`, `ConfineRunDir`).
 - **Keychain** — `secrets.go` (`SecretGet`, `SecretSet`; service name `wakil:<org>:<ref>` from
   `keychainService`), `credpresence.go` (`SecretPresence`; runs `/usr/bin/security` at its absolute
   path; `WAKIL_KEYCHAIN` names the keychain file; `WAKIL_SECURITY_BINARY` overrides the tool in test

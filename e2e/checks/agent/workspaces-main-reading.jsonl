@@ -1,0 +1,19 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"window.composer","text":"read the api readme"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"read the readme without a copy"}}
+{"expect":{"tree":"absent","text":"Started workspace"}}
+{"expect":{"tree":"absent","text":"workspace copy"}}
+{"expect":{"tree":"absent","text":"read only"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"frame":"landing.main","minWidth":40}}
+{"expect":{"tree":"contains","text":"read the api readme"}}
+{"expect":{"tree":"absent","text":"1 repo"}}
+{"expect":{"tree":"absent","text":"read only"}}
+{"expect":{"tree":"absent","text":"Value: working"}}

@@ -240,7 +240,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              // 3c-i: the browser's actions.
              // 3c-ii: the agent's reach into the page (read_page, click, press, revoke_site, scroll, select, type).
              "browser_back", "browser_bookmark", "browser_clear_data", "browser_click", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_press", "browser_print", "browser_pull_requests_refresh", "browser_read_page", "browser_reload", "browser_rename_tab", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_type", "browser_unpin", "browser_zoom",
-             "capacity_record", "conversation_rename", "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_capacity",
+             "capacity_record", "conversation_message", "conversation_move", "conversation_nothing_to_do", "conversation_propose_teammate", "conversation_queued_cancel", "conversation_rename", "conversation_teammate_brief", "conversation_teammate_dismiss", "conversation_teammate_start", "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_capacity",
              "ctx_config_tree", "ctx_config_tree_for",
              "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove", "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_connection_update",
              "ctx_create_environment", "ctx_create_org", "ctx_create_project",
@@ -252,7 +252,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "ctx_list_projects", "ctx_list_providers", "ctx_provider_login", "ctx_remove_environment",
              "ctx_remove_project", "ctx_rename_environment", "ctx_rename_project",
              "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_environment_production", "ctx_set_key", "ctx_set_keys", "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
-             "ctx_set_project_editor_settings", "ctx_set_provider",
+             "ctx_set_project_editor_settings", "ctx_set_project_pm_key", "ctx_set_provider",
              "ctx_unlink_provider", "ctx_update_org", "db_cancel", "db_classify_statement",
              "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
@@ -273,11 +273,17 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
              "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
              "rail_set", "review_open", "review_reply_draft", "review_reply_draft_restore", "review_reply_send", "review_resolve", "review_step",
+             "running_detect", "running_draft_all", "running_draft_propose", "running_read", "running_save", "running_secret_set",
+             "running_try", "running_try_end",
              "session_close", "session_get", "session_list", "session_new", "session_read",
              "session_record_parent", "session_resume", "session_set_provider", "session_switch", "settings_open", "term_open",
              "term_propose", "term_run", "term_scroll",
              "ticket_hand_off", "ticket_hand_off_brief", "ticket_hand_off_cancel", "ticket_hand_off_close", "ticket_hand_off_open",
-             "ticket_in_flight", "ticket_link", "ticket_open", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show"])
+             "ticket_hand_off_send",
+             "ticket_in_flight", "ticket_link", "ticket_open", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show",
+             "workspace_archive", "workspace_bring_home", "workspace_build", "workspace_list",
+             "workspace_new_conversation", "workspace_open", "workspace_restore", "workspace_run",
+             "workspace_running", "workspace_set_environment", "workspace_start", "workspace_stop"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)
     // #185 made `wakil-http` the third Wakil-owned client, so three

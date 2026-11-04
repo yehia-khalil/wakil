@@ -12,30 +12,35 @@
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.qa"}}
 {"expect":{"tree":"absent","text":"Placeholder: Environment"}}
-{"expect":{"tree":"contains","text":"Value: working"}}
-{"expect":{"tree":"absent","text":"start the held agent in staging"}}
-{"do":{"click":"landing.row.open:terminal"}}
-{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
-{"do":{"keys":"touch ~/wakil-e2e-release-staging"}}
-{"do":{"press":"Return"}}
-{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
-{"expect":{"tree":"contains","text":"Value: done"}}
-{"expect":{"tree":"absent","text":"Value: working"}}
-{"expect":{"tree":"absent","text":"the held agent in staging finished"}}
-{"expect":{"tree":"absent","text":"billing.e2e-fixture.invalid"}}
-{"expect":{"tree":"absent","text":"qa declares no entry named billing"}}
 {"do":{"type":{"into":"window.composer","text":"start the second agent in qa"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"the second agent answered in qa"}}
 {"expect":{"tree":"contains","text":"catalog-qa.e2e-fixture.invalid"}}
-{"expect":{"tree":"contains","text":"Value: done"}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"e2e-project-two"}}
+{"expect":{"tree":"absent","text":"the second agent answered in qa"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
+{"expect":{"tree":"contains","text":"Value: working"}}
+{"do":{"hotkey":"cmd+p"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"frame":"palette.row.newpane:terminal","minWidth":10}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"touch ~/wakil-e2e-release-staging"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"Value: done"}}
+{"expect":{"tree":"absent","text":"Value: working"}}
+{"expect":{"tree":"absent","text":"the held agent in staging finished"}}
+{"expect":{"tree":"absent","text":"billing.e2e-fixture.invalid"}}
 {"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
 {"expect":{"tree":"contains","text":"the held agent in staging finished"}}
 {"expect":{"tree":"absent","text":"the second agent answered in qa"}}
-{"expect":{"pane":"api-2","field":"entry","equals":"billing"}}
-{"expect":{"pane":"api-2","field":"environment","equals":"staging"}}
-{"expect":{"tree":"absent","text":"Value: done"}}
+{"expect":{"tree":"absent","text":"e2e-project-two"}}
+{"expect":{"pane":"api-3","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-3","field":"environment","equals":"staging"}}
 {"expect":{"tree":"absent","text":"Value: working"}}
 {"expect":{"journal":{"contains":"\"params\":{\"entry\":\"billing\"}"}}}
 {"expect":{"journal":{"contains":"\"params\":{\"entry\":\"catalog\"}"}}}

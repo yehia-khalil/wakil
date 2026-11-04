@@ -13,6 +13,22 @@ private let ticketNeedsRowsOf: @Sendable (InFlightState, [String: TicketHandOffL
 extension WindowModel {
     /// The tickets in flight, one row each, most urgent first: from `ticketNeeds`, the live handed
     /// conversations' states and the organisation's drafts.
+    /// The project the window shows, which its Ticket tab, its count and ⌘P's tickets are held to
+    /// (`ticketScoped`); nil with no project, or before its session started — the Landing (the
+    /// home), which reads the organisation's whole list.
+    public var ticketScope: TicketScope? {
+        projectKey.isEmpty || !sessionStarted ? nil : TicketScope(project: projectKey, pmKey: pmProjectKey)
+    }
+
+    /// `ticketNeeds` held to `ticketScope`: the Ticket label's count and its words.
+    public var ticketNeedsInProject: InFlightState? { ticketScoped(ticketNeeds, to: ticketScope) }
+
+    /// `ticketNeedsRows` held to `ticketScope`: ⌘P's `#` rows.
+    public var ticketNeedsRowsInProject: [TicketNeedsRow] {
+        guard let s = ticketNeedsInProject else { return [] }
+        return ticketNeedsRowsOf(s, ticketHandOffLive, editorReviews.reads.draftRecords)
+    }
+
     public var ticketNeedsRows: [TicketNeedsRow] {
         guard let ticketNeeds else { return [] }
         return ticketNeedsRowsOf(ticketNeeds, ticketHandOffLive, editorReviews.reads.draftRecords)
@@ -50,10 +66,11 @@ extension WindowModel {
     /// row's words are its own most urgent state.
     func paletteTickets() -> [PaletteTicket] {
         let live = ticketHandOffLive, drafts = editorReviews.reads.draftRecords
-        return ticketNeedsRows.map { row in
+        let workspaces = workspacesKnownNow
+        return ticketNeedsRowsInProject.map { row in
             paletteTicket(row, prWords: { r in
                 ticketUrgentState(r, handoffs: live, drafts: r.threads.filter { drafts[$0] != nil }.count).words
-            })
+            }, workspace: homeTicketWorkspace(row, in: workspaces)?.id)
         }
     }
 
@@ -173,7 +190,8 @@ extension WindowModel {
 /// keyed ticket, `ticket_open`'s params (`ticketOpenParams`), and ⌘↩'s hand-off from the header — none
 /// when no project holds its branch, since an agent needs a root. The PR rows carry no `→ base`: the In
 /// flight read does not name a PR's base.
-public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> String) -> PaletteTicket {
+public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> String,
+                          workspace: String? = nil) -> PaletteTicket {
     let name = ticketNeedsRowName(row)
     let title = row.title.isEmpty ? name : "\(name)  \(row.title)"
     var numbers: [Int] = []
@@ -196,5 +214,6 @@ public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> 
         handOff = .object(o)
     }
     return PaletteTicket(id: row.id, title: title, words: row.urgent.words, key: row.key, numbers: numbers, prs: prs,
-                         open: open, handOff: handOff, tier: row.urgent.tier, activity: row.activity)
+                         open: open, handOff: handOff, tier: row.urgent.tier, activity: row.activity,
+                         workspace: workspace)
 }

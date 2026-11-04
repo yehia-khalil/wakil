@@ -12,6 +12,8 @@ import SwiftUI
 struct EditorTicketView: View {
     /// Where a link opens (`WakilLinks.open`): Wakil's browser pane, the system browser on ⌥-click.
     var openLink: (String, Bool) -> Void = { _, _ in }
+    /// The project's Ticket tab with no Jira project set: open Settings at the project to set it.
+    var openProjectSettings: () -> Void = {}
     let state: EditorTicketViewState
     let column: EditorColumnState
     /// The pane's front tab: the view follows its root, else the project's first.
@@ -242,7 +244,9 @@ struct EditorTicketView: View {
     }
 
     private var backButton: some View {
-        Button("← Back to this branch") { Task { await dispatch("ticket_show", ["key": .null]) } }
+        Button { Task { await dispatch("ticket_show", ["key": .null]) } } label: {
+            Text("← Back to this branch").fixedSize(horizontal: false, vertical: true)
+        }
             .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
             .accessibilityIdentifier("editor.ticket.back")
     }
@@ -352,7 +356,18 @@ struct EditorTicketView: View {
     /// shows it; the branch never switches (Rule 6).
     @ViewBuilder
     private var longLived: some View {
-        if let s = state.inFlight {
+        if let s = state.scopedInFlight {
+            // A project's tab holds the project's tickets only (the walk: "when a project is selected
+            // we scope stuff"); with none and no Jira project set, it says so, with a way to set it.
+            if let line = ticketScopeEmptyLine(s, scope: state.scope) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Text(line).dimmed().font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("editor.ticket.noJiraProject")
+                    Button("Set it in Settings…") { openProjectSettings() }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("editor.ticket.setJiraProject")
+                }
+            }
             let lists = ticketViewLists(s, handoffs: state.handOffLive, drafts: reviews.reads.draftRecords)
             inFlightList("Waiting on you", lists.waiting, id: "waiting")
             inFlightList("In flight", lists.inFlight, id: "inflight")
@@ -658,14 +673,18 @@ struct EditorTicketView: View {
                             .accessibilityIdentifier("editor.ticket.draft:\(t.id)")
                     }
                     if let replies = row.replies { Text(replies).dimmed().font(.system(size: 10.5)).fixedSize() }
-                    if let there = row.elsewhere {
-                        Text(there).dimmed().font(.system(size: 10.5)).fixedSize()
-                            .accessibilityIdentifier("editor.ticket.elsewhere:\(t.id)")
-                    }
                 }
                 Text(row.words).font(.system(size: 11.5))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 23)
+                // On its own line, wrapping whole: beside the place it pushed the row past a narrow
+                // column, which cut the column's words at both edges (piece 3 walk).
+                if let there = row.elsewhere {
+                    Text(there).dimmed().font(.system(size: 10.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 23)
+                        .accessibilityIdentifier("editor.ticket.elsewhere:\(t.id)")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 3).padding(.horizontal, 4)
@@ -1133,10 +1152,11 @@ private struct TicketSlab<Trailing: View, Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // The title and its control on one line while both fit, else the control under the
+            // title (piece 3 walk: Hand to agent ran past a narrow column and was cut).
+            TitleAndTrailing(spacing: 8) {
                 Text(title).font(.system(size: 10, weight: .semibold)).tracking(1.6).textCase(.uppercase)
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.62)).fixedSize()
-                Spacer(minLength: 8)
                 trailing
             }
             content
@@ -1235,3 +1255,45 @@ private struct TicketRowTint: ViewModifier {
             .onHover { hovered = $0 }
     }
 }
+
+/// A section's title with its control at the right while both fit the width; narrower, the control
+/// goes under the title, given the whole width. Nothing is pushed past the column's edges.
+private struct TitleAndTrailing: Layout {
+    var spacing: CGFloat
+
+    private func fits(_ width: CGFloat?, _ subviews: Subviews) -> Bool {
+        guard let width, subviews.count == 2 else { return true }
+        let a = subviews[0].sizeThatFits(.unspecified), b = subviews[1].sizeThatFits(.unspecified)
+        return a.width + spacing + b.width <= width
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return subviews.first?.sizeThatFits(proposal) ?? .zero }
+        let a = subviews[0].sizeThatFits(.unspecified)
+        if fits(proposal.width, subviews) {
+            let b = subviews[1].sizeThatFits(.unspecified)
+            return CGSize(width: proposal.width ?? (a.width + spacing + b.width), height: max(a.height, b.height))
+        }
+        let b = subviews[1].sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? max(a.width, b.width), height: a.height + 6 + b.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else {
+            subviews.first?.place(at: bounds.origin, proposal: proposal)
+            return
+        }
+        let a = subviews[0].sizeThatFits(.unspecified)
+        if fits(bounds.width, subviews) {
+            let b = subviews[1].sizeThatFits(.unspecified)
+            let h = max(a.height, b.height)
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY + h / 2), anchor: .leading, proposal: ProposedViewSize(a))
+            subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.minY + h / 2), anchor: .trailing, proposal: ProposedViewSize(b))
+        } else {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(a))
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + a.height + 6),
+                              proposal: ProposedViewSize(width: bounds.width, height: nil))
+        }
+    }
+}
+

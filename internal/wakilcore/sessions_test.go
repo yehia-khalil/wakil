@@ -597,6 +597,31 @@ func TestGetSession_FirstPromptPlainStringContent(t *testing.T) {
 	}
 }
 
+// Workspaces, piece 1: the window appends the workspace map to a session's first turn, after
+// the operator's words; the label is the words.
+func TestGetSession_FirstPromptLeavesOutTheWorkspaceMap(t *testing.T) {
+	home, claudeConfigDir := setupHome(t)
+
+	projDir := filepath.Join(home, "proj")
+	projPath := writeProjectWithRoots(t, projDir, "proj", "initech", []Root{{Path: "."}})
+	activateProject(t, "proj", projPath)
+
+	dirName := EncodeRootPath(projDir)
+	records := []map[string]any{
+		{"type": "user", "cwd": projDir, "message": map[string]any{
+			"content": "Fix the bug in the encoder\n\n[Wakil: where you work. This map replaces any earlier one.]\nYou are in Main"}},
+	}
+	writeSessionFile(t, claudeConfigDir, dirName, "map-session", records)
+
+	sess, err := GetSession("map-session")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if want := "Fix the bug in the encoder"; sess.FirstPrompt != want {
+		t.Errorf("FirstPrompt = %q, want %q", sess.FirstPrompt, want)
+	}
+}
+
 func TestGetSession_FirstPromptTruncatesByRunes(t *testing.T) {
 	home, claudeConfigDir := setupHome(t)
 

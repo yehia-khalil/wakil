@@ -752,7 +752,7 @@ func firstPrompt(path string) string {
 		if rec.Type != "user" {
 			continue
 		}
-		text := extractUserText(rec.Message.Content)
+		text := withoutWakilBlocks(extractUserText(rec.Message.Content))
 		if text == "" || hasSkipMarker(text) {
 			continue
 		}
@@ -787,6 +787,18 @@ func extractUserText(raw json.RawMessage) string {
 		}
 	}
 	return sb.String()
+}
+
+// wakilBlockMarker opens a block the window appends to the operator's words in a turn (the
+// workspace map, workspaces piece 1). What the operator typed comes first and is the label.
+const wakilBlockMarker = "\n\n[Wakil: "
+
+// withoutWakilBlocks is text up to the first block the window appended.
+func withoutWakilBlocks(text string) string {
+	if i := strings.Index(text, wakilBlockMarker); i >= 0 {
+		return text[:i]
+	}
+	return text
 }
 
 func hasSkipMarker(text string) bool {

@@ -461,18 +461,25 @@ private func registryForTesting() async -> ActionRegistry {
 // `WindowSession` lives in `WakilApp`, which has no test target and cannot
 // have one (`phase-2c-ii-b-acceptance.md` §3).
 
-/// The launch condition it exists for: an org whose `active.json` names no
-/// provider yet.
-@Test func theNoActiveProviderNoteIsShownWhileNoProviderIsSet() async {
+/// Workspaces, piece 3 (the operator's walk of an organisation's first-run home): the home already
+/// says what to do, so no standing sentence about the provider is drawn above the composer — only
+/// when the operator sends with none set, one plain line naming where to fix it.
+@Test func theNoActiveProviderNoteWaitsForASend() async {
     let model = await makeModel(providerId: "")
+    #expect(await model.noActiveProviderNote == nil, "the home draws no developer sentence before a send")
+
+    #expect(await model.send("hello") == false)
+
     let note = await model.noActiveProviderNote ?? ""
-    #expect(note.contains("⌘P"), "\(note)")
+    #expect(note == "No provider is set for this organisation — choose one in Settings (⌘,).", "\(note)")
+    let status = await model.status
+    #expect(status.isEmpty, "said once, by the note: \(status)")
 }
 
-/// The defect itself. Nothing about the note is right if it survives the
-/// switch that makes it false.
+/// The defect D3 named. Nothing about the note is right if it survives the switch that makes it false.
 @Test func theNoActiveProviderNoteGoesOnceAProviderIsChosen() async {
     let model = await makeModel(providerId: "")
+    await model.send("hello")
     #expect(await model.noActiveProviderNote != nil)
 
     await model.setProvider("main")
@@ -484,6 +491,30 @@ private func registryForTesting() async -> ActionRegistry {
 @Test func theNoActiveProviderNoteIsAbsentWhenAProviderWasSetAtLaunch() async {
     let model = await makeModel(providerId: "main")
     #expect(await model.noActiveProviderNote == nil)
+}
+
+/// The first-run home lists sessions with no project, and `session_list` refuses that — an expected
+/// answer, not an error to draw (the home says what to do). Any other failure is still said, whole,
+/// and once (Rule 8): it was drawn `session_list: session_list: …`.
+@Test func theHomesSessionReadSaysNothingForNoProjectYetAndTheRestOnce() async {
+    func model(failingWith message: String) async -> WindowModel {
+        await makeModel(providerId: "main", configureRegistry: { registry in
+            await registry.register(Action(
+                name: "session_list", description: "fails", kind: .read, audience: .agentReachable,
+                schema: .object(["type": .string("object")]),
+                handler: { _ in throw StandardActionError.serverError(action: "session_list", message: message) }))
+        })
+    }
+    let noProject = await model(failingWith: "no active project — run set_project first")
+    _ = await noProject.landingSessions()
+    let quiet = await noProject.status
+    #expect(!quiet.contains("session_list"), "\(quiet)")
+
+    let broken = await model(failingWith: "the session index could not be read")
+    _ = await broken.landingSessions()
+    let status = await broken.status
+    #expect(status.contains("session_list: the session index could not be read"), "\(status)")
+    #expect(!status.contains("session_list: session_list:"), "\(status)")
 }
 
 // MARK: - The persistence write (Task 9, Step 5)

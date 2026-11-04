@@ -179,6 +179,22 @@ public func ticketNeedsLabel(_ s: InFlightState?) -> String? {
     return parts.isEmpty ? "\(s.count) waiting on you" : "\(s.count) waiting on you: " + parts.joined(separator: ", ")
 }
 
+/// The editor's Ticket label counts only what its body can show for this project (piece 3 walk): a
+/// project whose roots are read and none is a git repository has no branch to show a ticket on, so
+/// it counts nothing. Roots not read yet, or any repository among them: the organisation's count.
+public func ticketNeedsCount(_ s: InFlightState?, roots: [GitRootState]) -> Int {
+    ticketCountShowable(roots) ? ticketNeedsCount(s) : 0
+}
+
+/// `ticketNeedsLabel` for the editor's Ticket label, by `ticketNeedsCount(_:roots:)`'s rule.
+public func ticketNeedsLabel(_ s: InFlightState?, roots: [GitRootState]) -> String? {
+    ticketCountShowable(roots) ? ticketNeedsLabel(s) : nil
+}
+
+private func ticketCountShowable(_ roots: [GitRootState]) -> Bool {
+    roots.isEmpty || roots.contains(where: gitRootIsRepository)
+}
+
 /// Whether the 2-minute read runs: Wakil is the active app, the screen is unlocked, and an
 /// organisation is open.
 public func ticketPollWanted(appActive: Bool, screenLocked: Bool, organization: String) -> Bool {
@@ -200,4 +216,39 @@ func ticketInFlightReply(_ s: InFlightState) -> JSONValue {
     }
     o["needs"] = .array(needs)
     return .object(o)
+}
+
+/// The project a window shows, for scoping what its Ticket tab, its count and ⌘P's tickets hold
+/// (the walk, 2026-10-31: "when a project is selected we scope stuff"): its registry key, which Go's
+/// rows name as `project`, and its Jira project (`scopes.pm.projectKey`), empty when it has none.
+/// No scope is the organisation's whole list — the home's NEEDS YOU.
+public struct TicketScope: Sendable, Equatable {
+    public var project: String
+    public var pmKey: String
+    public init(project: String, pmKey: String) { self.project = project; self.pmKey = pmKey }
+
+    /// Whether `key` is a ticket of the project's Jira project (INI-142 of INI).
+    func holdsKey(_ key: String) -> Bool {
+        !pmKey.isEmpty && key.uppercased().hasPrefix(pmKey.uppercased() + "-")
+    }
+}
+
+/// The read held to `scope`: a ticket is the project's when its key is in the project's Jira project
+/// or any of its branches or PRs is on one of the project's repos — then every row of it stays; a
+/// PR with no ticket by its own repo. `count` is the kept Waiting on you rows' items. Nil scope: as read.
+public func ticketScoped(_ s: InFlightState?, to scope: TicketScope?) -> InFlightState? {
+    guard let s, let scope else { return s }
+    let all = s.waitingOnYou + s.inFlight
+    let keys = Set(all.filter { !$0.key.isEmpty && ($0.project == scope.project || scope.holdsKey($0.key)) }.map(\.key))
+    func kept(_ r: InFlightRowState) -> Bool { r.key.isEmpty ? r.project == scope.project : keys.contains(r.key) }
+    let waiting = s.waitingOnYou.filter(kept)
+    return InFlightState(waitingOnYou: waiting, inFlight: s.inFlight.filter(kept), partial: s.partial,
+                         count: waiting.reduce(0) { $0 + $1.count })
+}
+
+/// The project's Ticket tab with nothing to show and no Jira project set: the one plain line it
+/// reads, beside a way to set it in Settings. Nil otherwise.
+public func ticketScopeEmptyLine(_ s: InFlightState?, scope: TicketScope?) -> String? {
+    guard let s, let scope, scope.pmKey.isEmpty, s.waitingOnYou.isEmpty, s.inFlight.isEmpty else { return nil }
+    return "No Jira project is set for this project"
 }

@@ -271,8 +271,12 @@ Terms coined for this project. Phase specs must use them consistently.
 | **Environment** | A named target within a project — local, staging, production. Carries DB and HTTP configuration. Meaningless for PM, chat, and inbox. **Production is declared, not spelled**: a `production` flag, whose default the name supplies (Decision 26). |
 | **Connection** | An authenticated account at the organization level: a Jira site, a Slack workspace, a mailbox. |
 | **Scope** | A project-level narrowing of a connection: a Jira project key, a channel list, an email label set. |
-| **Layout scope** | What a pane arrangement is filed under: the organization, project, environment and — once a conversation exists — its lineage root. The one key both pane stores and layout persistence share. **Not a Scope** — that narrows a connection; this names a canvas. |
-| **Lineage root** | The oldest ancestor of a session: the identity a conversation — a chain of sessions — keeps across every resume that forked it. What ⌘P collapses a chain to, and what an arrangement is filed under. |
+| **Layout scope** | What a pane arrangement is filed under: organization, project, environment, and a workspace's view key or else a conversation's lineage root. **Not a Scope.** |
+| **Lineage root** | The oldest ancestor of a session: the identity a conversation keeps across every resume that forked it. |
+| **Workspace** | Where one piece of work happens in a project and environment: a name, tickets, a checkout of each repo it changed, a view, and its conversations. Made by Wakil, except Main (Decision 94). |
+| **Main** | A project's own folders (git's main worktree of each root): for reading and the operator's hand. No agent writes there. |
+| **Checkout** | One repo's git worktree in a workspace, held by at most one conversation at a time for writing. |
+| **View** | A workspace's canvas of panes over its checkouts, shared by its conversations; a conversation is optional in it. |
 | **Place** | An (organization, project, environment); one agent at most (Decision 41). |
 | **Active context** | The place on screen. Agents resolve against their own. |
 | **Capability layer** | Headless, UI-free operations ("run this SQL, return rows"). Separate processes, usable without Wakil.app. |
@@ -284,11 +288,11 @@ Terms coined for this project. Phase specs must use them consistently.
 | **Session** | One harness conversation, bound to exactly one provider, with its transcript in that provider's store. Wakil mints the id; a resume is a **fork** under a fresh id with recorded lineage, never a continuation (Decision 12, open question 5). |
 | **Speech provider** | An STT implementation: Apple on-device, local Whisper, or a cloud API. Selected per organization. |
 | **Write gate** | `writeGate`: the one policy function every dispatched action passes before its handler runs. Answers allow / gate / block from the action's price, its origin, and the active environment. |
-| **Write price** | The pair of answers an **action** declares for itself — one for production, one outside it. The write gate reads it instead of the action's kind, so two adapters' writes can cost differently. Decision 25. |
+| **Write price** | The pair of answers an **action** declares for itself, for production and outside it; the gate reads it, not the kind. Decision 25. |
 | **PTY** | A pseudo-terminal: the kernel fd pair that lets Wakil host a program which believes it is attached to a terminal. |
 | **Terminal pane** | The pane hosting an interactive shell on a PTY, opened at a path, carrying the active environment's variables and the org's credentials. Two surfaces: the **block history** of finished blocks, and the **live grid** a foreground program draws on. |
 | **Block** | One submitted command and everything it produced — exit code, duration, output. The terminal pane's unit of state, and the granularity of one terminal action. |
-| **Plane** | A surface that takes the whole window, in front of the canvas — `ConfirmationPlane`, `OrgPlane`. Never laid out, never saved, never in a layout. *(`design-language.md` §3's planes are depth layers, a different sense.)* |
+| **Plane** | A surface that takes the whole window in front of the canvas — `ConfirmationPlane`, `OrgPlane`; never in a layout. |
 | **Journal** | The append-only record of every dispatched action — name, parameters, outcome — written whether it ran, was refused, or was blocked. Swift-only, so a `wakil` CLI mutation leaves no entry. A parameter marked on its `Action` is written `[redacted]`, its name kept (Decision 29). |
-| **Binding** | One (organization, provider id) pair: a record, plus a Keychain item at `wakil:<org>:provider:<id>`. What an organization adds and unlinks — the *account* is the config dir, and one account may carry a different id in each organization that binds it (Decision 32). A **credential-less binding** has no Keychain item: it draws a row and cannot start a session. |
-| **Partiality** | What a listing reports about *what it could not read*, carried beside the data rather than inferred from its length — `SessionList.Skipped`/`UnreadProviders`, `Rows.Truncated`. A short answer and a trimmed one must never look alike, and a surface that shows the data owes the operator the partiality with it. |
+| **Binding** | One (organization, provider id) pair: a record, plus a Keychain item at `wakil:<org>:provider:<id>`. The account is the config dir; one account may carry a different id in each organization (Decision 32). A **credential-less binding** cannot start a session. |
+| **Partiality** | What a listing reports about *what it could not read*, beside the data (`SessionList.Skipped`, `Rows.Truncated`): a short answer and a trimmed one never look alike. |

@@ -1,0 +1,13 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"AGENT INSTRUCTIONS"}}
+{"do":{"type":{"into":"settings.org.git.branches","text":"KEY-short-summary, lower case."}}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitBranchInstructions","equals":"KEY-short-summary, lower case."}}
+{"do":{"type":{"into":"settings.project.agent.branches","text":"Project branch rule."}}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.branches","equals":"Project branch rule."}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"KEY-short-summary, lower case."}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.org.git.branches","clear":"settings.org.git.pullRequests"}}

@@ -135,6 +135,12 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "browser_revoke_site",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
+            // Workspaces, piece 1: moving a conversation between workspaces is the operator's.
+            "conversation_move",
+            // Item 8: a message queued for a conversation's next turn is the operator's to take back.
+            "conversation_queued_cancel",
+            // Workspaces piece 5: starting, dismissing and editing a proposed teammate are the operator's.
+            "conversation_teammate_brief", "conversation_teammate_dismiss", "conversation_teammate_start",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree_for",
             // Connections: which account a service is reached as, its secrets and its switches.
             "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",
@@ -170,6 +176,7 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // 3b-viii (Decision 42): which model reads the operator's code is theirs to choose.
             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
             "ctx_set_project_editor_settings",
+            "ctx_set_project_pm_key",
             "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
             // 2e (#207). The reason NEW to this set: every other member
             // objects to what the agent could REACH, and these two object
@@ -177,6 +184,9 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "db_remove_database", "db_set_connection", "db_set_dsn",
             // 2e-iii. `db_update_database` edits beside them.
             "db_update_database",
+            // Workspaces, piece 2: the Running settings and Try.
+            "running_detect", "running_draft_all", "running_read", "running_save", "running_secret_set",
+            "running_try", "running_try_end",
             // Conversations 2 of 3: an agent must not push aside the operator's conversation.
             // Conversations 3 of 3: nor end it.
             "session_close", "session_new", "session_set_provider", "session_switch",
@@ -188,6 +198,11 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "settings_open", "term_run",
             // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
             "ticket_hand_off", "ticket_hand_off_cancel",
+            // Item 8: Send to is the operator's own message.
+            "ticket_hand_off_send",
+            // Workspaces, piece 1: archive, Bring to Main and restore are the operator's (the card's ⋯).
+            "workspace_archive", "workspace_bring_home", "workspace_new_conversation", "workspace_open",
+            "workspace_restore", "workspace_set_environment",
         ])
 
     let reachable = await wiring.registry.all()
@@ -225,4 +240,15 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
     #expect(restore.audience == .agentReachable)
     #expect(restore.kind == .control)
     #expect(!operatorOnlyActions.contains("review_reply_draft_restore"))
+}
+
+/// Workspaces piece 4: `conversation_message` is a `.control` the agent reaches — it is how one
+/// conversation tells another something — and never a write the gate prices.
+@Test func conversationMessageIsAnAgentReachableControl() async throws {
+    let wiring = try await wiringWithNoBinaries()
+    await wiring.shutdown()
+    let action = try #require(await wiring.registry.all().first { $0.name == "conversation_message" })
+    #expect(action.kind == .control)
+    #expect(action.audience == .agentReachable)
+    #expect(!operatorOnlyActions.contains("conversation_message"))
 }

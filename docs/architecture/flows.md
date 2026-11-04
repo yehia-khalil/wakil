@@ -124,8 +124,8 @@ config carries the new `WAKIL_ORG`.
 
 ## 4. Switching and closing a conversation
 
-A place holds any number of live conversations, one on screen. ⌘N, a Running row, a chip, ⌘P's
-Running group and ⌘⇧W are operator clicks or the actions `session_new`, `session_switch` and
+A place holds any number of live conversations, one on screen. ⌘N, a home line, a chip (another
+organisation's agent only: the home lists the screen's own), ⌘P's Running group and ⌘⇧W are operator clicks or the actions `session_new`, `session_switch` and
 `session_close`; the actions are `.control`, operator-only, and reach the window through
 `ConversationBroker` (`Harness/ConversationBroker.swift`), drained by a pump, as `session_resume` is.
 
@@ -140,3 +140,27 @@ Running group and ⌘⇧W are operator clicks or the actions `session_new`, `ses
    <titles> — save or close them first.`). `answerCloseQuestion(close:)` takes the answer. Closing stops the agent through
    `stopSession(of:)`, closes the conversation's panes as on quit, and the conversation moves to
    Continue. The place then shows its next live conversation, or its Landing.
+
+**A message between conversations** (workspaces piece 4). `conversation_message {to, text}` is
+`.control` and agent-reachable; its handler refuses what it must (`checkConversationMessage`) and
+parks `.message` on `ConversationBroker`. `WindowModel.deliverMessage` writes "To ‘…’" in the
+sender's thread and "From ‘…’ · <workspace>" in the recipient's, and queues it on
+`PlaceAgent.pendingMessages`. `wakeForMessages` sends the block as a turn when the recipient is idle
+and its workspace's `MessageWakeBudgets` has a wake; otherwise it waits for the turn's end (`append`'s
+`.result`) or the operator's next message, whose `send` resets the budget and carries the block at
+the head of its input. The gate and the plane never read it.
+
+**A teammate, proposed** (workspaces piece 5). `conversation_propose_teammate {repo, brief}` is
+`.control` and agent-reachable; its handler asks the window through `CrewLookup`, and
+`WindowModel.proposeTeammate` refuses what it must (`checkTeammateProposal`), holds it in
+`teammateProposals` (keyed by piece 4's workspace key and the repo) and writes a row in the proposer's
+thread. The strip over the thread (`TeammateProposalsStrip`) and `session_list`'s `proposals` show it.
+`conversation_teammate_start` (operator-only) runs `startTeammate`: the proposer's workspace, or a
+record-only one made now (`WorkspaceRouter.crewWorkspace`) that the proposer `join`s; then a
+background conversation that joins it before its first message — `startHandOff` with May push off for
+a handed proposer, else `startCrewConversation` — its brief followed by `crewBriefLines`.
+`conversation_teammate_dismiss` remembers the repo for that workspace. **One per repo** in Hand to
+agent sends `ticket_hand_off {agents: perRepo, repos}`, which reaches `WindowModel.startCrew` through
+`TicketHandOffLookup.startCrew`: one handed conversation per repo in the ticket's workspace.
+Each member is reserved in `EditorTicketStore` (`admit`) before its first message, so
+`ticket_hand_off_cancel` ends every member started so far and the next is not admitted.

@@ -59,6 +59,18 @@ func TestStatusDetachedHead(t *testing.T) {
 	}
 }
 
+// Item 8 (2026-10-30): a branch-off names the commit it started from, so status says the head's
+// short SHA on a branch too; an unborn branch has none.
+func TestStatusNamesTheHeadsShortCommit(t *testing.T) {
+	st := ParseGitStatus("/r", []byte("# branch.oid 2d1ac2e9f00ba4\x00# branch.head work\x00"))
+	if st.Head != "2d1ac2e" || st.Branch != "work" {
+		t.Fatalf("%+v", st)
+	}
+	if st := ParseGitStatus("/r", []byte("# branch.oid (initial)\x00# branch.head main\x00")); st.Head != "" {
+		t.Fatalf("unborn head = %q", st.Head)
+	}
+}
+
 func TestParseAheadBehind(t *testing.T) {
 	in := "# branch.oid abc\x00# branch.head main\x00# branch.upstream origin/main\x00# branch.ab +2 -1\x00"
 	st := ParseGitStatus("/r", []byte(in))

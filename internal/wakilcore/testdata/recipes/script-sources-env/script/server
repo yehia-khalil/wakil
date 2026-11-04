@@ -1,0 +1,6 @@
+#!/bin/sh
+# Reads its port from .env itself, as many run scripts do.
+set -a
+. ./.env
+set +a
+exec python3 -m http.server "$PORT" --bind 127.0.0.1

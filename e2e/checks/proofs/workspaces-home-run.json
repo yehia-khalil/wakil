@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-home-run.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "b1e80de889e951ba8bcc6cd11d04bcefeeb8b8e0"
+}

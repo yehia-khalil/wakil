@@ -1,0 +1,32 @@
+{
+  "repo": "go",
+  "kind": "go",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "setup": [
+      "go mod download"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "go run ./cmd/billing"
+      }
+    ],
+    "build": "go build ./...",
+    "notes": {
+      "build": "go.mod",
+      "ports.PORT": "the usual variable a Go server reads; check main reads it",
+      "processes.app": "package main in ./cmd/billing",
+      "setup": "go.mod"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": [
+    "go has 2 commands (./cmd/billing, ./cmd/migrate); the draft runs ./cmd/billing. Pick the one that serves the app."
+  ]
+}

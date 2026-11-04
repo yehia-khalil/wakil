@@ -12,15 +12,29 @@ let resumedInstructionsUnknown = "\u{0}resumed"
 /// composed text per project to `AgentInstructionsBox`, which an agent's launch reads.
 extension WindowModel {
     func publishAgentInstructions(_ tree: SettingsTree) {
+        // Workspaces piece 4: Agents woken by messages is read from the same tree.
+        messageState.trees[tree.org.id] = tree
         let org = tree.org
-        let orgTexts = AgentTexts(general: org.agentGeneral, commits: org.gitCommitInstructions, pullRequests: org.gitPRInstructions)
+        let orgTexts = AgentTexts(general: org.agentGeneral, commits: org.gitCommitInstructions, pullRequests: org.gitPRInstructions,
+                                  branches: org.gitBranchInstructions)
         agentInstructionsBox.set(org: org.id, project: nil,
                                  text: agentInstructions(org: org.id, orgTexts: orgTexts, project: nil, projectTexts: nil))
         for p in tree.projects {
-            let texts = AgentTexts(general: p.agent.general, commits: p.agent.commits, pullRequests: p.agent.pullRequests)
+            let texts = AgentTexts(general: p.agent.general, commits: p.agent.commits, pullRequests: p.agent.pullRequests,
+                                   branches: p.agent.branches)
             agentInstructionsBox.set(org: org.id, project: p.name,
                                      text: agentInstructions(org: org.id, orgTexts: orgTexts, project: p.name, projectTexts: texts))
         }
+    }
+
+    /// The Branches rules (decision 10): the organisation's, then `project`'s.
+    func branchInstructions(project: String) -> String {
+        guard let tree = settings else { return "" }
+        let p = tree.projects.first { $0.name == project }
+        return [tree.org.gitBranchInstructions, p?.agent.branches ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
     }
 
     /// The ✨ draft's commit rules: the organisation's, then the active project's.

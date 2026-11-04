@@ -1,0 +1,28 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"send word to the first conversation"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"sent word to the first conversation"}}
+{"expect":{"tree":"contains","text":"To ‘thread turn one’"}}
+{"expect":{"tree":"contains","text":"the login endpoint answers 201 now"}}
+{"dispatch":{"action":"session_switch","params":{"conversation":"thread turn one"}}}
+{"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · Main"}}
+{"expect":{"tree":"contains","text":"read the word from the other conversation"}}
+{"expect":{"tree":"absent","text":"sent word to the first conversation"}}
+{"dispatch":{"action":"conversation_message","params":{"to":"c-nowhere","text":"hello"},"refuses":"no live conversation ‘c-nowhere’"}}
+{"dispatch":{"action":"conversation_message","params":{"to":"thread turn one","text":"hello"},"refuses":"is the sending conversation itself"}}
+{"dispatch":{"action":"conversation_message","params":{"to":"send word to the first conversation","text":"   "},"refuses":"the message is empty"}}
+{"dispatch":{"action":"conversation_message","params":{"to":"send word to the first conversation","text":"thanks, noted"}}}
+{"expect":{"journal":{"contains":"\"action\":\"conversation_message\""}}}
+{"expect":{"tree":"contains","text":"To ‘send word to the first conversation’"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"done, unseen"}}
+{"expect":{"tree":"absent","text":"· read only"}}
+{"dispatch":{"action":"session_switch","params":{"conversation":"send word to the first conversation"}}}
+{"expect":{"tree":"contains","text":"From ‘thread turn one’ · Main"}}
+{"expect":{"tree":"contains","text":"read the thanks from the first conversation"}}

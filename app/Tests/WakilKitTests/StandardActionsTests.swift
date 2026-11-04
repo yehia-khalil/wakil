@@ -2402,7 +2402,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
             ["api_remove_entry", "api_set_entry", "api_update_entry",
-             "conversation_rename",
+             "conversation_message", "conversation_rename",
              "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_config_tree", "ctx_config_tree_for",
              "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove", "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_connection_update",
              "ctx_create_environment",
@@ -2418,7 +2418,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
              "ctx_rename_environment", "ctx_rename_project", "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment",
              "ctx_set_environment_production",
              "ctx_set_key", "ctx_set_keys",
-             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions", "ctx_set_project_editor_settings", "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
+             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions", "ctx_set_project_editor_settings", "ctx_set_project_pm_key", "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
              "db_cancel", "db_classify_statement", "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
              "db_remove_database",
@@ -2746,6 +2746,7 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         "ctx_jira_token_set": .object(["id": .string("o"), "email": .string("e"), "token": .string("t")]),
         "ctx_set_project_agent_instructions": .object(["projectPath": .string("/p/project.json"), "general": .string("g")]),
         "ctx_set_project_editor_settings": .object(["projectPath": .string("/p.json"), "tabSize": .integer(2)]),
+        "ctx_set_project_pm_key": .object(["projectPath": .string("/p.json"), "projectKey": .string("INI")]),
         "ctx_editor_settings": .object([:]),
         "ctx_browser_settings": .object([:]),
         "ctx_keyboard": .object([:]),
@@ -2820,6 +2821,9 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         "session_close", "session_new", "session_switch",
         // Names: `conversation_rename` parks there too, and checks no client.
         "conversation_rename",
+        // Workspaces piece 4: `conversation_message` refuses with no window (nothing live), and
+        // checks no client.
+        "conversation_message",
         // Checks no client before touching `panes`/`layout`. With no
         // `layout` wired (this test's `registerStandardActions` call
         // passes none, so it defaults to `nil`), `requireOpenPane`

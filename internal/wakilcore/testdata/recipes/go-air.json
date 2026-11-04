@@ -1,0 +1,30 @@
+{
+  "repo": "go-air",
+  "kind": "go",
+  "recipe": {
+    "ports": {
+      "PORT": "$WAKIL_PORT"
+    },
+    "setup": [
+      "go mod download"
+    ],
+    "processes": [
+      {
+        "name": "app",
+        "command": "air"
+      }
+    ],
+    "build": "go build ./...",
+    "notes": {
+      "build": "go.mod",
+      "ports.PORT": "the usual variable a Go server reads; check main reads it",
+      "processes.app": ".air.toml: air builds and restarts the server on change",
+      "setup": "go.mod"
+    }
+  },
+  "doesntRun": false,
+  "runtimes": [],
+  "missingEnv": [],
+  "hosts": [],
+  "questions": []
+}

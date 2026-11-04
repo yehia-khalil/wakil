@@ -1,0 +1,15 @@
+{"expect":{"frame":"window.composer","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"tell me a short joke"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the joke turn arrived with no note"}}
+{"expect":{"tree":"absent","text":"Started workspace"}}
+{"do":{"hotkey":"cmd+shift+w"}}
+{"expect":{"tree":"absent","text":"the joke turn arrived with no note"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"1 PAST CONVERSATION"}}
+{"expect":{"tree":"absent","text":"archived workspace"}}
+{"expect":{"tree":"absent","text":"1 repo"}}
+{"expect":{"frame":"landing.earlier","inside":"window"}}
+{"do":{"click":"landing.earlier"}}
+{"expect":{"tree":"contains","text":"tell me a short joke"}}

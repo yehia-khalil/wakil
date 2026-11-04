@@ -1,0 +1,29 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"Agents woken by messages"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.messageWakes","equals":"8"}}
+{"do":{"focus":"settings.org.agent.messageWakes"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"0"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.messageWakes","equals":"0"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"do":{"type":{"into":"window.composer","text":"send word to the first conversation"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"sent word to the first conversation"}}
+{"do":{"hotkey":"cmd+shift+h"}}
+{"expect":{"frame":"landing","minWidth":40}}
+{"expect":{"tree":"contains","text":"waiting on you · 1 message"}}
+{"expect":{"frame":"landing.needs","inside":"window"}}
+{"do":{"click":"landing.needs:0.act"}}
+{"expect":{"tree":"contains","text":"From ‘send word to the first conversation’ · Main"}}
+{"expect":{"tree":"absent","text":"read the word from the other conversation"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn three"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"read the word from the other conversation"}}
+{"expect":{"tree":"absent","text":"third reply in the thread"}}

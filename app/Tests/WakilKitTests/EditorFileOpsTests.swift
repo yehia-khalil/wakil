@@ -293,3 +293,43 @@ private func fileTab(_ path: String, preview: Bool = false) -> EditorTab {
     #expect(editorTreeShortError("/elsewhere/x is outside the project's roots", roots: roots)
         == "/elsewhere/x is outside the project's roots")
 }
+
+/// Workspaces (decision 22): a write is routed before a pane is opened for it. The route can start
+/// a workspace and carry the canvas into its view; an editor opened first stood on the canvas the
+/// write left — Main's — and was saved into the project's seed, so Main's next view drew an empty
+/// editor (e2e workspaces-main-seed, 2026-10-31).
+private actor PaneCountingRouter: WorkspaceWriteRouting {
+    let layout: LayoutStore
+    var panesWhenRouted: [Int] = []
+    init(layout: LayoutStore) { self.layout = layout }
+    func routeRoot(_ root: String, action: String) async throws -> String { root }
+    func routePath(_ path: String, action: String) async throws -> String {
+        panesWhenRouted.append(await layout.snapshot().panes.count)
+        return path
+    }
+    func routeSwitch(root: String, branch: String, action: String) async throws -> RoutedSwitch {
+        RoutedSwitch(root: root, branch: branch)
+    }
+    func callerCheckouts() async -> [String]? { nil }
+}
+
+@Test(arguments: ["editor_create", "editor_trash", "editor_rename"])
+func aWriteIsRoutedBeforeAnEditorIsOpenedForIt(_ action: String) async throws {
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let layout = LayoutStore()
+    let files = FakeFiles()
+    await files.put("/p/api/a.go", "a")
+    let router = PaneCountingRouter(layout: layout)
+    await registerEditorActions(into: registry, panes: PaneStore(kinds: PaneKinds.standard), layout: layout,
+                                files: files, fileLists: nil, gitStatus: nil, roots: { ["/p/api"] },
+                                workspaces: router)
+    var params: [String: JSONValue] = ["path": .string(action == "editor_create" ? "/p/api/n.go" : "/p/api/a.go")]
+    if action == "editor_create" { params["kind"] = .string("file") }
+    if action == "editor_rename" { params["to"] = .string("/p/api/b.go") }
+    _ = try await registry.dispatch(name: action, params: .object(params), origin: .agent,
+                                    caller: .test("staging"), confirmation: nil)
+    let counts = await router.panesWhenRouted
+    #expect(!counts.isEmpty && counts.allSatisfy { $0 == 0 }, "routed with \(counts) panes open")
+}

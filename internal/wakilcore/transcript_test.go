@@ -64,6 +64,43 @@ func TestReadSession_MapsEveryBlockKindAndDropsThinking(t *testing.T) {
 	}
 }
 
+// Workspaces, piece 1: the window appends the workspace map to the operator's words on a
+// session's first turn and whenever it changed. A resumed thread's "you" rows are the words
+// only — in a plain-string record and in a text block alike — while an assistant's text that
+// happens to quote the marker is left as it was.
+func TestReadSession_UserRowsLeaveOutTheWorkspaceMap(t *testing.T) {
+	home, claudeConfigDir := setupHome(t)
+	projDir := filepath.Join(home, "proj")
+	projPath := writeProjectWithRoots(t, projDir, "proj", "initech", []Root{{Path: "."}})
+	activateProject(t, "proj", projPath)
+
+	mapBlock := "\n\n[Wakil: where you work. This map replaces any earlier one.]\nYou are in Main of project proj"
+	writeSessionFile(t, claudeConfigDir, EncodeRootPath(projDir), "s-map", []map[string]any{
+		{"type": "user", "cwd": projDir, "message": map[string]any{
+			"role": "user", "content": "where do you work" + mapBlock}},
+		assistantRecord(map[string]any{"type": "text", "text": "I quote it" + mapBlock}),
+		{"type": "user", "cwd": projDir, "message": map[string]any{
+			"role": "user", "content": []map[string]any{{"type": "text", "text": "and now" + mapBlock}}}},
+	})
+
+	got, err := ReadSession("s-map", 100)
+	if err != nil {
+		t.Fatalf("ReadSession: %v", err)
+	}
+	if len(got.Entries) != 3 {
+		t.Fatalf("entries = %+v, want 3", got.Entries)
+	}
+	if got.Entries[0].Text != "where do you work" {
+		t.Errorf("first user row = %q, want the operator's words only", got.Entries[0].Text)
+	}
+	if got.Entries[2].Text != "and now" {
+		t.Errorf("later user row = %q, want the operator's words only", got.Entries[2].Text)
+	}
+	if got.Entries[1].Text != "I quote it"+mapBlock {
+		t.Errorf("assistant row = %q, want it untouched", got.Entries[1].Text)
+	}
+}
+
 func TestReadSession_LimitKeepsTheLastEntriesAndReportsTruncation(t *testing.T) {
 	home, claudeConfigDir := setupHome(t)
 	projDir := filepath.Join(home, "proj")
