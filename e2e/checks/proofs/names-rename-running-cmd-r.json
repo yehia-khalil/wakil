@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/names-rename-running-cmd-r.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "a50a282af2491b0c6fb40e1585e7b3daab834b65"
+}

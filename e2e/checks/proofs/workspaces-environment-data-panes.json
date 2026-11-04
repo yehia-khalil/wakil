@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-environment-data-panes.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "b8148386c283e5990d62b38344573f45457d2302"
+}

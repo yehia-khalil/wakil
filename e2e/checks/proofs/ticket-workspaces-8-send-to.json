@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/ticket-workspaces-8-send-to.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "a935c2421f9847e6d19445745cf6fea6f1e41cc4"
+}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-home-tickets.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "79541599729eca7d790785f092b38e5e4b3fbb7f"
+}

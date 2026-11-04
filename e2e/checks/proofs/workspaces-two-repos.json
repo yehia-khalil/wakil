@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-two-repos.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "15251d98556d7ad813557c662cb76fb8d800ab3a"
+}

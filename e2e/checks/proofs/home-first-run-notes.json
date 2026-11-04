@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/unseeded/home-first-run-notes.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "a5b04aaf06ab9965e5339560d494f58c9d1be124"
+}

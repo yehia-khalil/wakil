@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/workspaces-earlier-non-code.jsonl",
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "4be99e67aba936a57f92cf169b155d8cb2a3406f"
+}

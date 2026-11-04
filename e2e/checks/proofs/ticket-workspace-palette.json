@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/agent/ticket-workspace-palette.jsonl",
-  "baseCommit": "d38ae30e7a06f1f80a6dabb0b07386f499b8e7cc",
-  "provedAt": "2026-10-30T09:15:21Z",
-  "checkBlob": "cee0798a165167aab5c46b1d7285cb1370bfe63b"
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "010fb3092ab222295fdc1265bade68d4e85c2f12"
 }

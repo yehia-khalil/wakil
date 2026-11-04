@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/workspaces-views-operator-only.jsonl",
-  "baseCommit": "797844548c7c7c3c4b076f67998c13aa2e6cd848",
-  "provedAt": "2026-10-30T04:16:01.127382Z",
-  "checkBlob": "711c297c913b17cbd62405a105bc2326a12bffe7"
+  "baseCommit": "a8206e963fbd4a00ec298d69c2eafa261c8ea8df",
+  "provedAt": "2026-11-02T22:29:16.909675Z",
+  "checkBlob": "2569ce660df6b9fb4f4c064e269aaf319c8e8913"
 }
