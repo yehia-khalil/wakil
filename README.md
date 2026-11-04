@@ -6,10 +6,10 @@ every tool, and the AI agent working beside you, already knows which one you mea
 You never tell Wakil *which* Jira, *which* database or *which* Claude account. You tell it
 what you want.
 
-> **Status: archived.** I built Wakil for myself across two months (September to November
-> 2026) and I'm not continuing it. It's published as a record of the work: the design
-> decisions, the safety model and the test harness are the interesting parts. It builds and
-> runs, but expect sharp edges.
+> **Status: open, not actively developed.** I built Wakil for myself across two months
+> (September to November 2026). I'm not actively working on it, but the repo stays open. The
+> design decisions, the safety model and the test harness are the interesting parts. It builds
+> and runs, but expect sharp edges.
 
 ![The home screen: agents working, idle, done and failed across projects; what needs you on top; workspaces with an app running](docs/screenshots/home.png)
 
