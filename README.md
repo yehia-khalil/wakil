@@ -154,17 +154,40 @@ The bigger finding was that *both* engines mangle identifiers the same way, so a
 wouldn't fix it. Instead, Wakil folds case and separators, matches the names in scope, and hands
 the agent the candidates as a hint under the unchanged turn. The agent makes the call.
 
-### 7. A test harness that proves it can fail
+### 7. An end-to-end harness built for agents, that proves it can fail
 
-400 end-to-end checks drive the real app through the macOS accessibility tree, against seeded
-fixture data and a scripted stand-in agent.
+Wakil was built with coding agents in the loop, so the harness had to catch what an agent would
+miss, and had to be drivable by an agent too. 400 checks (about 11,900 steps) drive the real
+app on screen, through the macOS accessibility tree, against seeded fixture data.
 
+- **Checks are data, not code.** Each check is a JSONL file of four step kinds: `do` (click,
+  type, press a key), `dispatch` (call an action the way the agent would), `expect` (read the
+  accessibility tree, a pane's state, focus, a frame or the journal) and `parity`. A `parity`
+  step performs the same change twice, once by click and once by the agent's action, and
+  asserts both land in the same state. Dual-driven panes, tested as a rule.
+- **`axresolve`**, a small Swift tool, finds any control by its accessibility identifier and
+  presses or sets it directly. It exists because the screen-automation tool the harness started
+  on dropped identifiers from its snapshots and refused to click the fixture window; acting on
+  the element itself made "set a value" the one act that can be read back and verified.
+- **A scripted agent** (`e2e/stub/`) stands in for `claude`. It speaks the same `stream-json`
+  protocol and drives the app's own MCP surface, so agent checks are deterministic, cost no
+  tokens, and still go through the production launch path, credentials and permission bridge.
+- **Every control must be pressed by some check**, or carry a written excuse (`make e2e-cover`).
+  The harness harvests every identifier in the Swift source and reports any that no check
+  reaches.
 - **Every new check must be shown to fail** against the code before the change (`make e2e-new`).
+  A check that can't go red proves nothing.
 - **Retrodiction:** to prove the harness could catch the bugs it was built for, known defects
   were patched back into the source one at a time, and the check covering each one had to go
   red (`docs/wakil/agent-e2e-retrodiction.md`).
+- **Evidence, not verdicts.** A failing check leaves a screenshot, the accessibility tree, every
+  pane's state and the agent's log, so a red run can be read without re-running it.
+- **A night run** ran the full suite overnight while the screen was free, with an agent allowed
+  to fix code but never the check, never to retry into green, and never to push (Decision 92).
 - **Nine interaction rules** (`PRODUCT.md`) govern every control (focus, confirmation, where
-  you land after an action), and every UI change is checked against them.
+  you land after an action), and the checks cover them.
+
+The auditor's playbook is in [`docs/agents/e2e.md`](docs/agents/e2e.md).
 
 ## More screens
 
