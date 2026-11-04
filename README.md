@@ -201,8 +201,8 @@ The auditor's playbook is in [`docs/agents/e2e.md`](docs/agents/e2e.md).
 | | |
 |---|---|
 | ![Browser with vertical tabs, grouped by site and by hand](docs/screenshots/browser-vertical-tabs.png) | ![The Ticket tab in the editor: the ticket, its pull request, open review threads drawn in the file, and Hand to agent](docs/screenshots/ticket-tab.png) |
-| ![Database pane: a read-only query and its result](docs/screenshots/database.png) | ![API client: the credential comes from the organization's Keychain entry, never the request](docs/screenshots/api.png) |
-| ![Settings: an organization's connections and git identity](docs/screenshots/settings-connections.png) | |
+| ![Database pane: a read-only query and its result](docs/screenshots/database.png) | ![API client: query rows synced with the path, a JSON body, and an authorization header the entry supplies from the Keychain](docs/screenshots/api.png) |
+| ![Settings: an organization's connections and git identity](docs/screenshots/settings-connections.png) | ![Settings, Running: how ▶ prepares, starts, checks and stops a repo in each workspace, on its own ports](docs/screenshots/settings-running.png) |
 
 ## How it's built
 
