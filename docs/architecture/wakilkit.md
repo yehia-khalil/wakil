@@ -731,7 +731,7 @@ Tests: `Terminal*Tests.swift` (for example `TerminalStoreTests`, `TerminalAction
 
 ### Workspace/ — workspaces, checkouts and the write rule
 
-Workspaces, piece 1 (spec `2026-10-29-workspaces-design.md`): where a piece of work happens, and how
+Workspaces, piece 1 (decision 110): where a piece of work happens, and how
 an agent's write finds its checkout.
 
 - `WorkspaceModel.swift` — `Workspace`, `WorkspaceCheckout`, `PortBlock`, `WorkspacesFile`: the record
