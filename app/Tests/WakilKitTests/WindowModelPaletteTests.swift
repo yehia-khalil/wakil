@@ -1113,6 +1113,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_set_local_provider", "ctx_config_tree_for",
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
     "ctx_list_providers", "ctx_provider_login", "ctx_set_environment", "ctx_set_project",
+    // The settings revamp: the production flag, operator-only.
+    "ctx_set_environment_production",
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
     // 3a-iii-a: the git account tools, operator-only.
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",

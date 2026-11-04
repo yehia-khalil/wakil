@@ -135,6 +135,9 @@ public let operatorOnlyActions: Set<String> = [
     // registry and the project files it stands in.
     "ctx_create_project", "ctx_rename_project", "ctx_remove_project",
     "ctx_create_environment", "ctx_rename_environment", "ctx_remove_environment",
+    // The settings revamp: what counts as production sets the agent's own price, so an agent
+    // must never be the one to change it.
+    "ctx_set_environment_production",
     // 3b-v (Decision 38). Decision 30 kept for the editor's settings: they carry no credential,
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.
@@ -320,6 +323,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
     case "session_close":
         return "\(toolName): only the operator closes a conversation — an agent must not end the "
             + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."
+    case "ctx_set_environment_production":
+        return "\(toolName): only the operator decides which environments are production — it "
+            + "sets the price of what you do there. You may READ it: ctx_config_tree answers each "
+            + "environment's production flag. Ask the operator to change it in the settings pane (\u{2318},)."
     case "ctx_set_project", "ctx_set_environment":
         return "\(toolName): An agent's place is fixed when its session starts. "
             + "Tell the operator which place the work needs; they can start an agent there."

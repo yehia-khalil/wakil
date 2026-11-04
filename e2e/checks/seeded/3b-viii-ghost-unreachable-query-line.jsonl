@@ -5,6 +5,7 @@
 {"do":{"type":{"into":"settings.localProvider.local.url","text":"http://127.0.0.1:1"}}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:1"}}
+{"do":{"click":"settings.tree.quickTasks"}}
 {"do":{"click":"settings.org.quickProvider"}}
 {"do":{"click":"settings.org.quickProvider.local"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"local"}}

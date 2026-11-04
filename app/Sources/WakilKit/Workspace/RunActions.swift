@@ -13,7 +13,7 @@ extension WorkspaceRouter {
 /// Workspaces, piece 2: Run, Stop and Build (decision 12), the agent's as much as the operator's —
 /// it runs only the saved recipe, so the actions name a repo and a process, never a command. An
 /// agent acts in its own workspace only; the operator names one. Running is the earned write of
-/// Decision 106 (Invariant 6): *allow* outside production, *gate* in it (Invariant 8).
+/// Decision 110 (Invariant 6): *allow* outside production, *gate* in it (Invariant 8).
 public func registerRunActions(
     into registry: ActionRegistry, runner: WorkspaceRunner,
     organization: @escaping @Sendable () async -> String?

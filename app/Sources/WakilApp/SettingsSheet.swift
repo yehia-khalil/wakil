@@ -1,4 +1,5 @@
 import SwiftUI
+import WakilKit
 
 /// A Settings sheet: a title and one line saying what it is for, the content, and a footer bar —
 /// Back on the left, Cancel then the main action on the right, as macOS sheets place them.
@@ -13,10 +14,10 @@ struct SettingsSheet<Content: View, Footer: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.95))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                 Text(subtitle)
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.55))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 24)
@@ -71,10 +72,10 @@ struct SheetChoice: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: SettingsScale.identifier, weight: .semibold))
-                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.92))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                     Text(detail)
                         .font(.system(size: SettingsScale.meta + 1))
-                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.55))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                 }
@@ -89,10 +90,10 @@ struct SheetChoice: View {
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusSlab, style: .continuous)
                     .fill(selected ? SettingsPalette.accent.opacity(0.12) : SettingsPalette.coolWhite.opacity(0.035))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusSlab, style: .continuous)
                             .stroke(selected ? SettingsPalette.accent.opacity(0.7) : SettingsPalette.coolWhite.opacity(0.09),
                                     lineWidth: selected ? 1 : 0.5)))
             .contentShape(Rectangle())

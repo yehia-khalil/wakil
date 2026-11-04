@@ -1408,6 +1408,40 @@ public func registerStandardActions(
     ))
 
     await registry.register(Action(
+        name: "ctx_set_environment_production",
+        description: "Declare whether an environment is production: `production` is yes, no, or name (let the environment's name decide). What counts as production sets the agent's price. Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "project": .object(["type": .string("string")]),
+                "projectPath": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+                "production": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("yes"), .string("no"), .string("name")]),
+                ]),
+            ]),
+            "required": .array([.string("project"), .string("projectPath"), .string("name"), .string("production")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_set_environment_production", role: "context")
+            }
+            var arguments: [String: JSONValue] = [:]
+            for key in ["projectPath", "name", "production"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_set_environment_production"))
+            }
+            return try await callChecked(
+                context, tool: "set_environment_production", arguments: .object(arguments),
+                action: "ctx_set_environment_production", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
         name: "ctx_remove_environment",
         description: "Remove an environment of a project; its files are moved to the Trash. `project` is the registry name, used only to check that no agent is running there. Operator-only.",
         kind: .control,

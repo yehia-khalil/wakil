@@ -51,6 +51,24 @@ func CreateEnvironment(projectPath string) (string, error) {
 	return name, nil
 }
 
+// SetEnvironmentProduction declares whether an environment is production, or
+// with nil clears the declaration so its name decides again (Rule 9: the name
+// suggests, the operator decides). What counts as production sets the agent's
+// price, so only the operator reaches this (`ctx_set_environment_production`).
+func SetEnvironmentProduction(projectPath, name string, production *bool) error {
+	project, err := loadOwnProject(projectPath)
+	if err != nil {
+		return err
+	}
+	env, ok := project.Environments[name]
+	if !ok {
+		return UserError("no environment " + strconv.Quote(name) + " in project " + strconv.Quote(project.Name))
+	}
+	env.Production = production
+	project.Environments[name] = env
+	return SaveProject(projectPath, *project)
+}
+
 // RenameEnvironment moves an environment's whole value to a new key. The
 // active environment follows when the active project is this one.
 func RenameEnvironment(projectPath, old, new string) error {

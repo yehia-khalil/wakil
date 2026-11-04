@@ -1427,6 +1427,32 @@ func TestRenameEnvironmentRefusalReachesTheWireVerbatim(t *testing.T) {
 	}
 }
 
+func TestSetEnvironmentProductionRoundTrip(t *testing.T) {
+	setupProject(t, `"production":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+	read := func() *bool { p, _ := wakilcore.LoadProject(pp); return p.Environments["production"].Production }
+
+	callOK(t, ctx, cs, "set_environment_production", map[string]any{"projectPath": pp, "name": "production", "production": "no"})
+	if got := read(); got == nil || *got {
+		t.Fatalf("no: got %v", got)
+	}
+	callOK(t, ctx, cs, "set_environment_production", map[string]any{"projectPath": pp, "name": "production", "production": "yes"})
+	if got := read(); got == nil || !*got {
+		t.Fatalf("yes: got %v", got)
+	}
+	callOK(t, ctx, cs, "set_environment_production", map[string]any{"projectPath": pp, "name": "production", "production": "name"})
+	if got := read(); got != nil {
+		t.Fatalf("name: got %v", *got)
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "set_environment_production", Arguments: map[string]any{"projectPath": pp, "name": "production", "production": "maybe"},
+	})
+	if err != nil || !res.IsError || textOf(t, res) != "production must be yes, no or name" {
+		t.Fatalf("want the refusal, got %v %v", err, res)
+	}
+}
+
 func TestApiEntryToolsRoundTrip(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]}`)
 	ctx, cs := lifecycleClient(t)

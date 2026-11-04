@@ -214,6 +214,10 @@ type ConfigTreeEnvironment struct {
 	// else the name — never the raw `*bool`, so every reader of the tree
 	// prices a production host the way the rest of Wakil does. Read-only.
 	Production bool `json:"production"`
+	// ProductionDeclared is the raw flag behind `Production`: nil when the name decides,
+	// so the settings page can say so and offer to override it (Rule 9). Display only —
+	// pricing reads `Production`.
+	ProductionDeclared *bool `json:"productionDeclared,omitempty"`
 	// Databases is never nil, so an environment with none marshals to []
 	// rather than null. An environment that declares no databases and one
 	// that could not be read are different facts and must not share a
@@ -443,6 +447,7 @@ func configTreeProject(name, path string, project *Project) ConfigTreeProject {
 		}
 		out.Environments = append(out.Environments, ConfigTreeEnvironment{
 			Name: environmentName, Production: EnvironmentIsProduction(environmentName, environment),
+			ProductionDeclared: environment.Production,
 			Databases: databases, API: api,
 		})
 	}

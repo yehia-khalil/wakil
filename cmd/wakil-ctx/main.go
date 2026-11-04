@@ -511,6 +511,12 @@ type renameEnvironmentArgs struct {
 	NewName     string `json:"newName" jsonschema:"the name to give it"`
 }
 
+type setEnvironmentProductionArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Name        string `json:"name" jsonschema:"the environment"`
+	Production  string `json:"production" jsonschema:"yes, no, or name to let the environment's name decide"`
+}
+
 type removeEnvironmentArgs struct {
 	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
 	Name        string `json:"name" jsonschema:"the environment to remove"`
@@ -1451,6 +1457,23 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "rename_environment", Description: "Rename an environment; its databases and API entries move with it, and the active environment follows. Refuses a name already taken and a project filed under another organisation."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a renameEnvironmentArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.RenameEnvironment(a.ProjectPath, a.Name, a.NewName); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_environment_production", Description: "Declare whether an environment is production (yes or no), or clear the declaration so its name decides (name). What counts as production sets the agent's price. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setEnvironmentProductionArgs) (*mcp.CallToolResult, empty, error) {
+			var production *bool
+			switch a.Production {
+			case "yes", "no":
+				v := a.Production == "yes"
+				production = &v
+			case "name":
+			default:
+				return toolErr(wakilcore.UserError("production must be yes, no or name")), empty{}, nil
+			}
+			if err := wakilcore.SetEnvironmentProduction(a.ProjectPath, a.Name, production); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

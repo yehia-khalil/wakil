@@ -119,6 +119,8 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"recipe_detect", "recipe_draft_all", "recipe_effective", "recipe_save",
 		"recipe_plan", "recipe_ready_wait", "ports_allocate", "compose_override",
 		"recipe_prepare", "recipe_run_steps", "recipe_try", "recipe_try_start", "recipe_try_status", "recipe_try_cancel", "recipe_secret_set", "recipe_list",
+		// The settings revamp: an environment declared production or not, or left to its name.
+		"set_environment_production",
 	})
 }
 
@@ -209,6 +211,7 @@ func TestLifecycleToolsRequireTheirParameters(t *testing.T) {
 		"create_environment": {"projectPath"},
 		"rename_environment": {"projectPath", "name", "newName"},
 		"remove_environment": {"projectPath", "name"},
+		"set_environment_production": {"projectPath", "name", "production"},
 	}
 	for _, tool := range res.Tools {
 		need, ok := want[tool.Name]

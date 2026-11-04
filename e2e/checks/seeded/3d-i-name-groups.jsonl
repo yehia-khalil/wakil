@@ -1,7 +1,7 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
 {"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
 {"do":{"hotkey":"cmd+,"}}
-{"do":{"click":"settings.tree.providers"}}
+{"do":{"click":"settings.tree.quickTasks"}}
 {"expect":{"tree":"contains","text":"QUICK TASKS"}}
 {"do":{"click":"settings.org.quickProvider"}}
 {"do":{"click":"settings.org.quickProvider.qwen"}}

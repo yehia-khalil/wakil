@@ -3552,9 +3552,22 @@ public final class WindowModel {
         public var identifierFragment: String { rawValue }
 
         /// Whether leaving the field saves it — by focus moving on or its page going (3a-ii,
-        /// Rule 2). The agent boxes are multi-line, so Return is a new line and leaving is the
-        /// only save. The others keep Return and Save.
+        /// Rule 2). Every typed field does (settings revamp): no Save button anywhere. The agent
+        /// boxes are multi-line, so Return is a new line and leaving is the only save; the
+        /// one-line fields also save on Return. The choices save on their press.
         public var savesOnLeave: Bool {
+            switch self {
+            case .displayName, .jiraBase, .defaultProvider,
+                 .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions: return true
+            case .speechProvider, .quickProvider, .pullStrategy: return false
+            }
+        }
+
+        /// Whether a pause in typing saves it too: the fields that did before the settings revamp
+        /// (Author, the agent boxes). Not the display name, the Jira site or the default account:
+        /// a pause would rename the organisation on disk, or try half a site or half an account
+        /// id, while the operator is still typing. Those save when left or on Return.
+        public var savesWhileTyping: Bool {
             switch self {
             case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions, .gitBranchInstructions: return true
             default: return false
@@ -4400,6 +4413,21 @@ public final class WindowModel {
         await followDisk()
         if case .string(let created)? = reply.result["name"] { return (created, nil) }
         return (nil, nil)
+    }
+
+    /// Declares an environment production (`true`), not (`false`), or clears the declaration so its
+    /// name decides (`nil`, Rule 9). Returns the refusal sentence, or nil once written.
+    public func setEnvironmentProduction(
+        project: String, projectPath: String, environment: String, to production: Bool?
+    ) async -> String? {
+        let word = production.map { $0 ? "yes" : "no" } ?? "name"
+        let reply = await projectLifecycle(
+            "ctx_set_environment_production",
+            ["project": .string(project), "projectPath": .string(projectPath),
+             "name": .string(environment), "production": .string(word)])
+        if let error = reply.error { return error }
+        await followDisk()
+        return nil
     }
 
     /// Renames an environment. Its saved arrangements move with it, and what is in memory too, as

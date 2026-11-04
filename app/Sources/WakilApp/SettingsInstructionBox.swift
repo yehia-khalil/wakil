@@ -27,12 +27,12 @@ struct AgentInstructionBox: View {
                 // Text equal to what is stored is no draft: a field writes its text back when editing
                 // ends, and a kept copy would hide a later change to the stored value.
                 TextField("", text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 == stored ? nil : $0 }),
-                          prompt: Text(placeholder).foregroundStyle(SettingsPalette.coolWhite.opacity(0.30)),
+                          prompt: Text(placeholder).foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary)),
                           axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...12)
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                     .frame(maxWidth: 520, alignment: .leading)
                     .inPlaceField(focused: focused)
                     .focused($focused)
@@ -59,7 +59,7 @@ struct AgentInstructionBox: View {
             if field.saving {
                 Text("Saving…")
                     .font(.system(size: SettingsScale.body))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.35))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                     .underRowValue()
             }
             if let hint = agentInstructionsSizeHint(text) {

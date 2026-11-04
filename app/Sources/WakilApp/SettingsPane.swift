@@ -214,6 +214,9 @@ struct SettingsPane: View {
     /// Removes an environment: project, project file, name. The receipt or the refusal.
     var removeEnvironment: (String, String, String) async -> (receipt: String?, error: String?) =
         { _, _, _ in (nil, nil) }
+    /// Declares an environment production or not, or nil to let its name decide (settings revamp):
+    /// project, project file, environment, declaration. Answers the refusal or nil.
+    var setEnvironmentProduction: (String, String, String, Bool?) async -> String? = { _, _, _, _ in nil }
     /// Says a refusal in the window's status, for a Name field gone before its write answered.
     var showUnseenRefusal: (String) -> Void = { _ in }
 
@@ -232,6 +235,8 @@ struct SettingsPane: View {
     @State private var receipt: (node: SettingsNode, text: String)?
     /// The node whose Name field takes the keyboard when its page appears (Rule 3).
     @State private var pendingNameFocus: SettingsNode?
+    /// Letters typed into the tree in the last second (settings revamp: type-to-find).
+    @State private var typeAhead = TypeAhead()
 
     /// The database form's fields, while it is open.
     ///
@@ -397,6 +402,14 @@ struct SettingsPane: View {
         // The pane's extent, for those checks: a leaf behind the content, because macOS reports a
         // container's frame as the union of its children — the overflow it is meant to catch.
         .background(Color.clear.accessibilityElement().accessibilityIdentifier("settings.pane"))
+        // Esc answers an open removal or unlink question with Keep it (settings revamp). Through
+        // the responder chain, not a `.cancelAction` key equivalent: a window holds one live
+        // `.cancelAction` at a time (`ConfirmationPlane.ownsEscape`), and a plane in front of the
+        // pane keeps Esc. This reaches only when the keyboard is in the settings pane.
+        .onExitCommand {
+            if confirmingRemoval != nil { confirmingRemoval = nil }
+            else if confirmingUnlink != nil { confirmingUnlink = nil }
+        }
         .task(id: tree) { quickStatus = await quickTaskStatus() }
         .sheet(isPresented: $addingProject) {
             AddProjectSheet(
@@ -428,11 +441,18 @@ struct SettingsPane: View {
     private var treeColumn: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                row(.editor, label: "Editor", depth: 0)
-                row(.browser, label: "Browser", depth: 0)
-                row(.keyboard, label: "Keyboard", depth: 0)
-                row(.organisation, label: tree?.org.label ?? "Organisation", depth: 0)
-                row(.providers, label: "Providers", depth: 0, badge: tree.map { "\($0.providers.count)" })
+                // Grouped by scope (settings revamp, §14): what is the app's, what is this
+                // organisation's, then the projects. A heading is a label, never a row.
+                scopeHeading("WAKIL", identifier: "settings.tree.wakilHeading", first: true)
+                ForEach(SettingsNode.topLevel(.wakil), id: \.self) { node in
+                    row(node, label: node.label, depth: 0)
+                }
+                scopeHeading((tree?.org.label ?? "Organisation").uppercased(),
+                             identifier: "settings.tree.organisationHeading")
+                ForEach(SettingsNode.topLevel(.organisation), id: \.self) { node in
+                    row(node, label: node.label, depth: 0,
+                        badge: node == .providers ? tree.map { "\($0.providers.count)" } : nil)
+                }
 
                 projectsHeading
                 if expansion.projectsOpen {
@@ -452,12 +472,15 @@ struct SettingsPane: View {
                         if projectOpen {
                             row(.projectEditor(project.name), label: "Editor", depth: 2, disclosure: .leaf)
                             row(.projectRunning(project.name), label: "Running", depth: 2, disclosure: .leaf)
+                            // A label over the environments, not a level: they stay at depth 2.
+                            environmentsHeading(project: project.name)
                             ForEach(project.environments, id: \.name) { environment in
                                 let environmentOpen = expansion.isOpen(
                                     project: project.name, environment: environment.name)
                                 row(
                                     .environment(project: project.name, environment: environment.name),
                                     label: environment.name, depth: 2,
+                                    dot: environmentDot(environment),
                                     disclosure: .branch(
                                         open: environmentOpen,
                                         identifier: "settings.tree.environment.\(project.name).\(environment.name).disclosure")
@@ -553,17 +576,17 @@ struct SettingsPane: View {
             HStack(spacing: 4) {
                 chevron(open: open)
                 Text("PROJECTS")
-                    .font(.system(size: Scale.micro, weight: .medium))
+                    .font(.system(size: Scale.micro, weight: SettingsScale.headerWeight))
                     .tracking(Scale.microTracking)
-                    .foregroundStyle(coolWhite.opacity(0.32))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Spacer(minLength: 0)
             }
             .padding(.leading, 8)
-            .padding(.top, 10)
-            .padding(.bottom, 2)
+            .padding(.top, SettingsScale.treeHeadingGap)
+            .padding(.bottom, SettingsScale.headerGap)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(coolWhite.opacity(selection == .projects ? 0.08 : 0)))
         }
         .buttonStyle(.plain)
@@ -578,7 +601,7 @@ struct SettingsPane: View {
             if let open {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.tertiary))
             } else {
                 Color.clear
             }
@@ -597,7 +620,8 @@ struct SettingsPane: View {
     /// never on appear, so a selection left inside a branch the operator closed stays hidden.
     private func revealSelection() {
         switch selection {
-        case .organisation, .providers, .editor, .browser, .keyboard, .projects: return
+        case .organisation, .providers, .quickTasks, .browsingData, .speech,
+             .editor, .browser, .keyboard, .projects: return
         case .project: expansion.projectsOpen = true
         case .projectEditor(let project), .projectRunning(let project), .environment(let project, _):
             expansion.reveal(project: project)
@@ -606,15 +630,57 @@ struct SettingsPane: View {
         }
     }
 
-    /// → opens the selected project or environment, ← closes it. Any other key is not the tree's.
-    private func treeKey(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return .ignored }
-        let open: Bool
-        switch press.key {
-        case .rightArrow: open = true
-        case .leftArrow: open = false
-        default: return .ignored
+    /// The rows the tree draws, in order, with their labels: what ↑/↓ step through and typed
+    /// letters search. Headings are not rows. Mirrors `treeColumn`.
+    private var visibleRows: [(node: SettingsNode, label: String)] {
+        var rows = (SettingsNode.topLevel(.wakil) + SettingsNode.topLevel(.organisation))
+            .map { (node: $0, label: $0.label) }
+        guard expansion.projectsOpen else { return rows }
+        for project in tree?.projects ?? [] {
+            rows.append((.project(project.name), project.name))
+            guard expansion.isOpen(project: project.name) else { continue }
+            rows.append((.projectEditor(project.name), "Editor"))
+            rows.append((.projectRunning(project.name), "Running"))
+            for environment in project.environments {
+                rows.append((.environment(project: project.name, environment: environment.name), environment.name))
+                guard expansion.isOpen(project: project.name, environment: environment.name) else { continue }
+                rows.append((.databases(project: project.name, environment: environment.name), "Databases"))
+                rows.append((.api(project: project.name, environment: environment.name), "API"))
+            }
         }
+        return rows
+    }
+
+    /// The tree's keys (settings revamp): ↑/↓ move the selection through the visible rows, a typed
+    /// letter finds the next row starting with what was typed in the last second, → opens the
+    /// selected project or environment and ← closes it. Neither move opens a branch (Rule 6). The
+    /// column only has these keys while it has focus, so a field elsewhere keeps its own.
+    private func treeKey(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.intersection([.command, .control, .option]).isEmpty else { return .ignored }
+        switch press.key {
+        case .upArrow, .downArrow:
+            guard press.modifiers.isEmpty else { return .ignored }
+            let rows = visibleRows.map(\.node)
+            if let next = SettingsTreeKeys.step(rows, from: selection, by: press.key == .upArrow ? -1 : 1) {
+                selection = next
+            }
+            return .handled
+        case .rightArrow, .leftArrow:
+            guard press.modifiers.isEmpty else { return .ignored }
+            return openOrClose(press.key == .rightArrow)
+        default:
+            guard let character = press.characters.first, press.characters.count == 1,
+                  character.isLetter || character.isNumber || character == "-" || character == " "
+            else { return .ignored }
+            let prefix = typeAhead.append(character, at: Date())
+            if let found = SettingsTreeKeys.find(visibleRows, prefix: prefix, after: selection) {
+                selection = found
+            }
+            return .handled
+        }
+    }
+
+    private func openOrClose(_ open: Bool) -> KeyPress.Result {
         switch selection {
         case .project(let project):
             expansion.setOpen(open, project: project)
@@ -638,8 +704,91 @@ struct SettingsPane: View {
 
     /// One node. A branch's chevron is its own button, calling `toggle`, beside the row's button,
     /// so opening a branch never selects it and selecting one never opens or closes it.
+    /// An environment's Production row (settings revamp, Rule 9): No / Yes / From the name, with
+    /// what the name decided under it while nothing is declared. A press writes at once, shows the
+    /// write in flight (Rule 5) and a refusal whole under the row (Rule 8). Its tree dot follows.
+    private func productionRow(_ environment: SettingsEnvironment, project: SettingsProject) -> some View {
+        let key = "production.\(project.name).\(environment.name)"
+        let current = SettingsProductionChoice.current(declared: environment.productionDeclared)
+        return VStack(alignment: .leading, spacing: 2) {
+            SettingsRow("Production", wraps: true) {
+                HStack(spacing: 8) {
+                    SegmentedChoice(
+                        options: SettingsProductionChoice.allCases.map(\.rawValue),
+                        selection: Binding(
+                            get: { environment.production == nil ? "" : current.rawValue },
+                            set: { label in
+                                guard let choice = SettingsProductionChoice(rawValue: label), choice != current,
+                                      !lifecycleBusy.contains(key) else { return }
+                                lifecycleBusy.insert(key)
+                                lifecycleRefusals[key] = nil
+                                Task {
+                                    lifecycleRefusals[key] = await setEnvironmentProduction(
+                                        project.name, project.path, environment.name, choice.declared)
+                                    lifecycleBusy.remove(key)
+                                }
+                            }),
+                        identifier: { label in
+                            "settings.environment.production.\(SettingsProductionChoice(rawValue: label).map { "\($0)" } ?? label)"
+                        })
+                    if lifecycleBusy.contains(key) { ProgressView().controlSize(.small) }
+                }
+            }
+            if let hint = SettingsProductionChoice.hint(
+                declared: environment.productionDeclared, production: environment.production) {
+                FormHint(hint).underRowValue()
+            }
+            if let refusal = lifecycleRefusals[key] {
+                Text(refusal)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("settings.environment.production.refusal")
+            }
+        }
+    }
+
+    /// A scope's heading in the tree (settings revamp): WAKIL and the organisation's name, drawn
+    /// as PROJECTS is but neither opening nor selecting anything.
+    private func scopeHeading(_ text: String, identifier: String, first: Bool = false) -> some View {
+        Text(text)
+            .font(.system(size: Scale.micro, weight: SettingsScale.headerWeight))
+            .tracking(Scale.microTracking)
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 8)
+            .padding(.top, first ? 0 : SettingsScale.treeHeadingGap)
+            .padding(.bottom, SettingsScale.headerGap)
+            .accessibilityIdentifier(identifier)
+    }
+
+    /// ENVIRONMENTS over a project's environments: a micro label at their depth, not a level and
+    /// not a stop for ↑/↓.
+    private func environmentsHeading(project: String) -> some View {
+        Text("ENVIRONMENTS")
+            .font(.system(size: 8.5, weight: SettingsScale.headerWeight))
+            .tracking(Scale.microTracking)
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+            .padding(.leading, CGFloat(2) * 12 + 8 + 14)
+            .padding(.top, 10)
+            .padding(.bottom, SettingsScale.headerGap - 2)
+            .accessibilityIdentifier("settings.tree.project.\(project).environmentsHeading")
+    }
+
+    /// §5: red for production, green for anything else; nothing when an older `wakil-ctx` did not
+    /// say (Inv. 8 — the environment's kind is always visible where it is known).
+    private func environmentDot(_ environment: SettingsEnvironment) -> Color? {
+        switch environment.production {
+        case true?: return SettingsPalette.destructive
+        case false?: return SettingsPalette.healthy
+        case nil: return nil
+        }
+    }
+
     private func row(
-        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil,
+        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil, dot: Color? = nil,
         disclosure: Disclosure = .none, toggle: (() -> Void)? = nil
     ) -> some View {
         let selected = selection == node
@@ -673,14 +822,18 @@ struct SettingsPane: View {
                 treeFocused = true
             } label: {
                 HStack(spacing: 6) {
+                    if let dot {
+                        Circle().fill(dot).frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
                     Text(label)
                         .font(.system(size: Scale.door))
-                        .foregroundStyle(coolWhite.opacity(selected ? 0.95 : 0.62))
-                        .lineLimit(1)
+                        .foregroundStyle(coolWhite.opacity(selected ? SettingsInk.primary : SettingsInk.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
                     if let badge {
                         Text(badge)
                             .font(.system(size: Scale.meta, design: .monospaced))
-                            .foregroundStyle(coolWhite.opacity(0.35))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     }
                     Spacer(minLength: 0)
                 }
@@ -698,14 +851,14 @@ struct SettingsPane: View {
         }
         .padding(.leading, CGFloat(depth) * 12 + 8)
         .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .fill(coolWhite.opacity(selected ? 0.08 : 0)))
     }
 
     private func emptyLine(_ text: String) -> some View {
         Text(text)
             .font(.system(size: Scale.body))
-            .foregroundStyle(coolWhite.opacity(0.28))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .padding(.leading, 20)
             .padding(.vertical, 3)
     }
@@ -731,7 +884,7 @@ struct SettingsPane: View {
                 } label: {
                     Text(label)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(busy ? 0.35 : 0.62))
+                        .foregroundStyle(coolWhite.opacity(busy ? SettingsInk.disabled : SettingsInk.secondary))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -852,7 +1005,7 @@ struct SettingsPane: View {
                     } label: {
                         Text(label)
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(caution.opacity(busy ? 0.4 : 0.9))
+                            .foregroundStyle(SettingsPalette.destructive.opacity(busy ? 0.4 : 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -870,7 +1023,7 @@ struct SettingsPane: View {
                             .foregroundStyle(caution)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 10) {
-                            confirmButton("Remove", tone: caution, filled: true,
+                            confirmButton("Remove", tone: SettingsPalette.destructive, filled: true,
                                           identifier: "\(identifier).confirm") {
                                 confirmingRemoval = nil
                                 run()
@@ -983,7 +1136,7 @@ struct SettingsPane: View {
                     .buttonStyle(.plain)
                     .font(.system(size: Scale.body))
                     .accessibilityIdentifier("settings.reload")
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -992,8 +1145,8 @@ struct SettingsPane: View {
         Text(selection.breadcrumb(in: tree).joined(separator: "  ›  "))
             .font(.system(size: Scale.micro, weight: .medium))
             .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.40))
-            .lineLimit(1)
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("settings.breadcrumb")
     }
 
@@ -1008,10 +1161,6 @@ struct SettingsPane: View {
                 // setting, and drawn as the fact it is.
                 SettingsRow("ID") { SettingsValue(text: tree.org.id) }
                 organisationEditor(.displayName, label: "Display name", in: tree)
-            }
-            SettingsSection("Accounts") {
-                organisationEditor(.defaultProvider, label: "Default", in: tree)
-                speechRow(tree: tree)
             }
             // Connections: the Jira entry (its site moved here from its own section) and the
             // organisation's own MCP servers, each with its page.
@@ -1059,8 +1208,10 @@ struct SettingsPane: View {
             }
 
         case .providers:
-            // Three headed sections (2026-10-21): the accounts, the local models, and the choice
-            // quick tasks make between them — after both, so what it chooses from is read first.
+            // Accounts (settings revamp): the Claude accounts, the local models, and which account
+            // a new window starts on. Quick tasks, which chooses among both, is its own page.
+            // Titled Accounts, not "Claude accounts" as the comp drew it: the section's identifier is
+            // its title, and `settings.section.accounts` is held inside the pane by two checks.
             SettingsSection("Accounts") {
                 // The subject column's own spacing, which the table's notes and rows were drawn in.
                 VStack(alignment: .leading, spacing: 10) { accountTable() }
@@ -1079,20 +1230,31 @@ struct SettingsPane: View {
                         return refusal
                     })
             }
+            SettingsSection("Default account") {
+                organisationEditor(.defaultProvider, label: "Default", in: tree)
+            }
+        case .quickTasks:
+            // One group, but its About stays beside its header, so the page keeps the section.
             SettingsSection("Quick tasks", accessory: {
                 SettingsAboutButton(label: "About quick tasks", id: "settings.quickTasks.about", text: quickTasksAbout)
             }) {
                 quickTasksRow(tree: tree)
             }
+        case .browsingData:
+            BrowsingDataSettingsForm(
+                organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
+                organisationId: tree.org.id,
+                clearData: clearBrowserData)
+        case .speech:
+            // A page of one group draws its rows without a header (§14).
+            speechRow(tree: tree)
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
         case .browser:
             BrowserSettingsForm(
                 browser: tree.browser,
-                organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
-                organisationId: tree.org.id,
                 pullRequestsAbsent: browserPullRequestsAbsent,
-                save: saveBrowserSettings, clearData: clearBrowserData,
+                save: saveBrowserSettings,
                 pictureInPictureUnavailable: BrowserPictureInPicture.unavailableLine(
                     missing: BrowserPictureInPictureSupport.missing))
         case .keyboard:
@@ -1239,6 +1401,7 @@ struct SettingsPane: View {
                     ("API", "\(environment.api.count)", true),
                 ])
                 if let project = tree.projects.first(where: { $0.name == projectName }) {
+                    productionRow(environment, project: project)
                     removeSection(
                         key: "remove.environment.\(projectName).\(environmentName)",
                         label: "Remove environment", identifier: "settings.environment.remove",
@@ -1313,10 +1476,10 @@ struct SettingsPane: View {
                 get: { draft ?? stored },
                 // Equal to what is stored is no draft (a field writes its text back as editing ends).
                 set: { drafts[field] = $0 == stored ? nil : $0 }),
-            prompt: Text(prompt).foregroundStyle(coolWhite.opacity(0.30)))
+            prompt: Text(prompt).foregroundStyle(coolWhite.opacity(SettingsInk.secondary)))
             .textFieldStyle(.plain)
             .font(.system(size: Scale.body))
-            .foregroundStyle(coolWhite.opacity(0.88))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
             .frame(maxWidth: width)
             .inPlaceField(focused: focusedOrgField == field)
             .onSubmit { save(field, tree: tree) }
@@ -1330,7 +1493,7 @@ struct SettingsPane: View {
                 leave(field, tree: tree)
             }
             .onChange(of: drafts[field]) { _, draft in
-                guard field.savesOnLeave, draft != nil else { return }
+                guard field.savesWhileTyping, draft != nil else { return }
                 autosave.schedule { leave(field, tree: tree) }
             }
             // Leaving the page by the tree is leaving the field too, and the focus change
@@ -1376,28 +1539,17 @@ struct SettingsPane: View {
     private func organisationEditor(
         _ field: WindowModel.OrganisationField, label: String, in tree: SettingsTree
     ) -> some View {
-        let stored = storedValue(field, in: tree)
-        let draft = drafts[field]
         VStack(alignment: .leading, spacing: 2) {
             SettingsRow(label) {
+                // Saved when left or on Return (settings revamp, Rule 2): no Save, no Revert. While
+                // the write is in flight it says so beside the field (Rule 5).
                 HStack(spacing: 8) {
                     organisationField(field, prompt: "—", width: 320, in: tree)
-                    if draft != nil, draft != stored {
-                        Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
-                            .buttonStyle(.plain)
+                    if saving == field {
+                        Text("Saving…")
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(saving == field ? 0.35 : 0.70))
-                            .disabled(saving == field)
-                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).save")
-                        // Revert is the escape from a typed value the
-                        // operator has changed their mind about. It clears
-                        // the draft rather than writing anything, so the
-                        // field goes back to showing disk.
-                        Button("Revert") { drafts[field] = nil; refusals[field] = nil }
-                            .buttonStyle(.plain)
-                            .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(0.40))
-                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).revert")
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).saving")
                     }
                 }
             }
@@ -1511,7 +1663,7 @@ struct SettingsPane: View {
             HStack(alignment: .firstTextBaseline, spacing: Scale.columnGap) {
                 Text("Model")
                     .font(.system(size: Scale.body, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .frame(width: Scale.labelWidth, alignment: .leading)
                 // Same as agent, then the accounts, then the local models, each group headed.
                 Menu {
@@ -1528,11 +1680,11 @@ struct SettingsPane: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(known?.display ?? stored)
                             .font(.system(size: Scale.body, weight: .medium))
-                            .foregroundStyle(coolWhite.opacity(0.86))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                         // Decoration: drawn, but not a second menu button carrying the same id.
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(coolWhite.opacity(0.40))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                             .accessibilityHidden(true)
                     }
                     .contentShape(Rectangle())
@@ -1545,8 +1697,8 @@ struct SettingsPane: View {
                 if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
                     Text(route)
                         .font(.system(size: Scale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.40))
-                        .lineLimit(1)
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("settings.org.quickProvider.route")
                 }
                 Spacer(minLength: 0)
@@ -1606,7 +1758,7 @@ struct SettingsPane: View {
             HStack(alignment: .center, spacing: Scale.columnGap) {
                 Text(label)
                     .font(.system(size: Scale.body, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .frame(width: Scale.labelWidth, alignment: .leading)
                 SegmentedChoice(
                     options: ["Off", "On"],
@@ -1626,7 +1778,7 @@ struct SettingsPane: View {
                     })
                 Text(hint)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -1724,7 +1876,7 @@ struct SettingsPane: View {
             refusals[field] = refusal
             if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
             // Typed on while it saved: that is the next save.
-            if refusal == nil, field.savesOnLeave, drafts[field] != nil { autosave.schedule { leave(field, tree: tree) } }
+            if refusal == nil, field.savesWhileTyping, drafts[field] != nil { autosave.schedule { leave(field, tree: tree) } }
             quickStatus = await quickTaskStatus()
         }
     }
@@ -1796,7 +1948,7 @@ struct SettingsPane: View {
                     ForEach(unlinkReport.notes, id: \.self) { note in
                         Text(note)
                             .font(.system(size: Scale.body))
-                            .foregroundStyle(coolWhite.opacity(0.62))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if unlinkReport.wasLastBinding {
@@ -1811,13 +1963,13 @@ struct SettingsPane: View {
                     if !unlinkReport.backfilled.isEmpty {
                         Text("Kept working: " + unlinkReport.backfilled.joined(separator: ", "))
                             .font(.system(size: Scale.meta))
-                            .foregroundStyle(coolWhite.opacity(0.34))
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     }
                     Button("Dismiss") { self.unlinkReport = nil }
                     .accessibilityIdentifier("settings.unlink.dismiss")
                         .buttonStyle(.plain)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.45))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 .padding(.vertical, 6)
             }
@@ -1900,7 +2052,7 @@ struct SettingsPane: View {
                 // spent it.
                 Text(offer.sentence)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 if offer.existing.namesSomebody {
                     // **Re-entry shows the identity BEFORE reusing it**,
@@ -1911,7 +2063,7 @@ struct SettingsPane: View {
                     Text("This directory is already signed in as \(offer.existing.email)"
                         + (offer.existing.orgName.isEmpty ? "." : " (\(offer.existing.orgName))."))
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.60))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 10) {
@@ -1949,10 +2101,10 @@ struct SettingsPane: View {
                     // than as a hang.
                     Text("Trip \(trip) of \(total)")
                         .font(.system(size: Scale.micro, weight: .medium)).tracking(Scale.microTracking)
-                        .foregroundStyle(coolWhite.opacity(0.45))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     Text("Signing in as \(id) — finish in your browser.")
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.72))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 // **Trip 1's cancel is free, always offered, and says so.**
                 // The only provably clean cancel in the flow.
@@ -1962,7 +2114,7 @@ struct SettingsPane: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .accessibilityIdentifier("settings.login.cancel")
                 }
             }
@@ -1973,7 +2125,7 @@ struct SettingsPane: View {
                     ? "Signed in as \(identity.email). The long-lived credential is next."
                     : "Signed in as \(id). The long-lived credential is next.")
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 // **No pause, and no control.** The session advances
                 // straight to the mint (#101, confirmed on #203), so this
@@ -1982,7 +2134,7 @@ struct SettingsPane: View {
                 // switches to reach an exit the browser already offers.
                 Text("Continuing to the credential step…")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.34))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
 
         case .minting(let trip, let total, let id):
@@ -1990,11 +2142,11 @@ struct SettingsPane: View {
                 HStack(spacing: 8) {
                     Text("Trip \(trip) of \(total)")
                         .font(.system(size: Scale.micro, weight: .medium)).tracking(Scale.microTracking)
-                        .foregroundStyle(coolWhite.opacity(0.45))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     Text("Creating the long-lived credential for \(id) — approve it in your "
                         + "browser.")
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.72))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // **Still no CANCEL — what is offered is a way to stop
@@ -2010,7 +2162,7 @@ struct SettingsPane: View {
                     + "credential itself — it is created once — but you can stop waiting "
                     + "for it.")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.34))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 confirmButton("Stop waiting", tone: coolWhite.opacity(0.62),
                                   identifier: "settings.mint.stopWaiting") {
@@ -2025,11 +2177,11 @@ struct SettingsPane: View {
                         $0.formatted(date: .abbreviated, time: .omitted)
                     } ?? "in a year") + ".")
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.80))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .fixedSize(horizontal: false, vertical: true)
                 Text("You never saw a token.")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.34))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 dismissButton("Done")
             }
 
@@ -2044,7 +2196,7 @@ struct SettingsPane: View {
                     .foregroundStyle(caution)
                 Text(detail)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 dismissButton("Dismiss")
             }
@@ -2057,7 +2209,7 @@ struct SettingsPane: View {
                     .font(.system(size: Scale.body)).foregroundStyle(caution)
                 Text(message)
                     .font(.system(size: Scale.meta, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 dismissButton("Dismiss")
             }
@@ -2076,7 +2228,7 @@ struct SettingsPane: View {
             band {
                 Text(cancelSentence(claim))
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.72))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 dismissButton("Dismiss")
             }
@@ -2164,15 +2316,15 @@ struct SettingsPane: View {
             HStack(spacing: 11) {
                 Text(open ? "−" : "+")
                     .font(.system(size: Scale.door, weight: .light, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.52))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                     .frame(width: 13)
                 Text(title)
                     .font(.system(size: Scale.door))
-                    .foregroundStyle(coolWhite.opacity(0.78))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Spacer(minLength: 16)
                 Text(note)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.44))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
             .frame(minHeight: Scale.rowHeight)
             .contentShape(Rectangle())
@@ -2217,7 +2369,7 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("The directory is derived from this id, and Wakil never shows you a token.")
                 .font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.45))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             HStack(spacing: 10) {
                 // **A field that looks like one.** The artboard's `.field`
                 // treatment: a bordered box with its own background, so
@@ -2225,15 +2377,15 @@ struct SettingsPane: View {
                 TextField("id", text: $newAccountId)
                     .textFieldStyle(.plain)
                     .font(.system(size: Scale.identifier, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.90))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .frame(width: 180)
                     .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .fill(coolWhite.opacity(0.05))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                                     .stroke(coolWhite.opacity(0.14), lineWidth: 0.5)))
                     .accessibilityLabel("account id")
                     .accessibilityIdentifier("settings.register.id")
@@ -2241,7 +2393,7 @@ struct SettingsPane: View {
                 Button("Add") { beginAdd() }
                     .buttonStyle(.plain)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(newAccountId.isEmpty ? 0.28 : 0.70))
+                    .foregroundStyle(coolWhite.opacity(newAccountId.isEmpty ? SettingsInk.disabled : SettingsInk.secondary))
                     .disabled(newAccountId.isEmpty)
                     .accessibilityIdentifier("settings.register.add")
                 Spacer(minLength: 0)
@@ -2249,19 +2401,19 @@ struct SettingsPane: View {
             HStack(spacing: 10) {
                 Text("claude")
                     .font(.system(size: Scale.meta, weight: .medium)).tracking(0.8)
-                    .foregroundStyle(coolWhite.opacity(0.42))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 TextField("path to the claude executable", text: $newAccountClaudePath)
                     .textFieldStyle(.plain)
                     .font(.system(size: Scale.identifier, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.90))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .frame(width: 360)
                     .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .fill(coolWhite.opacity(0.05))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                                     .stroke(coolWhite.opacity(0.14), lineWidth: 0.5)))
                     .accessibilityLabel("claude executable")
                     .accessibilityIdentifier("settings.register.claudePath")
@@ -2306,7 +2458,9 @@ struct SettingsPane: View {
         _ title: String, tone: Color, filled: Bool = false, identifier: String,
         _ act: @escaping () -> Void
     ) -> some View {
-        FormButton(title: title, tone: tone, filled: filled, identifier: identifier, action: act)
+        // Every question's Keep it answers Esc (settings revamp): the escape is the safe answer.
+        FormButton(title: title, tone: tone, filled: filled,
+                   identifier: identifier, action: act)
     }
 
     private func dismissButton(_ title: String) -> some View {
@@ -2314,7 +2468,7 @@ struct SettingsPane: View {
             .accessibilityIdentifier("settings.login.dismiss")
             .buttonStyle(.plain)
             .font(.system(size: Scale.body))
-            .foregroundStyle(coolWhite.opacity(0.45))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
     }
 
     @ViewBuilder
@@ -2327,10 +2481,10 @@ struct SettingsPane: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .fill(coolWhite.opacity(0.05))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                         .stroke((tone ?? coolWhite).opacity(0.18), lineWidth: 0.5)))
         .padding(.bottom, 8)
     }
@@ -2367,14 +2521,14 @@ struct SettingsPane: View {
         // label 22pt right of the cell it names (#271). Found by review;
         // the agent that wrote it could not see the window.
         .padding(.top, 14)
-        .padding(.bottom, 4)
+        .padding(.bottom, SettingsScale.headerGap)
     }
 
     private func columnLabel(_ text: String, width: CGFloat) -> some View {
         Text(text)
-            .font(.system(size: Scale.micro, weight: .medium))
+            .font(.system(size: Scale.micro, weight: SettingsScale.headerWeight))
             .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.30))
+            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             .frame(width: width, alignment: .leading)
     }
 
@@ -2386,12 +2540,12 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(account.accountId)
                 .font(.system(size: Scale.identifier, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.92))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
             accountDirectory(account)
             if !account.label.isEmpty {
                 Text(account.label)
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.38))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2404,7 +2558,7 @@ struct SettingsPane: View {
             stackedCell("KIND") {
                 Text(account.kind)
                     .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.55))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
             stackedCell("CREDENTIAL") { credentialCell(account) }
             stackedCell("SIGN-IN") { livenessCell(account.liveness) }
@@ -2438,7 +2592,7 @@ struct SettingsPane: View {
 
                     Text(account.kind)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.55))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                         .frame(width: 104, alignment: .leading)
 
                     credentialCell(account).frame(width: 200, alignment: .leading)
@@ -2476,7 +2630,7 @@ struct SettingsPane: View {
                     // `.btn quiet` pair, which is what a decision between
                     // two named outcomes has always been drawn as.
                     HStack(spacing: 10) {
-                        confirmButton("Unlink", tone: caution, filled: true,
+                        confirmButton("Unlink", tone: SettingsPalette.destructive, filled: true,
                                       identifier: "settings.unlink.confirm") {
                             confirmingUnlink = nil
                             Task { unlinkReport = await unlink(account) }
@@ -2521,7 +2675,7 @@ struct SettingsPane: View {
             if !account.credential.ref.isEmpty {
                 Text(account.credential.ref)
                     .font(.system(size: Scale.meta, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.24))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2565,8 +2719,8 @@ struct SettingsPane: View {
                         Text("RUNNING")
                             .font(.system(size: Scale.micro, weight: .medium))
                             .tracking(Scale.microTracking)
-                            .foregroundStyle(coolWhite.opacity(0.70))
-                            .lineLimit(1)
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+                            .fixedSize(horizontal: false, vertical: true)
                             .fixedSize()
                     } else {
                         // **Offered even when the credential is missing.**
@@ -2580,7 +2734,7 @@ struct SettingsPane: View {
                             Task { await use(account) }
                         }
                     }
-                    rowAction("Unlink", tone: coolWhite.opacity(0.52),
+                    rowAction("Unlink", tone: SettingsPalette.destructive,
                         identifier: "settings.row.\(account.accountId).unlink") {
                         confirmingUnlink = account
                     }
@@ -2625,7 +2779,7 @@ struct SettingsPane: View {
             .foregroundStyle(tone)
             // One line at its own width (#326): a narrower window squeezed
             // these until each word wrapped a letter per line.
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
             .fixedSize()
             .disabled(!enabled)
             .accessibilityIdentifier(identifier)
@@ -2646,11 +2800,11 @@ struct SettingsPane: View {
         if account.configDir.isEmpty {
             Text("no config dir")
                 .font(.system(size: Scale.meta, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.30))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         } else {
             Text(abbreviatingHome(account.configDir) + directoryQualifier(account))
                 .font(.system(size: Scale.meta, design: .monospaced))
-                .foregroundStyle(coolWhite.opacity(0.46))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         }
     }
 
@@ -2674,27 +2828,27 @@ struct SettingsPane: View {
     private func credentialState(_ account: Account) -> some View {
         if !account.credential.readable {
             Text("not checked").font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.32))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         } else if !account.credential.present {
             Text("missing").font(.system(size: Scale.body, weight: .medium))
                 .foregroundStyle(caution)
         } else if let expiry = account.credential.expiry() {
             VStack(alignment: .leading, spacing: 0) {
                 Text("present").font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.66))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 Text("expires \(expiry.formatted(date: .abbreviated, time: .omitted))")
                     .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.36))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 Text("present").font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.66))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 // "Unknown" rather than a computed date from a date that
                 // was never read — a wrong expiry is worse than none,
                 // because it is the one fact an operator plans against.
                 Text("expiry unknown").font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.36))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2705,14 +2859,14 @@ struct SettingsPane: View {
             // Could not look — which says nothing about the account, and
             // must not draw as "logged out".
             Text("not read").font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.32))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
         } else if liveness.loggedIn {
             VStack(alignment: .leading, spacing: 1) {
                 Text("signed in").font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.66))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 if liveness.hasIdentity {
                     Text(liveness.email).font(.system(size: Scale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.38)).lineLimit(1)
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary)).fixedSize(horizontal: false, vertical: true)
                 }
             }
         } else {
@@ -2720,7 +2874,7 @@ struct SettingsPane: View {
                 Text("signed out").font(.system(size: Scale.body, weight: .medium))
                     .foregroundStyle(caution)
                 Text("\(liveness.tripsToRepair) trip(s) to repair")
-                    .font(.system(size: Scale.meta)).foregroundStyle(coolWhite.opacity(0.38))
+                    .font(.system(size: Scale.meta)).foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
             }
         }
     }
@@ -2750,11 +2904,11 @@ struct SettingsPane: View {
         let server = databaseDriverHasServer(databaseConnection.driver)
         let becomesWritable = databaseGrantWrite
             && !(listed.first { $0.name == databaseName }?.writable ?? false)
-        // **Its own card** (#327): the list above is what exists, and this
-        // is how to add to it — or, after **Edit** (2e-iv), to change one of
-        // them. One card either way, so there is never a second form here.
-        FormCard(
-            title: databaseEditing?.title(name: databaseName) ?? DatabaseWording.cardTitle
+        // **Its own section** (#327; a section, not a card, since the settings revamp): the list
+        // above is what exists, and this is how to add to it — or, after **Edit** (2e-iv), to
+        // change one of them. One section either way, so there is never a second form here.
+        SettingsSection(
+            databaseEditing?.title(name: databaseName) ?? DatabaseWording.cardTitle
         ) {
             // A quiet verb in the header, not a third button beside Save: leaving edit mode
             // writes nothing, so it is said as softly as the title it sits beside.
@@ -2819,7 +2973,7 @@ struct SettingsPane: View {
                 Toggle(isOn: $databaseGrantWrite) {
                     Text("Allow writes — needs a second credential the server granted")
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.60))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 .toggleStyle(.checkbox)
                 .accessibilityIdentifier("settings.db.grantWrite")
@@ -2978,7 +3132,7 @@ struct SettingsPane: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(tone.opacity(0.09)))
             .padding(.top, 8)
             .padding(.bottom, 4)
@@ -3012,113 +3166,6 @@ struct SettingsPane: View {
     }
 }
 
-/// Where the operator is standing in the config tree.
-///
-/// Keyed by NAME rather than by index, for the reason a pane's column
-/// widths are: the tree is re-read from disk on every read, so an index
-/// into it survives a read that reordered or removed something and points
-/// at a different subject afterwards. A name that is gone is gone, and the
-/// subject column says so.
-enum SettingsNode: Hashable {
-    /// The PROJECTS heading: where a removed project leaves the operator, with nothing of its
-    /// own to show but the receipt.
-    case projects
-    case organisation
-    case providers
-    case editor
-    case browser
-    case keyboard
-    case projectEditor(String)
-    /// Workspaces, piece 2: a project's Running settings.
-    case projectRunning(String)
-
-    /// A stable fragment for this node's accessibility identifier.
-    ///
-    /// **Not derived from the label**, which is the organisation's display
-    /// name and changes the moment the pane's own form edits it — an
-    /// identifier that moves when the thing it names is edited is no
-    /// identifier at all.
-    var identifierFragment: String {
-        switch self {
-        case .organisation: return "organisation"
-        case .providers: return "providers"
-        case .projects: return "projects"
-        case .editor: return "editor"
-        case .browser: return "browser"
-        case .keyboard: return "keyboard"
-        case .projectEditor(let name): return "projectEditor.\(name)"
-        case .projectRunning(let name): return "projectRunning.\(name)"
-        case .project(let name): return "project.\(name)"
-        case .environment(let project, let environment):
-            return "environment.\(project).\(environment)"
-        case .databases(let project, let environment):
-            return "databases.\(project).\(environment)"
-        case .api(let project, let environment):
-            return "api.\(project).\(environment)"
-        }
-    }
-    case project(String)
-    case environment(project: String, environment: String)
-    case databases(project: String, environment: String)
-    case api(project: String, environment: String)
-
-    /// This node after a project is renamed: the same place under the new name, so a rename
-    /// never throws the operator to a page that says the node is gone.
-    func renaming(project old: String, to new: String) -> SettingsNode {
-        switch self {
-        case .project(old): return .project(new)
-        case .projectEditor(old): return .projectEditor(new)
-        case .projectRunning(old): return .projectRunning(new)
-        case .environment(old, let e): return .environment(project: new, environment: e)
-        case .databases(old, let e): return .databases(project: new, environment: e)
-        case .api(old, let e): return .api(project: new, environment: e)
-        default: return self
-        }
-    }
-
-    /// This node after an environment is renamed.
-    func renaming(project: String, environment old: String, to new: String) -> SettingsNode {
-        switch self {
-        case .environment(project, old): return .environment(project: project, environment: new)
-        case .databases(project, old): return .databases(project: project, environment: new)
-        case .api(project, old): return .api(project: project, environment: new)
-        default: return self
-        }
-    }
-
-    /// The breadcrumb for this node. Four levels down needs one to say
-    /// where you are.
-    func breadcrumb(in tree: SettingsTree?) -> [String] {
-        let organisation = tree?.org.label ?? "Organisation"
-        switch self {
-        case .organisation:
-            return [organisation]
-        case .providers:
-            return [organisation, "Providers"]
-        case .projects:
-            return [organisation, "Projects"]
-        case .editor:
-            return ["Wakil", "Editor"]
-        case .browser:
-            return ["Wakil", "Browser"]
-        case .keyboard:
-            return ["Wakil", "Keyboard"]
-        case .projectEditor(let name):
-            return [organisation, "Projects", name, "Editor"]
-        case .projectRunning(let name):
-            return [organisation, "Projects", name, "Running"]
-        case .project(let name):
-            return [organisation, "Projects", name]
-        case .environment(let project, let environment):
-            return [organisation, "Projects", project, environment]
-        case .databases(let project, let environment):
-            return [organisation, "Projects", project, environment, "Databases"]
-        case .api(let project, let environment):
-            return [organisation, "Projects", project, environment, "API"]
-        }
-    }
-}
-
 /// A section's ⓘ: QUICK TASKS' and GIT's. A click, not a hover tooltip: the text can run a dozen
 /// lines, and a tooltip can be neither reached by keyboard nor read at leisure. Click away or Esc
 /// closes it.
@@ -3132,7 +3179,7 @@ private struct SettingsAboutButton: View {
         Button { open.toggle() } label: {
             Image(systemName: "info.circle")
                 .font(.system(size: 10))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? 0.86 : 0.48))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? SettingsInk.primary : SettingsInk.tertiary))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -3143,7 +3190,7 @@ private struct SettingsAboutButton: View {
                 markdown: text,
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 420, alignment: .leading)
                 .padding(14)
@@ -3239,8 +3286,7 @@ extension SettingsPane {
         Text(text)
             .font(.system(size: SettingsScale.meta, design: .monospaced))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(opacity))
-            .lineLimit(1)
-            .truncationMode(.middle)
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
 
@@ -3269,7 +3315,7 @@ extension SettingsPane {
         }
         if database.writable {
             busyVerb(revokeKey) {
-                rowAction("Remove write access", tone: SettingsPalette.coolWhite.opacity(0.52),
+                rowAction("Remove write access", tone: SettingsPalette.destructive,
                           identifier: "settings.db.\(database.name).revokeWrite",
                           enabled: !lifecycleBusy.contains(revokeKey)) {
                     rowWrite(revokeKey) { await updateDatabase(path, environment, database.name, nil, true) }
@@ -3277,7 +3323,7 @@ extension SettingsPane {
             }
         }
         busyVerb(removeKey) {
-            rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+            rowAction("Remove", tone: SettingsPalette.destructive,
                       identifier: "settings.db.\(database.name).remove",
                       enabled: !lifecycleBusy.contains(removeKey)) {
                 lifecycleRefusals[removeKey] = nil
@@ -3321,7 +3367,7 @@ extension SettingsPane {
                         unseen: showUnseenRefusal)
                     Spacer(minLength: 0)
                     busyVerb(removeKey) {
-                        rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+                        rowAction("Remove", tone: SettingsPalette.destructive,
                                   identifier: "settings.api.\(api.name).remove",
                                   enabled: !lifecycleBusy.contains(removeKey)) {
                             lifecycleRefusals[removeKey] = nil
@@ -3407,9 +3453,8 @@ extension SettingsPane {
     private func tokenValue(_ api: SettingsAPI) -> some View {
         Text(ApiEntryWording.token(authRef: api.authRef))
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? 0.36 : 0.62))
-            .lineLimit(1)
-            .truncationMode(.middle)
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? SettingsInk.secondary : SettingsInk.secondary))
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .help(ApiEntryWording.token(authRef: api.authRef))
     }
@@ -3435,7 +3480,7 @@ extension SettingsPane {
         // nothing (Rule 1). With no token there is nothing to clear.
         if !api.authRef.isEmpty {
             busyVerb(clearKey) {
-                rowAction("Clear token", tone: SettingsPalette.coolWhite.opacity(0.52),
+                rowAction("Clear token", tone: SettingsPalette.destructive,
                           identifier: "settings.api.\(api.name).clearToken",
                           enabled: !lifecycleBusy.contains(clearKey)) {
                     rowWrite(clearKey) { await updateApiEntry(path, environment, api.name, nil, nil, nil, true) }
@@ -3463,7 +3508,7 @@ extension SettingsPane {
                 SecureField("Bearer …", text: $replacementToken)
                     .textFieldStyle(.plain)
                     .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
                     .focused($replacementTokenFocused)
                     .fieldBox(maxWidth: 320)
                     .accessibilityIdentifier("settings.api.\(api.name).token")
@@ -3509,10 +3554,10 @@ extension SettingsPane {
         .padding(.bottom, SettingsScale.openGap)
     }
 
-    /// The card under the entries: the database card's twin, field for field in its widths.
+    /// The section under the entries: the database section's twin, field for field in its widths.
     func apiForm(path: String, environment: String) -> some View {
         let ready = ApiEntryWording.canSave(name: apiName, baseUrl: apiBaseUrl) && !apiSaving
-        return FormCard(title: "ADD OR REPLACE AN API ENTRY") {
+        return SettingsSection("Add or replace an API entry", accessory: { EmptyView() }) {
             FormRow {
                 LabelledField(label: "NAME", prompt: "orders-api", text: $apiName,
                               width: 160, identifier: "settings.api.name")
@@ -3603,7 +3648,7 @@ extension SettingsPane {
                 .foregroundStyle(SettingsPalette.caution)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
-                confirmButton("Remove", tone: SettingsPalette.caution, filled: true, identifier: confirm) {
+                confirmButton("Remove", tone: SettingsPalette.destructive, filled: true, identifier: confirm) {
                     confirmingRemoval = nil
                     run()
                 }

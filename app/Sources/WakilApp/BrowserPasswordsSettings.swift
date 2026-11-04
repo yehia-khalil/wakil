@@ -150,7 +150,7 @@ struct BrowserPasswordsSettings: View {
         } else if BrowserPasswordSettings.visible(logins, org: org).isEmpty {
             Text(BrowserPasswordSettings.empty(org: name))
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(coolWhite.opacity(0.52))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 .accessibilityIdentifier("settings.browser.passwords.empty")
         } else {
             VStack(alignment: .leading, spacing: 2) {
@@ -158,9 +158,8 @@ struct BrowserPasswordsSettings: View {
                 ForEach(BrowserPasswordSettings.bySite(shown), id: \.site) { group in
                     Text(group.site)
                         .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.62))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 8)
                     ForEach(group.rows, id: \.index) { row in
                         loginRow(row.login, n: row.index)
@@ -183,15 +182,13 @@ struct BrowserPasswordsSettings: View {
                 } else {
                     Text(BrowserPasswordSettings.shown(login.username))
                         .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(coolWhite.opacity(login.username.isEmpty ? 0.45 : 0.86))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .foregroundStyle(coolWhite.opacity(login.username.isEmpty ? SettingsInk.secondary : SettingsInk.primary))
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(width: SettingsScale.labelWidth + 40, alignment: .leading)
                     Text(revealed[key] ?? "••••••••")
                         .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(revealed[key] == nil ? 0.40 : 0.86))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .foregroundStyle(coolWhite.opacity(revealed[key] == nil ? SettingsInk.secondary : SettingsInk.primary))
+                        .fixedSize(horizontal: false, vertical: true)
                         // Not selectable: ⌘C would copy it unmarked. Copy is the one way out.
                         .accessibilityIdentifier("settings.browser.passwords.row.\(n).value")
                 }
@@ -200,7 +197,7 @@ struct BrowserPasswordsSettings: View {
                 if copied == key {
                     Text("Copied")
                         .font(.system(size: SettingsScale.meta))
-                        .foregroundStyle(coolWhite.opacity(0.52))
+                        .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
                 }
                 rowButton(revealed[key] == nil ? "Reveal" : "Hide", "settings.browser.passwords.row.\(n).reveal",
                           disabled: working || isEditing) { reveal(login) }
@@ -210,7 +207,7 @@ struct BrowserPasswordsSettings: View {
                 rowButton(isEditing ? "Done" : "Edit", "settings.browser.passwords.row.\(n).edit", disabled: working) {
                     if isEditing { editFocus = nil; commitEdit() } else { startEdit(login) }
                 }
-                rowButton("Delete", "settings.browser.passwords.row.\(n).delete", tone: caution,
+                rowButton("Delete", "settings.browser.passwords.row.\(n).delete", tone: SettingsPalette.destructive,
                           disabled: working || isEditing) {
                     refusals[key] = nil
                     confirmingDelete = key
@@ -344,7 +341,7 @@ struct BrowserPasswordsSettings: View {
             TextField("Username", text: $editUsername)
                 .textFieldStyle(.plain)
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(coolWhite.opacity(0.88))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                 .fieldBox(width: SettingsScale.labelWidth + 30)
                 .focused($editFocus, equals: .username)
                 .onSubmit { editFocus = nil }
@@ -352,7 +349,7 @@ struct BrowserPasswordsSettings: View {
             SecureField("New password", text: $editPassword)
                 .textFieldStyle(.plain)
                 .font(.system(size: SettingsScale.body))
-                .foregroundStyle(coolWhite.opacity(0.88))
+                .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                 .fieldBox(width: 170)
                 .focused($editFocus, equals: .password)
                 .onSubmit { editFocus = nil }
@@ -414,7 +411,7 @@ struct BrowserPasswordsSettings: View {
                 .foregroundStyle(caution)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
-                FormButton(title: BrowserPasswordSettings.deleteLabel, tone: caution, filled: true,
+                FormButton(title: BrowserPasswordSettings.deleteLabel, tone: SettingsPalette.destructive, filled: true,
                            identifier: "settings.browser.passwords.row.\(n).delete.confirm") {
                     delete(login)
                 }
@@ -453,19 +450,18 @@ struct BrowserPasswordsSettings: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(BrowserPasswordSettings.neverTitle)
                     .font(.system(size: SettingsScale.body, weight: .medium))
-                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .foregroundStyle(coolWhite.opacity(SettingsInk.primary))
                     .padding(.top, 10)
                 ForEach(Array(never.enumerated()), id: \.element) { n, site in
                     HStack(spacing: 8) {
                         Text(site)
                             .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                            .foregroundStyle(coolWhite.opacity(0.72))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .foregroundStyle(coolWhite.opacity(SettingsInk.secondary))
+                            .fixedSize(horizontal: false, vertical: true)
                         Button { offerAgain(site) } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: SettingsScale.meta, weight: .semibold))
-                                .foregroundStyle(coolWhite.opacity(neverBusy == nil ? 0.55 : 0.25))
+                                .foregroundStyle(coolWhite.opacity(neverBusy == nil ? SettingsInk.secondary : SettingsInk.disabled))
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

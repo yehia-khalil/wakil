@@ -1,4 +1,5 @@
 import SwiftUI
+import WakilKit
 
 // MARK: - The settings form vocabulary (#327)
 //
@@ -47,20 +48,35 @@ enum SettingsScale {
     static let labelWidth: CGFloat = 120
     /// The rhythm between a page's sections, and from a section's hairline to its header.
     static let sectionGap: CGFloat = 12
+    /// From a micro header to the first thing under it — a page section's header and the tree's
+    /// WAKIL / organisation / PROJECTS / ENVIRONMENTS. Less than the air above a header, so the
+    /// header reads as its group's, but enough that it is not mistaken for the row under it.
+    static let headerGap: CGFloat = 8
+    /// The air above a heading in the settings tree, parting one scope from the last.
+    static let treeHeadingGap: CGFloat = 18
+    /// A micro header's weight: one step over a row's, so a header never reads as a row.
+    static let headerWeight: Font.Weight = .semibold
     /// What opens under a row — a confirmation, **Replace token**'s field, a refusal — sits this
     /// far from the next row (2e-iii).
     static let openGap: CGFloat = 8
     /// Between a card's fields, across and down: `FormCard`'s own spacing.
     static let fieldGap: CGFloat = 12
+    /// The two corner radii (settings revamp): a field, a button, a segment, a selected row.
+    static let radiusField: CGFloat = 5
+    /// A slab: a card, a popover.
+    static let radiusSlab: CGFloat = 8
 }
 
 /// §5's colours, as the settings pane uses them. Text is cool white stepped
 /// down by opacity, never by hue; violet is luminance and marks what is
-/// active or chosen; amber is caution and nothing else.
+/// active or chosen; amber is caution and nothing else; red is production and what destroys;
+/// green is staging and what is healthy.
 enum SettingsPalette {
     static let coolWhite = Color(red: 0.910, green: 0.925, blue: 0.965)   // #e8ecf6
     static let caution = Color(red: 0.910, green: 0.706, blue: 0.353)     // #e8b45a
     static let accent = Color(red: 0.486, green: 0.361, blue: 1.0)        // #7c5cff
+    static let destructive = Color(red: 0.910, green: 0.361, blue: 0.361) // #e85c5c
+    static let healthy = Color(red: 0.545, green: 0.878, blue: 0.784)     // #8be0c8
 }
 
 /// A form's own surface inside a pane: a slightly raised slab with a
@@ -83,11 +99,10 @@ struct FormCard<Accessory: View, Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: SettingsScale.fieldGap) {
                 Text(title)
-                    .font(.system(size: SettingsScale.micro, weight: .medium))
+                    .font(.system(size: SettingsScale.micro, weight: SettingsScale.headerWeight))
                     .tracking(SettingsScale.microTracking)
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.42))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 accessory
             }
@@ -96,10 +111,10 @@ struct FormCard<Accessory: View, Content: View>: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusSlab, style: .continuous)
                 .fill(SettingsPalette.coolWhite.opacity(0.025)))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusSlab, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
                         colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
@@ -138,7 +153,7 @@ struct FormLabelled<Content: View>: View {
             Text(label)
                 .font(.system(size: SettingsScale.micro, weight: .medium))
                 .tracking(SettingsScale.microTracking)
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.40))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
             content
         }
     }
@@ -175,7 +190,7 @@ struct LabelledField: View {
             .accessibilityLabel(label.lowercased())
             .textFieldStyle(.plain)
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
             .modifier(FieldBoxWidth(width: width, narrows: narrows))
             .modifier(MovableFocus(focus: focus, key: focusKey))
         }
@@ -227,10 +242,10 @@ extension View {
 
     private func fieldSurface() -> some View {
         background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .fill(SettingsPalette.coolWhite.opacity(0.05))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                         .stroke(SettingsPalette.coolWhite.opacity(0.14), lineWidth: 0.5)))
     }
 }
@@ -246,7 +261,7 @@ struct FormHint: View {
     var body: some View {
         Text(text)
             .font(.system(size: SettingsScale.body - 1))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.52))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: 420, alignment: .leading)
     }
@@ -287,9 +302,9 @@ struct SegmentedChoice: View {
             }
         }
         .background(SettingsPalette.coolWhite.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                 .stroke(SettingsPalette.coolWhite.opacity(0.12), lineWidth: 0.5))
     }
 
@@ -321,7 +336,7 @@ struct Chip: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(tone.opacity(0.14)))
             .fixedSize()
     }
@@ -345,10 +360,10 @@ struct FormButton: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(tone.opacity(filled ? 0.13 : 0.0))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .stroke(tone.opacity(filled ? 0.38 : 0.20), lineWidth: 0.5)))
             .contentShape(Rectangle())
             .accessibilityIdentifier(identifier)
@@ -398,14 +413,14 @@ struct SettingsSection<Accessory: View, Content: View>: View {
             if drawsTitle {
                 HStack(alignment: .center, spacing: 6) {
                     Text(title.uppercased())
-                        .font(.system(size: SettingsScale.micro, weight: .medium))
+                        .font(.system(size: SettingsScale.micro, weight: SettingsScale.headerWeight))
                         .tracking(SettingsScale.microTracking)
-                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.secondary))
                         .fixedSize(horizontal: false, vertical: true)
                     accessory
                 }
                 .padding(.top, SettingsScale.sectionGap)
-                .padding(.bottom, 4)
+                .padding(.bottom, SettingsScale.headerGap)
             }
             content
         }
@@ -470,7 +485,7 @@ struct SettingsRow<Value: View>: View {
     private var labelText: some View {
         Text(label)
             .font(.system(size: SettingsScale.body, weight: .medium))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(SettingsInk.primary))
             // A label longer than the column takes a second line rather than an ellipsis
             // ("Name groups with AI" was cut, 3d-i walk).
             .lineLimit(2)
@@ -544,9 +559,8 @@ struct SettingsValue: View {
         Text(text.isEmpty ? "—" : text)
             .font(.system(size: monospaced ? SettingsScale.identifier : SettingsScale.body,
                           design: monospaced ? .monospaced : .default))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(text.isEmpty ? 0.30 : 0.85))
-            .lineLimit(1)
-            .truncationMode(.middle)
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(text.isEmpty ? SettingsInk.secondary : SettingsInk.primary))
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
 }
@@ -572,10 +586,10 @@ private struct InPlaceField: ViewModifier {
         content
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                     .fill(SettingsPalette.coolWhite.opacity(focused || hovering ? 0.05 : 0))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsScale.radiusField, style: .continuous)
                             .stroke(SettingsPalette.coolWhite.opacity(focused ? 0.18 : hovering ? 0.10 : 0),
                                     lineWidth: 0.5)))
             .padding(.horizontal, -6)
