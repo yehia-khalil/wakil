@@ -11,7 +11,7 @@ what you want.
 > decisions, the safety model and the test harness are the interesting parts. It builds and
 > runs, but expect sharp edges.
 
-![The home screen: conversations across projects, filtered by project](docs/screenshots/home.png)
+![The home screen: agents working, idle, done and failed across projects; what needs you on top; workspaces with an app running](docs/screenshots/home.png)
 
 ## The idea
 
@@ -46,7 +46,7 @@ There is no second code path to a pane's state, by rule.
 Wakil serves the registry to the agent as its own MCP surface, over a `0700` unix socket rather
 than an HTTP port. File permissions beat a bearer token on a port.
 
-![The agent answers about the terminal the operator is driving](docs/screenshots/dual-driven-terminal.png)
+![The agent filled the booking form through the same actions a click would take](docs/screenshots/browser-agent.png)
 
 ### 2. The write-price gate
 
@@ -108,7 +108,14 @@ exists** (Invariant 1).
   conversation a workspace with a git worktree per repo it touches, so two agents never stage
   each other's hunks or move the tree under each other.
 
-![An agent reports which workspace it is working in](docs/screenshots/workspace-map.png)
+Agents keep working when you leave them. Those in the organization on screen show on its
+home; those in another organization ride along as chips in the corner, coloured by state
+(working, waiting on you, done, failed), and a click goes straight back to that conversation,
+in its own place.
+
+![Three agents working in another organization, shown as chips while you work here](docs/screenshots/background-agents.png)
+
+![Switching: the third agent folds into "+1 more", one click away](docs/screenshots/background-agents-switch.png)
 
 ### 5. Quick tasks go to a cheaper, faster model
 
@@ -193,7 +200,7 @@ The auditor's playbook is in [`docs/agents/e2e.md`](docs/agents/e2e.md).
 
 | | |
 |---|---|
-| ![Browser with vertical tabs, grouped by site and by hand](docs/screenshots/browser-vertical-tabs.png) | ![The agent acting in a web page it was allowed on](docs/screenshots/browser-agent.png) |
+| ![Browser with vertical tabs, grouped by site and by hand](docs/screenshots/browser-vertical-tabs.png) | ![The Ticket tab in the editor: the ticket, its pull request, open review threads drawn in the file, and Hand to agent](docs/screenshots/ticket-tab.png) |
 | ![Database pane: a read-only query and its result](docs/screenshots/database.png) | ![API client: the credential comes from the organization's Keychain entry, never the request](docs/screenshots/api.png) |
 | ![Settings: an organization's connections and git identity](docs/screenshots/settings-connections.png) | |
 
